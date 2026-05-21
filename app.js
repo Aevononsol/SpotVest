@@ -1930,29 +1930,31 @@ elements.memoButton.addEventListener("click", async () => {
   }
 });
 
-elements.apiKeyForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  elements.apiKeyMessage.textContent = "Saving keys...";
+if (elements.apiKeyForm) {
+  elements.apiKeyForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    elements.apiKeyMessage.textContent = "Saving keys...";
 
-  const formData = new FormData(elements.apiKeyForm);
-  const payload = Object.fromEntries(formData.entries());
+    const formData = new FormData(elements.apiKeyForm);
+    const payload = Object.fromEntries(formData.entries());
 
-  try {
-    const response = await fetch("/api/save-keys", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
-    });
+    try {
+      const response = await fetch("/api/save-keys", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
 
-    if (!response.ok) throw new Error("Save failed");
+      if (!response.ok) throw new Error("Save failed");
 
-    elements.apiKeyForm.reset();
-    elements.apiKeyMessage.textContent = "Keys saved locally.";
-    await renderKeyStatus();
-  } catch {
-    elements.apiKeyMessage.textContent = "Could not save. Make sure the Node server is running.";
-  }
-});
+      elements.apiKeyForm.reset();
+      elements.apiKeyMessage.textContent = "Keys saved locally.";
+      await renderKeyStatus();
+    } catch {
+      elements.apiKeyMessage.textContent = "Could not save. Make sure the Node server is running.";
+    }
+  });
+}
 
 async function renderKeyStatus() {
   try {
@@ -1961,12 +1963,14 @@ async function renderKeyStatus() {
     const status = await response.json();
     const canSaveKeys = status.canSaveKeys !== false;
 
-    elements.apiKeyForm.classList.toggle("hosted-key-mode", !canSaveKeys);
-    elements.apiKeyForm.querySelectorAll("input, button").forEach((field) => {
-      field.disabled = !canSaveKeys;
-    });
-    if (!canSaveKeys) {
-      elements.apiKeyMessage.textContent = "Keys are managed in Render environment variables.";
+    if (elements.apiKeyForm) {
+      elements.apiKeyForm.classList.toggle("hosted-key-mode", !canSaveKeys);
+      elements.apiKeyForm.querySelectorAll("input, button").forEach((field) => {
+        field.disabled = !canSaveKeys;
+      });
+      if (!canSaveKeys) {
+        elements.apiKeyMessage.textContent = "Keys are managed in Render environment variables.";
+      }
     }
 
     Object.entries(elements.keyStatus).forEach(([key, element]) => {
