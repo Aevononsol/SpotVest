@@ -1958,3 +1958,139 @@ meter::-webkit-meter-optimum-value {
     min-height: 360px;
   }
 }
+
+/* Premium no-white theme */
+body {
+  background:
+    radial-gradient(circle at 15% 5%, rgba(241, 200, 75, 0.18), transparent 28%),
+    radial-gradient(circle at 85% 20%, rgba(15, 124, 128, 0.18), transparent 30%),
+    linear-gradient(145deg, #d8e7ea 0%, #edf3ef 48%, #dce8f2 100%);
+}
+
+.workspace {
+  background: #edf4f2;
+  border-color: rgba(10, 56, 64, 0.18);
+}
+
+.results {
+  background:
+    linear-gradient(180deg, rgba(236, 246, 244, 0.95), rgba(225, 236, 239, 0.98)),
+    radial-gradient(circle at top right, rgba(241, 200, 75, 0.16), transparent 38%);
+}
+
+.panel,
+.address-panel,
+.search-panel,
+.preset-list,
+.photo-modal-card,
+.memo-output {
+  background: linear-gradient(145deg, #eef7f5, #e2edf1) !important;
+  border: 1px solid rgba(10, 56, 64, 0.13);
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.08);
+}
+
+.panel:nth-of-type(3n + 1) {
+  background: linear-gradient(145deg, #eef7f5, #dcedef) !important;
+}
+
+.panel:nth-of-type(3n + 2) {
+  background: linear-gradient(145deg, #f7efd8, #e9f1ee) !important;
+}
+
+.panel:nth-of-type(3n + 3) {
+  background: linear-gradient(145deg, #eaf1fb, #e8efe7) !important;
+}
+
+.panel-header {
+  background: linear-gradient(90deg, rgba(9, 70, 82, 0.08), rgba(241, 200, 75, 0.12));
+  border-bottom-color: rgba(10, 56, 64, 0.12);
+}
+
+.summary-grid article,
+.decision-card,
+.profile-row,
+.category-item,
+.opportunity-item,
+.places-list article,
+.civic-grid article,
+.site-intel-grid article,
+.lease-card,
+.map-popup,
+.insight-card,
+.market-grid article,
+.diligence-list li,
+.talking-points li {
+  background: linear-gradient(145deg, #e8f5f3, #dce9ee) !important;
+  border: 1px solid rgba(10, 56, 64, 0.12);
+  box-shadow: 0 10px 26px rgba(15, 23, 42, 0.07);
+}
+
+.summary-grid article:nth-child(2n),
+.category-item:nth-child(2n),
+.opportunity-item:nth-child(2n),
+.places-list article:nth-child(2n),
+.civic-grid article:nth-child(2n),
+.site-intel-grid article:nth-child(2n) {
+  background: linear-gradient(145deg, #f4ecd4, #e5efe9) !important;
+}
+
+.summary-grid article:nth-child(3n),
+.category-item:nth-child(3n),
+.opportunity-item:nth-child(3n),
+.places-list article:nth-child(3n),
+.civic-grid article:nth-child(3n),
+.site-intel-grid article:nth-child(3n) {
+  background: linear-gradient(145deg, #e6eef8, #dcebe8) !important;
+}
+
+.hero-report,
+.verdict-panel {
+  background:
+    linear-gradient(135deg, rgba(8, 33, 48, 0.7), rgba(15, 124, 128, 0.52)),
+    url("https://images.unsplash.com/photo-1534270804882-6b5048b1c1fc?auto=format&fit=crop&w=1200&q=80") center / cover !important;
+  color: #f8fbf7;
+}
+
+.grade-box {
+  background: linear-gradient(145deg, #d8f4df, #b9e6cb) !important;
+  border-color: rgba(19, 138, 99, 0.26);
+}
+
+.business-results article:nth-child(2) {
+  background: linear-gradient(145deg, #f5dda0, #ead08d) !important;
+}
+
+.business-results article:nth-child(3) {
+  background: linear-gradient(145deg, #cde6f7, #b8d8e5) !important;
+}
+
+.business-results article:nth-child(4) {
+  background: linear-gradient(145deg, #ded1f2, #cdbfe4) !important;
+}
+
+input,
+select,
+textarea {
+  background: #f2f7f4;
+  border-color: rgba(10, 56, 64, 0.2);
+}
+
+.ghost-button,
+.memo-button,
+.business-form button,
+.business-examples button,
+.lease-form button,
+.csv-import-row button,
+.address-row button {
+  background: linear-gradient(145deg, #f1c84b, #dfb53a);
+  border-color: rgba(99, 74, 8, 0.25);
+  color: #13202b;
+}
+
+.market-panel,
+.diligence-panel,
+.recommendations,
+.narrative,
+.lease-panel {
+  background: linear-gradient(145deg, #eaf4f1, #dfeaec) !important;
+}
