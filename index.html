@@ -464,19 +464,9 @@
           <section class="panel lease-panel">
             <div class="panel-header">
               <div>
-                <p class="section-label">Spaces for lease</p>
-                <h3>Show available storefronts and compare fit</h3>
+                <p class="section-label">Lease fit calculator</p>
+                <h3>Price the lease against tenant sales</h3>
               </div>
-              <div id="lease-search-links" class="quick-links" aria-label="Listing search links"></div>
-            </div>
-            <div class="listing-feed-note">
-              <strong>Live listing feed not connected</strong>
-              <span>Free listing websites block automated pulls. Upload a CSV/export or save spaces manually to show active availabilities here.</span>
-            </div>
-            <div class="csv-import-row">
-              <label for="lease-csv">Import CSV</label>
-              <input id="lease-csv" type="file" accept=".csv,text/csv" />
-              <small>Headers supported: address, zip, rent, sf, use, concept, sales, buildout, frontage, link, notes</small>
             </div>
             <form id="lease-form" class="lease-form">
               <input id="lease-address" name="address" placeholder="Listing address" required />
@@ -512,7 +502,26 @@
               <textarea id="lease-notes" name="notes" placeholder="Venting, basement, corner, broker notes"></textarea>
               <button type="submit">Save space</button>
             </form>
-            <p id="lease-message" class="panel-note" role="status">Saved spaces stay on this computer. Use listing links from LoopNet, Crexi, broker emails, Craigslist, or signs.</p>
+            <p id="lease-message" class="panel-note" role="status">Enter a listing to calculate sales needed, rent-to-sales ratio, and lease risk.</p>
+          </section>
+
+          <section class="panel lease-panel saved-spaces-panel">
+            <div class="panel-header">
+              <div>
+                <p class="section-label">Saved spaces</p>
+                <h3>Compare listings and keep the best options</h3>
+              </div>
+              <div id="lease-search-links" class="quick-links" aria-label="Listing search links"></div>
+            </div>
+            <div class="listing-feed-note">
+              <strong>Live listing feed not connected</strong>
+              <span>Free listing websites block automated pulls. Upload a CSV/export or save spaces manually to show active availabilities here.</span>
+            </div>
+            <div class="csv-import-row">
+              <label for="lease-csv">Import CSV</label>
+              <input id="lease-csv" type="file" accept=".csv,text/csv" />
+              <small>Headers supported: address, zip, rent, sf, use, concept, sales, buildout, frontage, link, notes</small>
+            </div>
             <div id="lease-list" class="lease-list"></div>
           </section>
 
