@@ -2094,3 +2094,181 @@ textarea {
 .lease-panel {
   background: linear-gradient(145deg, #eaf4f1, #dfeaec) !important;
 }
+
+/* Green confidence theme */
+:root {
+  --green: #087f5b;
+  --teal: #0b7c72;
+  --gold: #8ac44b;
+  --taxi: #8ac44b;
+}
+
+body {
+  background:
+    radial-gradient(circle at 16% 8%, rgba(53, 181, 119, 0.22), transparent 30%),
+    radial-gradient(circle at 88% 18%, rgba(11, 124, 114, 0.2), transparent 31%),
+    linear-gradient(145deg, #d8eadf 0%, #eef7ef 46%, #dcece6 100%);
+}
+
+.app-shell {
+  background:
+    linear-gradient(135deg, rgba(5, 46, 34, 0.92), rgba(9, 84, 67, 0.82)),
+    url("https://images.unsplash.com/photo-1522083165195-3424ed129620?auto=format&fit=crop&w=1400&q=80") center / cover;
+}
+
+.workspace {
+  background: #e8f3ec;
+  border-color: rgba(6, 95, 70, 0.24);
+}
+
+.sidebar {
+  background:
+    linear-gradient(180deg, rgba(5, 36, 31, 0.9), rgba(5, 58, 45, 0.96)),
+    url("https://images.unsplash.com/photo-1518391846015-55a9cc003b25?auto=format&fit=crop&w=900&q=80") center / cover;
+}
+
+.sidebar::before {
+  background:
+    linear-gradient(90deg, rgba(80, 200, 120, 0.18), transparent 24%),
+    linear-gradient(180deg, transparent 0%, rgba(10, 132, 91, 0.24) 100%);
+}
+
+.mark {
+  background: linear-gradient(145deg, #0f8f68, #7fd36b);
+}
+
+.results {
+  background:
+    radial-gradient(circle at top right, rgba(76, 175, 80, 0.14), transparent 38%),
+    linear-gradient(180deg, rgba(231, 243, 235, 0.98), rgba(217, 235, 226, 0.98));
+}
+
+.panel,
+.address-panel,
+.search-panel,
+.preset-list,
+.photo-modal-card,
+.memo-output {
+  background: linear-gradient(145deg, #e7f5ec, #d7eadf) !important;
+  border-color: rgba(6, 95, 70, 0.18);
+}
+
+.panel:nth-of-type(3n + 1) {
+  background: linear-gradient(145deg, #e4f4ea, #cfe7db) !important;
+}
+
+.panel:nth-of-type(3n + 2) {
+  background: linear-gradient(145deg, #edf7e4, #d6ead7) !important;
+}
+
+.panel:nth-of-type(3n + 3) {
+  background: linear-gradient(145deg, #e3f1ed, #cfe5dc) !important;
+}
+
+.panel-header {
+  background: linear-gradient(90deg, rgba(6, 95, 70, 0.13), rgba(126, 211, 33, 0.14));
+  border-bottom-color: rgba(6, 95, 70, 0.18);
+}
+
+.summary-grid article,
+.decision-card,
+.profile-row,
+.category-item,
+.opportunity-item,
+.places-list article,
+.civic-grid article,
+.site-intel-grid article,
+.lease-card,
+.map-popup,
+.insight-card,
+.market-grid article,
+.diligence-list li,
+.talking-points li {
+  background: linear-gradient(145deg, #e0f3e7, #cfe5dc) !important;
+  border-color: rgba(6, 95, 70, 0.16);
+}
+
+.summary-grid article:nth-child(2n),
+.category-item:nth-child(2n),
+.opportunity-item:nth-child(2n),
+.places-list article:nth-child(2n),
+.civic-grid article:nth-child(2n),
+.site-intel-grid article:nth-child(2n) {
+  background: linear-gradient(145deg, #edf7df, #d7ebd4) !important;
+}
+
+.summary-grid article:nth-child(3n),
+.category-item:nth-child(3n),
+.opportunity-item:nth-child(3n),
+.places-list article:nth-child(3n),
+.civic-grid article:nth-child(3n),
+.site-intel-grid article:nth-child(3n) {
+  background: linear-gradient(145deg, #dff2ee, #cde6dd) !important;
+}
+
+.hero-report,
+.verdict-panel {
+  background:
+    linear-gradient(135deg, rgba(4, 38, 32, 0.72), rgba(8, 109, 78, 0.56)),
+    url("https://images.unsplash.com/photo-1499092346589-b9b6be3e94b2?auto=format&fit=crop&w=1200&q=80") center / cover !important;
+}
+
+.grade-box {
+  background: linear-gradient(145deg, #c7f5d2, #91dca8) !important;
+  border-color: rgba(6, 95, 70, 0.3);
+}
+
+.business-count {
+  background: linear-gradient(145deg, #075f46, #0d9b6f) !important;
+}
+
+.business-results article:nth-child(2) {
+  background: linear-gradient(145deg, #dff4b8, #c7e287) !important;
+}
+
+.business-results article:nth-child(3) {
+  background: linear-gradient(145deg, #cff0e0, #addfca) !important;
+}
+
+.business-results article:nth-child(4) {
+  background: linear-gradient(145deg, #d7eadf, #bddacb) !important;
+}
+
+input,
+select,
+textarea {
+  background: #f1f8f3;
+  border-color: rgba(6, 95, 70, 0.24);
+}
+
+.ghost-button,
+.memo-button,
+.business-form button,
+.business-examples button,
+.lease-form button,
+.csv-import-row button,
+.address-row button,
+.analyze-button {
+  background: linear-gradient(145deg, #0f9f6e, #087f5b) !important;
+  border-color: rgba(4, 67, 50, 0.34) !important;
+  color: #ffffff !important;
+  box-shadow: 0 10px 24px rgba(8, 127, 91, 0.22);
+}
+
+.preset-list button {
+  background: rgba(10, 76, 61, 0.86);
+  border-color: rgba(126, 211, 33, 0.26);
+}
+
+.preset-list button.active,
+.preset-list button:hover {
+  background: linear-gradient(145deg, #0f9f6e, #075f46);
+}
+
+.market-panel,
+.diligence-panel,
+.recommendations,
+.narrative,
+.lease-panel {
+  background: linear-gradient(145deg, #e5f4e9, #d5e8dd) !important;
+}
