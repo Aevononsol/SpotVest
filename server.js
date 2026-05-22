@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL(".", import.meta.url));
 const port = Number(process.env.PORT || 5174);
+const startedAt = new Date();
 
 const contentTypes = {
   ".html": "text/html; charset=utf-8",
@@ -157,7 +158,10 @@ function keyStatus() {
 }
 
 function sendJson(response, statusCode, data) {
-  response.writeHead(statusCode, { "Content-Type": "application/json; charset=utf-8" });
+  response.writeHead(statusCode, {
+    "Content-Type": "application/json; charset=utf-8",
+    "Cache-Control": "no-store"
+  });
   response.end(JSON.stringify(data, null, 2));
 }
 
@@ -1242,8 +1246,10 @@ async function sendFile(response, pathname) {
 
   const filePath = join(root, normalized);
   const data = await readFile(filePath);
+  const extension = extname(filePath);
   response.writeHead(200, {
-    "Content-Type": contentTypes[extname(filePath)] || "application/octet-stream"
+    "Content-Type": contentTypes[extension] || "application/octet-stream",
+    "Cache-Control": extension === ".html" ? "no-cache" : "public, max-age=300"
   });
   response.end(data);
 }
@@ -1256,6 +1262,18 @@ createServer(async (request, response) => {
   try {
     if (url.pathname === "/api/key-status") {
       sendJson(response, 200, keyStatus());
+      return;
+    }
+
+    if (url.pathname === "/api/health") {
+      sendJson(response, 200, {
+        ok: true,
+        app: "AreaIntel",
+        startedAt: startedAt.toISOString(),
+        uptimeSeconds: Math.round((Date.now() - startedAt.getTime()) / 1000),
+        cacheEntries: responseCache.size,
+        keyStatus: keyStatus()
+      });
       return;
     }
 
@@ -1467,6 +1485,7 @@ createServer(async (request, response) => {
 
     await sendFile(response, url.pathname);
   } catch (error) {
+    console.error(`[AreaIntel] ${request.method} ${url.pathname}: ${error.message}`);
     const statusCode = error.code === "ENOENT" ? 404 : 500;
     response.writeHead(statusCode, { "Content-Type": "text/plain; charset=utf-8" });
     response.end(statusCode === 404 ? "Not found" : "Server error");
