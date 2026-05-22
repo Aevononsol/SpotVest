@@ -260,6 +260,72 @@ select {
   color: #c8d6df;
 }
 
+[hidden] {
+  display: none !important;
+}
+
+.start-screen {
+  display: grid;
+  align-content: center;
+  gap: 24px;
+  min-width: 0;
+  min-height: 100vh;
+  padding: 28px;
+  overflow: auto;
+  background:
+    linear-gradient(90deg, rgba(20, 37, 54, 0.92), rgba(20, 37, 54, 0.42)),
+    url("https://images.unsplash.com/photo-1534430480872-3498386e7856?auto=format&fit=crop&w=1800&q=80") center / cover;
+  color: #fff;
+}
+
+.start-screen h2 {
+  max-width: 760px;
+  color: #fff;
+  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.25);
+}
+
+.start-screen p {
+  max-width: 660px;
+  color: #dbe7ef;
+  line-height: 1.55;
+}
+
+.start-screen .section-label {
+  color: #f7d660;
+}
+
+.start-steps {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  max-width: 980px;
+}
+
+.start-steps article {
+  min-height: 170px;
+  padding: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.start-steps span {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  margin-bottom: 18px;
+  background: var(--gold);
+  color: var(--ink);
+  font-weight: 900;
+}
+
+.start-steps strong {
+  display: block;
+  margin-bottom: 8px;
+  color: #fff;
+  font-size: 1.05rem;
+}
+
 .results {
   display: flex;
   flex-direction: column;
@@ -1236,7 +1302,8 @@ meter::-webkit-meter-optimum-value {
   .site-intel-grid,
   .business-results,
   .opportunity-list,
-  .places-list {
+  .places-list,
+  .start-steps {
     grid-template-columns: 1fr;
   }
 
@@ -1266,7 +1333,8 @@ meter::-webkit-meter-optimum-value {
   }
 
   .sidebar,
-  .results {
+  .results,
+  .start-screen {
     padding: 18px;
   }
 

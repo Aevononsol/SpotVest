@@ -72,7 +72,7 @@
 
           <div class="preset-list" aria-label="Sample ZIP codes">
             <p class="section-label">Sample areas</p>
-            <button class="preset active" type="button" data-zip="10003">
+            <button class="preset" type="button" data-zip="10003">
               <span>10003</span>
               <small>East Village / Union Square</small>
             </button>
@@ -95,7 +95,32 @@
           </div>
         </aside>
 
-        <section class="results" aria-live="polite">
+        <section id="start-screen" class="start-screen">
+          <div>
+            <p class="section-label">TenantFit NYC</p>
+            <h2>Start with a ZIP code or exact storefront address.</h2>
+            <p>TenantFit will load Census demographics, Google Places, NYC Open Data, property signals, and competition research after you choose the area.</p>
+          </div>
+          <div class="start-steps">
+            <article>
+              <span>1</span>
+              <strong>Enter a ZIP</strong>
+              <p>Use the ZIP field for neighborhood-level research.</p>
+            </article>
+            <article>
+              <span>2</span>
+              <strong>Use an address</strong>
+              <p>Add a storefront address when the client wants radius-level competition.</p>
+            </article>
+            <article>
+              <span>3</span>
+              <strong>Check the tenant type</strong>
+              <p>Search restaurant, deli, pizza, cafe, gym, daycare, or another business.</p>
+            </article>
+          </div>
+        </section>
+
+        <section id="results" class="results" aria-live="polite" hidden>
           <section class="hero-report">
             <div>
               <p class="section-label">TenantFit NYC live report</p>

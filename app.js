@@ -437,7 +437,7 @@ const labels = {
 };
 
 const state = {
-  zip: "10003",
+  zip: "",
   filter: "all",
   business: "restaurant",
   location: null,
@@ -461,6 +461,8 @@ const elements = {
   radiusInput: document.querySelector("#radius-input"),
   clearAddress: document.querySelector("#clear-address"),
   addressMessage: document.querySelector("#address-message"),
+  startScreen: document.querySelector("#start-screen"),
+  results: document.querySelector("#results"),
   heroBusiness: document.querySelector("#hero-business"),
   heroSource: document.querySelector("#hero-source"),
   heroMarket: document.querySelector("#hero-market"),
@@ -1719,6 +1721,8 @@ function render(zip) {
   }
 
   state.zip = zip;
+  elements.startScreen.hidden = true;
+  elements.results.hidden = false;
   elements.input.value = zip;
   elements.message.textContent = "Loading live sources...";
   elements.analyzeButton.disabled = true;
@@ -1918,7 +1922,7 @@ elements.clearAddress.addEventListener("click", () => {
   state.location = null;
   elements.addressInput.value = "";
   elements.addressMessage.textContent = "Using ZIP-level search.";
-  render(state.zip);
+  if (state.zip) render(state.zip);
 });
 
 elements.presets.forEach((button) => {
@@ -1931,12 +1935,16 @@ elements.presets.forEach((button) => {
 
 elements.filter.addEventListener("change", (event) => {
   state.filter = event.target.value;
-  render(state.zip);
+  if (state.zip) render(state.zip);
 });
 
 elements.businessForm.addEventListener("submit", (event) => {
   event.preventDefault();
   state.business = elements.businessInput.value.trim();
+  if (!state.zip) {
+    elements.message.textContent = "Enter a ZIP code before checking a business type.";
+    return;
+  }
   renderBusinessCheck();
 });
 
@@ -1945,6 +1953,10 @@ elements.businessExamples.addEventListener("click", (event) => {
   if (!button) return;
 
   state.business = button.dataset.business;
+  if (!state.zip) {
+    elements.message.textContent = "Enter a ZIP code before checking a business type.";
+    return;
+  }
   renderBusinessCheck();
 });
 
@@ -2076,4 +2088,6 @@ document.addEventListener("keydown", (event) => {
 
 renderZipOptions();
 state.leases = loadLeases();
-render(state.zip);
+elements.startScreen.hidden = false;
+elements.results.hidden = true;
+elements.message.textContent = "Enter a ZIP code or use an exact storefront address to start.";
