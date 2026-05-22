@@ -745,6 +745,136 @@ textarea:focus {
   font-size: 1.32rem;
 }
 
+.institutional-panel {
+  display: grid;
+  gap: 16px;
+  background: linear-gradient(145deg, #eef4f7, #dfe9ef);
+}
+
+.insufficient-data {
+  padding: 14px;
+  border-left: 5px solid #a44f3f;
+  border-radius: var(--radius);
+  background: #f6e8e6;
+}
+
+.insufficient-data strong {
+  display: block;
+  color: #8b342a;
+  font-size: 1rem;
+  letter-spacing: 0.04em;
+}
+
+.insufficient-data p {
+  margin: 4px 0 0;
+  color: #70433e;
+}
+
+.institutional-grid,
+.analysis-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.institutional-grid article,
+.analysis-columns article {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid rgba(14, 116, 144, 0.14);
+  border-radius: var(--radius);
+  background: linear-gradient(145deg, #f6fafb, #e7eff4);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+}
+
+.institutional-grid strong {
+  display: block;
+  margin-top: 6px;
+  font-size: 1.35rem;
+}
+
+.institutional-grid p {
+  margin: 8px 0 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.mini-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.mini-metric-grid div {
+  padding: 10px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.62);
+}
+
+.mini-metric-grid span,
+.score-row small,
+.scenario-card small {
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.35;
+}
+
+.mini-metric-grid strong {
+  margin-top: 4px;
+  font-size: 1rem;
+}
+
+.score-breakdown,
+.scenario-analysis {
+  display: grid;
+  gap: 9px;
+  margin-top: 10px;
+}
+
+.score-row,
+.scenario-card {
+  display: grid;
+  gap: 5px;
+  padding: 10px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.64);
+}
+
+.score-row {
+  grid-template-columns: minmax(0, 1fr) 44px;
+  align-items: center;
+}
+
+.score-row span {
+  display: grid;
+  place-items: center;
+  min-height: 38px;
+  border-radius: 6px;
+  background: #0e7490;
+  color: #ffffff;
+  font-weight: 900;
+}
+
+.score-row small {
+  display: block;
+  margin-top: 4px;
+}
+
+.scenario-card span {
+  color: #12324a;
+  font-weight: 900;
+}
+
+.compact-list {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0 0;
+  padding-left: 18px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
 meter {
   width: 100%;
   height: 10px;
@@ -2106,7 +2236,9 @@ meter::-webkit-meter-optimum-value {
   .photo-strip,
   .photo-modal-card,
   .verdict-panel,
-  .hero-report {
+  .hero-report,
+  .institutional-grid,
+  .analysis-columns {
     grid-template-columns: 1fr;
   }
 

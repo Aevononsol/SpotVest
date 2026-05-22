@@ -495,6 +495,15 @@ const elements = {
   dataConfidenceCopy: document.querySelector("#data-confidence-copy"),
   nextMove: document.querySelector("#next-move"),
   nextMoveCopy: document.querySelector("#next-move-copy"),
+  institutionalConfidence: document.querySelector("#institutional-confidence"),
+  insufficientData: document.querySelector("#insufficient-data"),
+  institutionalDecision: document.querySelector("#institutional-decision"),
+  institutionalSummary: document.querySelector("#institutional-summary"),
+  validationGrid: document.querySelector("#validation-grid"),
+  scoreBreakdown: document.querySelector("#score-breakdown"),
+  scenarioAnalysis: document.querySelector("#scenario-analysis"),
+  rawDataList: document.querySelector("#raw-data-list"),
+  missingDataList: document.querySelector("#missing-data-list"),
   customerProfile: document.querySelector("#customer-profile"),
   chainTitle: document.querySelector("#chain-title"),
   chainCopy: document.querySelector("#chain-copy"),
@@ -1799,6 +1808,208 @@ function confidenceFor(zip, businessResult) {
   };
 }
 
+function scoreQualityLabel(value) {
+  if (value >= 85) return "HIGH";
+  if (value >= 70) return "MEDIUM";
+  return "LOW";
+}
+
+function moneyRange(low, high) {
+  return `$${Math.round(low).toLocaleString()}-${Math.round(high).toLocaleString()}`;
+}
+
+function analysisScores(profile, recommendations) {
+  const topScore = recommendations[0]?.score || 50;
+  const businessResult = currentBusinessResult();
+  const competitionPressure = businessResult?.registryExact
+    ? saturationFromCount(businessResult.count, profile)
+    : profile.competition;
+  const riskScore = Math.max(5, Math.min(98, Math.round(
+    profile.rent * 0.38 + competitionPressure * 0.34 + (100 - profile.income) * 0.12 + (100 - profile.transit) * 0.08 + (100 - profile.density) * 0.08
+  )));
+
+  return [
+    {
+      name: "Demographic",
+      value: Math.round(profile.income * 0.38 + profile.density * 0.24 + profile.families * 0.14 + profile.student * 0.08 + profile.office * 0.16),
+      why: "FACT where Census is connected; otherwise profile estimate from the area model."
+    },
+    {
+      name: "Demand",
+      value: Math.round(profile.density * 0.28 + profile.transit * 0.24 + profile.office * 0.16 + profile.nightlife * 0.12 + profile.tourist * 0.1 + profile.student * 0.1),
+      why: "INFERENCE from density, transit, office, visitor, student, and nightlife demand signals."
+    },
+    {
+      name: "Competition",
+      value: Math.max(5, Math.min(100, 100 - Math.round(competitionPressure * 0.72))),
+      why: businessResult?.registryExact ? "FACT from live city records plus Google visibility." : "ESTIMATE until a live business check finishes."
+    },
+    {
+      name: "Location",
+      value: Math.round(profile.transit * 0.42 + profile.density * 0.28 + (100 - profile.rent) * 0.16 + profile.office * 0.14),
+      why: "INFERENCE from transit access, density, office pull, and rent pressure."
+    },
+    {
+      name: "Economic",
+      value: Math.round(profile.income * 0.5 + (100 - profile.rent) * 0.28 + profile.office * 0.12 + profile.chainFit * 0.1),
+      why: "ESTIMATE of purchasing power after rent pressure."
+    },
+    {
+      name: "Consumer interest",
+      value: topScore,
+      why: "INFERENCE from the highest category fit score and observed nearby demand signals."
+    },
+    {
+      name: "Risk",
+      value: riskScore,
+      why: "ESTIMATE where higher means more lease, saturation, or execution risk."
+    }
+  ];
+}
+
+function buildInstitutionalAnalysis(profile, recommendations) {
+  const businessResult = currentBusinessResult();
+  const liveProfile = Boolean(state.liveProfiles[state.zip]);
+  const liveBusiness = Boolean(businessResult?.registryExact);
+  const google = Boolean(businessResult?.googlePlaces);
+  const address = Boolean(state.location);
+  const sources = [
+    liveProfile && "Census ACS ZIP profile",
+    liveBusiness && "NYC Open Data observed business records",
+    google && "Google Places visibility",
+    address && "Exact address/radius context"
+  ].filter(Boolean);
+  const missing = [
+    !liveProfile && "Fresh Census ZIP demographics not loaded yet",
+    !liveBusiness && "Live observed competitor count not confirmed yet",
+    !google && "Google Places ratings/reviews not confirmed yet",
+    !address && "Exact storefront address, frontage, rent, and block visibility missing",
+    "True foot traffic, dwell time, parking, lease terms, and operator financials are not directly verified"
+  ].filter(Boolean);
+  const conflicts = [];
+  if (businessResult?.openDataCount > 0 && businessResult?.googleVisibleCount > 0) {
+    const ratio = Math.max(businessResult.openDataCount, businessResult.googleVisibleCount) / Math.max(1, Math.min(businessResult.openDataCount, businessResult.googleVisibleCount));
+    if (ratio >= 4) conflicts.push("City record count and Google-visible count differ materially; treat saturation as directional.");
+  }
+
+  const completeness = Math.max(20, Math.min(96, 35 + sources.length * 13 + (address ? 8 : 0) - conflicts.length * 8));
+  const freshness = Math.max(35, Math.min(95, 48 + (liveProfile ? 16 : 0) + (liveBusiness ? 17 : 0) + (google ? 14 : 0)));
+  const sourceQuality = Math.max(25, Math.min(95, 35 + sources.length * 14 - conflicts.length * 9));
+  const confidenceScore = Math.round(completeness * 0.34 + freshness * 0.28 + sourceQuality * 0.38);
+  const scores = analysisScores(profile, recommendations);
+  const top = recommendations[0];
+  const opportunityScore = Math.round((top.score * 0.46) + (scores.find((item) => item.name === "Demand").value * 0.22) + (scores.find((item) => item.name === "Economic").value * 0.14) + ((100 - scores.find((item) => item.name === "Risk").value) * 0.18));
+  const decision = confidenceScore < 70
+    ? "INSUFFICIENT DATA"
+    : opportunityScore >= 76
+      ? "YES"
+      : opportunityScore >= 58
+        ? "CONDITIONAL"
+        : "NO";
+  const riskScore = scores.find((item) => item.name === "Risk").value;
+  const failureBase = Math.max(12, Math.min(72, Math.round(78 - top.score * 0.48 + riskScore * 0.32 + (70 - confidenceScore) * 0.25)));
+  const revenueBase = {
+    "Specialty coffee": 85000,
+    "Boutique fitness": 95000,
+    "Fast casual lunch": 120000,
+    "Daycare / enrichment": 110000,
+    "Med spa / beauty clinic": 130000,
+    "Discount retail": 90000,
+    "Full-service restaurant": 165000,
+    "Laundry / wash-and-fold": 70000
+  }[top.name] || 85000;
+  const demandMultiplier = Math.max(0.55, Math.min(1.35, top.score / 75));
+
+  return {
+    rawData: [
+      `Location: ${state.location ? `${state.location.address} within ${state.location.radiusMiles} mi` : `ZIP ${state.zip} - ${profile.name}`}`,
+      `Demographics: density ${profile.density}/100, income ${profile.income}/100, families ${profile.families}/100, student ${profile.student}/100`,
+      `Mobility/demand: transit ${profile.transit}/100, office ${profile.office}/100, nightlife ${profile.nightlife}/100, tourist ${profile.tourist}/100`,
+      `Competition: ${businessResult?.registryExact ? `${businessResult.count.toLocaleString()} observed ${businessResult.business} records` : `modeled ZIP competition ${profile.competition}/100`}`,
+      `Real estate pressure: rent pressure ${profile.rent}/100`,
+      `Consumer signal: ${google ? `${businessResult.googleVisibleCount || 0} Google-visible matches` : "Google Places not confirmed yet"}`
+    ],
+    validation: {
+      completeness,
+      freshness,
+      sourceQuality,
+      confidenceScore,
+      sourceReliability: scoreQualityLabel(sourceQuality),
+      missing,
+      conflicts
+    },
+    scores,
+    opportunityScore,
+    confidenceScore,
+    decision,
+    summary: decision === "INSUFFICIENT DATA"
+      ? "INSUFFICIENT DATA: AreaIntel needs more independent evidence before a final lease recommendation."
+      : `${top.name} is the current highest-probability use, but the final answer still depends on the exact lease, frontage, operator strength, and block visibility.`,
+    topRecommendation: top,
+    alternatives: recommendations.slice(1, 4).map((item) => item.name),
+    scenarios: [
+      {
+        name: "BEST CASE",
+        traffic: "High repeat traffic with strong operator execution",
+        revenue: `${moneyRange(revenueBase * demandMultiplier * 0.95, revenueBase * demandMultiplier * 1.35)}/mo ESTIMATE`,
+        breakeven: "6-12 months ESTIMATE",
+        failure: `${Math.max(8, failureBase - 16)}% ESTIMATE`
+      },
+      {
+        name: "BASE CASE",
+        traffic: "Normal neighborhood demand with some direct competition",
+        revenue: `${moneyRange(revenueBase * demandMultiplier * 0.68, revenueBase * demandMultiplier * 1.02)}/mo ESTIMATE`,
+        breakeven: "12-24 months ESTIMATE",
+        failure: `${failureBase}% ESTIMATE`
+      },
+      {
+        name: "WORST CASE",
+        traffic: "Weak conversion, high rent drag, or saturated category",
+        revenue: `${moneyRange(revenueBase * demandMultiplier * 0.38, revenueBase * demandMultiplier * 0.65)}/mo ESTIMATE`,
+        breakeven: "24+ months or never ESTIMATE",
+        failure: `${Math.min(88, failureBase + 18)}% ESTIMATE`
+      }
+    ]
+  };
+}
+
+function renderInstitutionalAnalysis(profile, recommendations) {
+  const analysis = buildInstitutionalAnalysis(profile, recommendations);
+  elements.institutionalConfidence.textContent = `Confidence ${analysis.confidenceScore}/100 · ${analysis.validation.sourceReliability}`;
+  elements.insufficientData.hidden = analysis.confidenceScore >= 70;
+  elements.institutionalDecision.textContent = analysis.decision;
+  elements.institutionalSummary.textContent = analysis.summary;
+  elements.validationGrid.innerHTML = [
+    ["Completeness", `${analysis.validation.completeness}/100`],
+    ["Freshness", `${analysis.validation.freshness}/100`],
+    ["Source quality", `${analysis.validation.sourceQuality}/100`],
+    ["Confidence", `${analysis.confidenceScore}/100`]
+  ].map(([label, value]) => `<div><span>${label}</span><strong>${value}</strong></div>`).join("");
+  elements.scoreBreakdown.innerHTML = analysis.scores
+    .map((score) => `
+      <div class="score-row">
+        <div>
+          <strong>${score.name}</strong>
+          <small>${score.why}</small>
+        </div>
+        <span>${score.value}</span>
+      </div>
+    `)
+    .join("");
+  elements.scenarioAnalysis.innerHTML = analysis.scenarios
+    .map((scenario) => `
+      <div class="scenario-card">
+        <strong>${scenario.name}</strong>
+        <span>${scenario.revenue}</span>
+        <small>${scenario.traffic}; breakeven ${scenario.breakeven}; failure probability ${scenario.failure}.</small>
+      </div>
+    `)
+    .join("");
+  elements.rawDataList.innerHTML = analysis.rawData.map((item) => `<li>${escapeText(item)}</li>`).join("");
+  const missingItems = [...analysis.validation.missing, ...analysis.validation.conflicts];
+  elements.missingDataList.innerHTML = missingItems.map((item) => `<li>${escapeText(item)}</li>`).join("");
+}
+
 function renderDecisionStrip(profile, recommendations) {
   const businessResult = currentBusinessResult();
   const decision = decisionFor(profile, recommendations, businessResult);
@@ -1906,6 +2117,7 @@ async function renderBusinessCheck() {
       });
       const updatedRecommendations = buildRecommendations(profile);
       renderDecisionStrip(profile, updatedRecommendations);
+      renderInstitutionalAnalysis(profile, updatedRecommendations);
       renderCategoryList(updatedRecommendations);
       renderOpportunities(profile);
       elements.headline.textContent = headlineFor(updatedRecommendations, profile);
@@ -1925,6 +2137,7 @@ async function renderBusinessCheck() {
       });
       const updatedRecommendations = buildRecommendations(profile);
       renderDecisionStrip(profile, updatedRecommendations);
+      renderInstitutionalAnalysis(profile, updatedRecommendations);
       renderCategoryList(updatedRecommendations);
       renderOpportunities(profile);
       elements.headline.textContent = headlineFor(updatedRecommendations, profile);
@@ -1944,6 +2157,7 @@ async function renderBusinessCheck() {
     });
     const updatedRecommendations = buildRecommendations(profile);
     renderDecisionStrip(profile, updatedRecommendations);
+    renderInstitutionalAnalysis(profile, updatedRecommendations);
     renderCategoryList(updatedRecommendations);
     renderOpportunities(profile);
     elements.headline.textContent = headlineFor(updatedRecommendations, profile);
@@ -2056,6 +2270,7 @@ function render(zip) {
   elements.verdictGrade.textContent = verdictGrade(profile, recommendations);
   elements.verdictLabel.textContent = profile.rent > 82 ? "Good but risky" : "Tenant fit";
   renderDecisionStrip(profile, recommendations);
+  renderInstitutionalAnalysis(profile, recommendations);
   elements.customerProfile.innerHTML = profile.audience
     .map(
       ([label, copy]) => `
