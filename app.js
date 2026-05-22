@@ -421,6 +421,16 @@ const businessTypes = {
   }
 };
 
+const businessSuccessWeights = {
+  demand: 0.25,
+  customerFit: 0.2,
+  competition: 0.15,
+  financial: 0.15,
+  location: 0.1,
+  growth: 0.1,
+  risk: 0.05
+};
+
 const competitorCounts = {
   "10003": { restaurant: 150, deli: 24, pizza: 31, laundromat: 9, gym: 18, "smoke shop": 16, daycare: 8, cafe: 42 },
   "11201": { restaurant: 95, deli: 14, pizza: 19, laundromat: 7, gym: 15, "smoke shop": 7, daycare: 13, cafe: 29 },
@@ -1783,43 +1793,40 @@ function currentConceptFitResult() {
 }
 
 function decisionFor(profile, recommendations, businessResult) {
-  const topScore = recommendations[0]?.score || 50;
-  const observedCount = businessResult?.registryExact ? businessResult.count : null;
-  const hasLiveCompetition = typeof observedCount === "number";
-  const saturation = hasLiveCompetition ? saturationFromCount(observedCount, profile) : profile.competition;
-  const rentRisk = profile.rent >= 78;
-  const crowded = saturation >= 78;
+  const analysis = buildInstitutionalAnalysis(profile, recommendations);
+  const financial = analysis.scores.find((item) => item.name === "Financial viability")?.value || 50;
+  const risk = analysis.scores.find((item) => item.name === "Risk")?.value || 50;
 
-  if (topScore >= 72 && !rentRisk && !crowded) {
+  if (analysis.decision === "OPEN") {
     return {
-      answer: "Good area to pitch",
-      copy: "The area has enough demand signal and the competition/rent pressure is not flashing red.",
+      answer: "Open if lease checks out",
+      copy: `${titleCase(state.business)} has a ${analysis.successProbability}/100 success probability screen with enough evidence to support a qualified recommendation.`,
       next: "Price the lease",
       nextCopy: "Ask for rent, frontage, term, buildout cost, and expected monthly sales before final advice."
     };
   }
 
-  if (topScore >= 72 && (rentRisk || crowded)) {
+  if (analysis.decision === "INSUFFICIENT DATA") {
     return {
-      answer: "Good demand, high risk",
-      copy: "There is real customer demand, but rent pressure or saturation can hurt an average operator.",
-      next: "Verify operator strength",
-      nextCopy: "Only recommend it if the tenant has reviews, a niche, delivery strength, or pricing power."
+      answer: "Insufficient data",
+      copy: "AreaIntel does not have enough independent evidence yet to recommend this business for the area.",
+      next: "Load more evidence",
+      nextCopy: "Use an exact storefront address, check the business category, and verify lease terms before advising a client."
     };
   }
 
-  if (topScore >= 58) {
+  if (analysis.decision === "CONDITIONAL") {
     return {
-      answer: "Selective yes",
-      copy: "This can work for the right tenant, but it is not a broad green light for every operator.",
-      next: "Check the exact block",
-      nextCopy: "Walk the block, compare direct competitors, and confirm daytime/evening foot traffic."
+      answer: "Conditional",
+      copy: `Success probability is ${analysis.successProbability}/100, but financial viability (${financial}/100) or risk control (${risk}/100) needs more proof.`,
+      next: "Verify conditions",
+      nextCopy: "Confirm max rent, minimum revenue, exact block visibility, and operator strength."
     };
   }
 
   return {
-    answer: "Be careful",
-    copy: "The ZIP signal is weak or too uncertain for a confident recommendation.",
+    answer: "Don't open yet",
+    copy: `${titleCase(state.business)} does not currently clear the success threshold for this location.`,
     next: "Find a better fit",
     nextCopy: "Look for a stronger customer base, lower rent pressure, or a clearer gap in competition."
   };
@@ -1868,53 +1875,103 @@ function moneyRange(low, high) {
   return `$${Math.round(low).toLocaleString()}-${Math.round(high).toLocaleString()}`;
 }
 
-function analysisScores(profile, recommendations) {
-  const topScore = recommendations[0]?.score || 50;
+function clampScore(value) {
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function categoryFitForBusiness(business, profile) {
+  const direct = categoryModels.find((item) => item.business === business);
+  if (direct) return scoreCategory(profile, direct);
+  const config = modeledBusinessConfig(business);
+  return clampScore(config.baseDemand * 0.38 + profile.density * 0.18 + profile.transit * 0.14 + profile.localPreference * 0.14 + profile.income * 0.1 + (100 - profile.rent) * 0.06);
+}
+
+function competitionCondition(score) {
+  if (score >= 72) return "underserved";
+  if (score >= 48) return "balanced";
+  return "oversupplied";
+}
+
+function buildBusinessSuccessModel(profile, recommendations) {
   const businessResult = currentBusinessResult();
+  const civicResult = currentCivicResult();
+  const siteIntelResult = currentSiteIntelResult();
+  const business = normalizeBusiness(state.business);
+  const config = modeledBusinessConfig(business);
   const competitionPressure = businessResult?.registryExact
     ? saturationFromCount(businessResult.count, profile)
     : profile.competition;
-  const riskScore = Math.max(5, Math.min(98, Math.round(
-    profile.rent * 0.38 + competitionPressure * 0.34 + (100 - profile.income) * 0.12 + (100 - profile.transit) * 0.08 + (100 - profile.density) * 0.08
-  )));
+  const googleReviews = Number(businessResult?.googlePlaces?.reviewCount || 0);
+  const googleRating = Number(businessResult?.googlePlaces?.avgRating || 0);
+  const reviewMomentum = businessResult?.googlePlaces
+    ? clampScore(Math.min(100, Math.log10(googleReviews + 1) * 24 + googleRating * 7))
+    : 45;
+  const categoryFit = categoryFitForBusiness(business, profile);
+  const civicPenalty = civicResult?.complaints?.level === "High" ? 9 : civicResult?.complaints?.level === "Moderate" ? 4 : 0;
+  const permitBoost = civicResult?.permits?.level === "Heavy" ? 10 : civicResult?.permits?.level === "Active" ? 6 : 2;
+  const propertyBoost = siteIntelResult?.pluto?.retailArea > 500000 ? 6 : siteIntelResult?.pluto?.retailArea > 150000 ? 3 : 0;
+  const transitBoost = siteIntelResult?.mta?.available && siteIntelResult.mta.totalDecember2024Ridership > 250000 ? 8 : 0;
+  const demandScore = clampScore(profile.density * 0.2 + profile.transit * 0.16 + profile.office * 0.1 + profile.nightlife * 0.08 + profile.tourist * 0.06 + profile.student * 0.06 + config.baseDemand * 0.2 + reviewMomentum * 0.14);
+  const customerFitScore = clampScore(profile.income * 0.24 + profile.families * 0.14 + profile.student * 0.08 + profile.office * 0.12 + profile.localPreference * 0.16 + profile.chainFit * 0.1 + categoryFit * 0.16);
+  const competitionScore = clampScore(100 - competitionPressure * 0.78 + (businessResult?.googlePlaces?.avgRating >= 4.5 ? 4 : 0));
+  const locationScore = clampScore(profile.transit * 0.34 + profile.density * 0.22 + profile.office * 0.12 + (100 - profile.rent) * 0.1 + propertyBoost + transitBoost + (state.location ? 6 : 0));
+  const financialScore = clampScore(profile.income * 0.32 + (100 - profile.rent) * 0.32 + (100 - config.rentSensitivity) * 0.12 + categoryFit * 0.14 + profile.chainFit * 0.1);
+  const growthScore = clampScore(45 + permitBoost + propertyBoost + profile.office * 0.12 + profile.density * 0.1 + profile.transit * 0.08);
+  const riskRaw = clampScore(profile.rent * 0.34 + competitionPressure * 0.32 + (100 - profile.income) * 0.1 + (100 - profile.transit) * 0.08 + civicPenalty + (!state.location ? 6 : 0));
+  const riskScore = clampScore(100 - riskRaw);
+  const successProbability = clampScore(
+    demandScore * businessSuccessWeights.demand +
+      customerFitScore * businessSuccessWeights.customerFit +
+      competitionScore * businessSuccessWeights.competition +
+      financialScore * businessSuccessWeights.financial +
+      locationScore * businessSuccessWeights.location +
+      growthScore * businessSuccessWeights.growth +
+      riskScore * businessSuccessWeights.risk
+  );
 
-  return [
-    {
-      name: "Demographic",
-      value: Math.round(profile.income * 0.38 + profile.density * 0.24 + profile.families * 0.14 + profile.student * 0.08 + profile.office * 0.16),
-      why: "FACT where Census is connected; otherwise profile estimate from the area model."
-    },
+  return {
+    business,
+    config,
+    competitionPressure,
+    condition: competitionCondition(competitionScore),
+    successProbability,
+    scores: [
     {
       name: "Demand",
-      value: Math.round(profile.density * 0.28 + profile.transit * 0.24 + profile.office * 0.16 + profile.nightlife * 0.12 + profile.tourist * 0.1 + profile.student * 0.1),
-      why: "INFERENCE from density, transit, office, visitor, student, and nightlife demand signals."
+      value: demandScore,
+      why: "FACT/INFERENCE from category demand, existing activity, Google review momentum, density, transit, office, tourism, nightlife, and student signals."
+    },
+    {
+      name: "Customer fit",
+      value: customerFitScore,
+      why: "FACT/INFERENCE from population profile, income, households, education proxy, lifestyle fit, local preference, and business category compatibility."
     },
     {
       name: "Competition",
-      value: Math.max(5, Math.min(100, 100 - Math.round(competitionPressure * 0.72))),
-      why: businessResult?.registryExact ? "FACT from live city records plus Google visibility." : "ESTIMATE until a live business check finishes."
+      value: competitionScore,
+      why: `${businessResult?.registryExact ? "FACT from live city records plus Google visibility" : "ESTIMATE until live business check finishes"}; market appears ${competitionCondition(competitionScore)}.`
     },
     {
-      name: "Location",
-      value: Math.round(profile.transit * 0.42 + profile.density * 0.28 + (100 - profile.rent) * 0.16 + profile.office * 0.14),
-      why: "INFERENCE from transit access, density, office pull, and rent pressure."
+      name: "Location quality",
+      value: locationScore,
+      why: "INFERENCE from transit access, walkability proxy, street density, office pull, retail property area, and exact-address context when provided."
     },
     {
-      name: "Economic",
-      value: Math.round(profile.income * 0.5 + (100 - profile.rent) * 0.28 + profile.office * 0.12 + profile.chainFit * 0.1),
-      why: "ESTIMATE of purchasing power after rent pressure."
+      name: "Financial viability",
+      value: financialScore,
+      why: "ESTIMATE from rent pressure, income support, category rent sensitivity, margin potential, and likely operating difficulty."
     },
     {
-      name: "Consumer interest",
-      value: topScore,
-      why: "INFERENCE from the highest category fit score and observed nearby demand signals."
+      name: "Area momentum",
+      value: growthScore,
+      why: "FACT/INFERENCE from permits, construction/development signal, property base, density, transit access, and local economic activity."
     },
     {
       name: "Risk",
       value: riskScore,
-      why: "ESTIMATE where higher means more lease, saturation, or execution risk."
+      why: "ESTIMATE where higher means safer risk-adjusted conditions after rent, saturation, civic complaints, transit weakness, and ZIP-level uncertainty."
     }
-  ];
+  ]};
 }
 
 function buildInstitutionalAnalysis(profile, recommendations) {
@@ -1961,10 +2018,11 @@ function buildInstitutionalAnalysis(profile, recommendations) {
   const freshness = Math.max(35, Math.min(95, 44 + (liveProfile ? 10 : 0) + (liveBusiness ? 11 : 0) + (google ? 9 : 0) + (civic ? 9 : 0) + (siteIntel ? 9 : 0) + (concepts ? 7 : 0)));
   const sourceQuality = Math.max(25, Math.min(95, 30 + sources.length * 9 - conflicts.length * 8));
   const confidenceScore = Math.round(completeness * 0.34 + freshness * 0.28 + sourceQuality * 0.38);
-  const scores = analysisScores(profile, recommendations);
+  const successModel = buildBusinessSuccessModel(profile, recommendations);
+  const scores = successModel.scores;
   const riskScoreItem = scores.find((item) => item.name === "Risk");
   if (civicResult?.complaints?.level === "High") {
-    riskScoreItem.value = Math.min(98, riskScoreItem.value + 8);
+    riskScoreItem.value = Math.max(0, riskScoreItem.value - 8);
     riskScoreItem.why = `${riskScoreItem.why} FACT: 311 volume is high in the selected area.`;
   }
   if (siteIntelResult?.mta?.available && siteIntelResult.mta.totalDecember2024Ridership > 250000) {
@@ -1973,47 +2031,57 @@ function buildInstitutionalAnalysis(profile, recommendations) {
     demand.why = `${demand.why} FACT: nearby MTA ridership is strong.`;
   }
   if (siteIntelResult?.pluto?.retailArea > 500000) {
-    const location = scores.find((item) => item.name === "Location");
+    const location = scores.find((item) => item.name === "Location quality");
     location.value = Math.min(100, location.value + 5);
     location.why = `${location.why} FACT: PLUTO shows meaningful retail square footage in the ZIP.`;
   }
-  const top = recommendations[0];
-  const opportunityScore = Math.round((top.score * 0.46) + (scores.find((item) => item.name === "Demand").value * 0.22) + (scores.find((item) => item.name === "Economic").value * 0.14) + ((100 - scores.find((item) => item.name === "Risk").value) * 0.18));
+  const opportunityScore = clampScore(
+    scores.find((item) => item.name === "Demand").value * businessSuccessWeights.demand +
+      scores.find((item) => item.name === "Customer fit").value * businessSuccessWeights.customerFit +
+      scores.find((item) => item.name === "Competition").value * businessSuccessWeights.competition +
+      scores.find((item) => item.name === "Financial viability").value * businessSuccessWeights.financial +
+      scores.find((item) => item.name === "Location quality").value * businessSuccessWeights.location +
+      scores.find((item) => item.name === "Area momentum").value * businessSuccessWeights.growth +
+      scores.find((item) => item.name === "Risk").value * businessSuccessWeights.risk
+  );
   const decision = confidenceScore < 70
     ? "INSUFFICIENT DATA"
-    : opportunityScore >= 76
-      ? "YES"
+    : opportunityScore >= 76 && scores.find((item) => item.name === "Financial viability").value >= 55 && scores.find((item) => item.name === "Risk").value >= 45
+      ? "OPEN"
       : opportunityScore >= 58
         ? "CONDITIONAL"
-        : "NO";
+        : "DON'T OPEN";
   const riskScore = scores.find((item) => item.name === "Risk").value;
-  const failureBase = Math.max(12, Math.min(72, Math.round(78 - top.score * 0.48 + riskScore * 0.32 + (70 - confidenceScore) * 0.25)));
+  const failureBase = Math.max(12, Math.min(82, Math.round(84 - opportunityScore * 0.55 + (100 - riskScore) * 0.28 + Math.max(0, 70 - confidenceScore) * 0.25)));
   const revenueBase = {
-    "Specialty coffee": 85000,
-    "Boutique fitness": 95000,
-    "Fast casual lunch": 120000,
-    "Daycare / enrichment": 110000,
-    "Med spa / beauty clinic": 130000,
-    "Discount retail": 90000,
-    "Full-service restaurant": 165000,
-    "Laundry / wash-and-fold": 70000
-  }[top.name] || 85000;
-  const demandMultiplier = Math.max(0.55, Math.min(1.35, top.score / 75));
-  const maxRentShare = profile.rent >= 82 ? "6-8% of projected sales" : profile.rent >= 65 ? "8-10% of projected sales" : "10-12% of projected sales";
+    restaurant: 165000,
+    pizza: 105000,
+    deli: 90000,
+    cafe: 85000,
+    laundromat: 70000,
+    gym: 95000,
+    daycare: 110000,
+    "smoke shop": 65000
+  }[successModel.business] || 85000;
+  const demandMultiplier = Math.max(0.5, Math.min(1.35, opportunityScore / 75));
+  const maxRentShare = profile.rent >= 82 || successModel.config.rentSensitivity >= 76 ? "6-8% of projected sales" : profile.rent >= 65 ? "8-10% of projected sales" : "10-12% of projected sales";
   const requiredTraffic = profile.transit >= 80 || state.location ? "prove block-level walk-in traffic during lunch, evening, and weekend windows" : "prove repeat local customer demand because transit pull is limited";
-  const marginCondition = top.name.includes("Restaurant") || top.name.includes("lunch")
+  const marginCondition = ["restaurant", "pizza", "deli", "cafe"].includes(successModel.business)
     ? "restaurant concept must show labor, food cost, delivery, and rent economics before recommendation"
     : "tenant must show enough gross margin to survive slow months and marketing ramp";
   const conditions = [
     `Max rent: ${maxRentShare} ESTIMATE`,
+    `Minimum revenue: ${moneyRange(revenueBase * demandMultiplier * 0.68, revenueBase * demandMultiplier * 1.02)}/mo base-case ESTIMATE`,
+    `Target customer: ${profile.audience?.[2]?.[1] || "local customers that match the business category"}`,
+    `Store size: use the lease calculator; smaller footprint is safer when rent pressure is high`,
+    `Operational assumptions: ${marginCondition}`,
     `Minimum demand: ${requiredTraffic}`,
-    `Margins: ${marginCondition}`,
     "Operator quality: reviews, credit, execution history, and differentiation must be verified",
     "Site diligence: confirm frontage, signage, venting, loading, ADA, zoning/use, and lease term"
   ];
   const topRisks = [
     profile.rent >= 78 && "High rent pressure can erase demand advantage",
-    (businessResult?.registryExact ? saturationFromCount(businessResult.count, profile) : profile.competition) >= 78 && "Direct competition or saturation is elevated",
+    successModel.competitionPressure >= 78 && `Direct competition is ${successModel.condition}; saturation is elevated`,
     !address && "ZIP-level view may hide weak side-street conditions",
     !google && "Google review/rating visibility is not confirmed",
     civicResult?.complaints?.level === "High" && "Recent complaint volume is high",
@@ -2040,7 +2108,7 @@ function buildInstitutionalAnalysis(profile, recommendations) {
     {
       type: "INFERENCE",
       items: [
-        `Demand is inferred from density, transit, office pull, nightlife, tourism, student, and family indicators.`,
+        `${titleCase(successModel.business)} demand is inferred from density, transit, office pull, nightlife, tourism, student, customer profile, category demand, and review momentum.`,
         `Competition pressure is inferred by comparing observed business records, Google visibility, and category saturation.`,
         `Local-vs-chain fit is inferred from income, renter profile, category type, and observed market structure.`
       ]
@@ -2050,13 +2118,14 @@ function buildInstitutionalAnalysis(profile, recommendations) {
       items: [
         `Scenario revenue and failure probability are screening estimates, not verified operator financials.`,
         `Max rent guidance is estimated from category economics and area rent pressure.`,
-        `Opportunity score is an evidence-weighted estimate and must be rechecked against the exact lease and storefront.`
+        `Success probability is weighted as Demand 25%, Customer Fit 20%, Competition 15%, Financial 15%, Location 10%, Growth 10%, Risk 5%.`
       ]
     }
   ];
 
   return {
     rawData: [
+      `Business: ${titleCase(successModel.business)}`,
       `Location: ${state.location ? `${state.location.address} within ${state.location.radiusMiles} mi` : `ZIP ${state.zip} - ${profile.name}`}`,
       `Demographics: density ${profile.density}/100, income ${profile.income}/100, families ${profile.families}/100, student ${profile.student}/100`,
       `Mobility/demand: transit ${profile.transit}/100, office ${profile.office}/100, nightlife ${profile.nightlife}/100, tourist ${profile.tourist}/100`,
@@ -2077,13 +2146,20 @@ function buildInstitutionalAnalysis(profile, recommendations) {
     },
     scores,
     opportunityScore,
+    successProbability: opportunityScore,
     confidenceScore,
     decision,
     summary: decision === "INSUFFICIENT DATA"
       ? "INSUFFICIENT DATA: AreaIntel needs more independent evidence before a final lease recommendation."
-      : `${top.name} is the current highest-probability use, but the final answer still depends on the exact lease, frontage, operator strength, and block visibility.`,
-    topRecommendation: top,
-    alternatives: recommendations.slice(1, 4).map((item) => item.name),
+      : `${titleCase(successModel.business)} has a ${opportunityScore}/100 success probability screen in this area. Final advice still depends on exact rent, frontage, operator strength, and block visibility.`,
+    topRecommendation: {
+      name: titleCase(successModel.business),
+      score: opportunityScore
+    },
+    alternatives: recommendations
+      .filter((item) => item.business !== successModel.business)
+      .slice(0, 5)
+      .map((item) => `${item.name} (${item.score}/100): ${item.note}`),
     explainability,
     conditions,
     topRisks,
@@ -2516,7 +2592,7 @@ function exportSummary() {
     "",
     "AreaIntel engine:",
     `Decision: ${analysis.decision}`,
-    `Overall opportunity score: ${analysis.opportunityScore}/100`,
+    `Success probability: ${analysis.successProbability}/100`,
     `Confidence score: ${analysis.confidenceScore}/100`,
     `Top recommendation: ${analysis.topRecommendation.name} (${analysis.topRecommendation.score}/100)`,
     `Summary: ${analysis.summary}`,
@@ -2564,7 +2640,7 @@ function exportSummary() {
     "Agent talking points:",
     ...profile.talkingPoints.map((item) => `- ${item}`),
     "",
-    "Top categories:",
+    "Alternative businesses:",
     ...recommendations.slice(0, 5).map((item) => `- ${item.name}: ${item.score} (${item.band})`),
     "",
     "Profit note:",
