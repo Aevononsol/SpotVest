@@ -3522,3 +3522,242 @@ body {
     border-radius: 16px !important;
   }
 }
+
+/* Stabilization pass: readable premium report surface, no washed-out cards. */
+body {
+  background: #e8eef2 !important;
+  color: #101827 !important;
+}
+
+.workspace {
+  background: #f3f7fa !important;
+}
+
+.results,
+.start-screen {
+  background: linear-gradient(180deg, #eef5f7 0%, #e8eef2 100%) !important;
+  color: #101827 !important;
+}
+
+.panel,
+.summary-grid article,
+.decision-strip article,
+.verdict-panel,
+.institutional-grid article,
+.analysis-columns article,
+.unknown-factors,
+.places-list article,
+.opportunity-item,
+.category-item,
+.profile-row,
+.civic-grid article,
+.site-intel-grid article,
+.market-grid article,
+.lease-card,
+.memo-box,
+.empty-places {
+  background: #ffffff !important;
+  color: #101827 !important;
+  border: 1px solid #d7e1e8 !important;
+  box-shadow: 0 14px 32px rgba(15, 23, 42, 0.08) !important;
+}
+
+.panel-header {
+  background: #f4f8fa !important;
+  color: #101827 !important;
+  border-bottom: 1px solid #d7e1e8 !important;
+}
+
+.section-label,
+.signal-label,
+.panel-note,
+.decision-strip p,
+.summary-grid p,
+.institutional-grid p,
+.analysis-columns p,
+.compact-list,
+.empty-places p,
+.score-row small,
+.scenario-card small,
+.trust-note {
+  color: #526170 !important;
+}
+
+input,
+select,
+textarea {
+  background: #ffffff !important;
+  color: #101827 !important;
+  border-color: #c7d4dd !important;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #7a8996 !important;
+}
+
+.sidebar input,
+.sidebar select,
+.sidebar textarea {
+  background: #f8fbfc !important;
+  color: #101827 !important;
+}
+
+.zip-row button,
+.address-row button,
+.ghost-button,
+.memo-button,
+.business-form button,
+.lease-form button,
+.sidebar button,
+.sidebar .zip-row button,
+.sidebar .address-row button,
+.sidebar .business-form button {
+  background: linear-gradient(145deg, #0e7490, #155e75) !important;
+  border-color: #0e7490 !important;
+  color: #ffffff !important;
+  box-shadow: 0 12px 26px rgba(14, 116, 144, 0.22) !important;
+}
+
+.decision-strip {
+  display: grid !important;
+  grid-template-columns: minmax(280px, 1.35fr) repeat(3, minmax(180px, 1fr)) !important;
+  gap: 14px !important;
+}
+
+.decision-strip article {
+  min-height: auto !important;
+  padding: 20px !important;
+}
+
+.decision-main-card {
+  border-color: #a9ccd6 !important;
+  background: linear-gradient(145deg, #f8fcfd, #e7f2f5) !important;
+}
+
+.decision-badge {
+  display: inline-flex !important;
+  width: fit-content !important;
+  max-width: 100% !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 10px 14px !important;
+  border-radius: 12px !important;
+  font-size: clamp(1.55rem, 3vw, 2.4rem) !important;
+  line-height: 1 !important;
+  font-weight: 950 !important;
+  letter-spacing: 0 !important;
+  white-space: normal !important;
+}
+
+.decision-open {
+  background: #dff5ea !important;
+  color: #075e3a !important;
+}
+
+.decision-conditional {
+  background: #e8f3f7 !important;
+  color: #075f76 !important;
+}
+
+.decision-do-not-open {
+  background: #f9e4df !important;
+  color: #963226 !important;
+}
+
+.decision-needs-more-data {
+  background: #eef2f6 !important;
+  color: #334155 !important;
+}
+
+.business-checker {
+  gap: 12px !important;
+}
+
+.business-results {
+  grid-template-columns: minmax(190px, 0.75fr) repeat(3, minmax(180px, 1fr)) !important;
+  gap: 12px !important;
+}
+
+.business-results article {
+  min-height: 132px !important;
+  padding: 16px !important;
+  overflow: visible !important;
+}
+
+.business-count {
+  background: linear-gradient(145deg, #143044, #0e7490) !important;
+  color: #ffffff !important;
+  text-align: center !important;
+}
+
+.business-count > span {
+  display: block !important;
+  max-width: 100% !important;
+  color: #ffffff !important;
+  font-size: clamp(2.1rem, 4vw, 3.5rem) !important;
+  line-height: 0.95 !important;
+  overflow-wrap: anywhere !important;
+}
+
+.business-count small,
+.business-count .source-tags span {
+  color: rgba(255, 255, 255, 0.92) !important;
+}
+
+.source-tags span {
+  background: rgba(255, 255, 255, 0.16) !important;
+}
+
+.score-row,
+.scenario-card {
+  background: #f7fafc !important;
+  border: 1px solid #dbe5eb !important;
+  color: #101827 !important;
+}
+
+.score-row span {
+  background: #0e7490 !important;
+  color: #ffffff !important;
+}
+
+.scenario-card span {
+  color: #172133 !important;
+  font-weight: 800 !important;
+}
+
+.concept-fit-panel .empty-places,
+.concept-fallback {
+  background: #f7fafc !important;
+  color: #101827 !important;
+  border: 1px solid #dbe5eb !important;
+}
+
+.methodology-details,
+.advanced-tools {
+  background: #ffffff !important;
+  border-color: #d7e1e8 !important;
+}
+
+@media (max-width: 1060px) {
+  .business-results,
+  .decision-strip {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+@media (max-width: 680px) {
+  .decision-strip article,
+  .panel,
+  .summary-grid article,
+  .verdict-panel,
+  .institutional-grid article,
+  .analysis-columns article,
+  .unknown-factors {
+    padding: 16px !important;
+  }
+
+  .business-count > span {
+    font-size: clamp(2rem, 12vw, 3.1rem) !important;
+  }
+}

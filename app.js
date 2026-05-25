@@ -902,7 +902,7 @@ function renderMarketMap() {
       place.lat,
       place.lng,
       "competitor-marker",
-      `<strong>${place.name}</strong><br>${place.rating || "No"} rating · ${Number(place.reviews || 0).toLocaleString()} reviews`
+      `<strong>${place.name}</strong><br>${safeNumber(place.rating) === null ? "No" : safeNumber(place.rating)} rating · ${formatInteger(place.reviews, "0")} reviews`
     );
   });
 
@@ -913,7 +913,7 @@ function renderMarketMap() {
         lease.lat,
         lease.lng,
         "lease-marker",
-        `<strong>${lease.address}</strong><br>${lease.sf ? `${Number(lease.sf).toLocaleString()} SF` : "SF unknown"} · ${lease.rent ? `$${Number(lease.rent).toLocaleString()}/mo` : "Cost unknown"}`
+        `<strong>${lease.address}</strong><br>${safeNumber(lease.sf) === null ? "SF unknown" : `${formatInteger(lease.sf)} SF`} · ${safeNumber(lease.rent) === null ? "Cost unknown" : `${formatCurrency(lease.rent)}/mo`}`
       );
     });
 
@@ -968,11 +968,12 @@ function profileForZip(zip) {
 function enrichProfileWithCensus(baseProfile, census) {
   if (!census || census.error) return baseProfile;
 
-  const medianIncome = census.medianIncome ? `$${Math.round(census.medianIncome).toLocaleString()}` : "not available";
-  const medianRent = census.medianRent ? `$${Math.round(census.medianRent).toLocaleString()}` : "not available";
-  const renterShare = census.renterShare !== null && census.renterShare !== undefined ? `${census.renterShare}%` : "not available";
-  const bachelorShare = census.bachelorShare !== null && census.bachelorShare !== undefined ? `${census.bachelorShare}%` : "not available";
-  const medianAge = census.medianAge ? `${Math.round(census.medianAge)}` : "not available";
+  const medianIncome = safeNumber(census.medianIncome) !== null ? formatCurrency(census.medianIncome) : "not available";
+  const medianRent = safeNumber(census.medianRent) !== null ? formatCurrency(census.medianRent) : "not available";
+  const renterShare = safeNumber(census.renterShare) !== null ? `${Math.round(safeNumber(census.renterShare))}%` : "not available";
+  const bachelorShare = safeNumber(census.bachelorShare) !== null ? `${Math.round(safeNumber(census.bachelorShare))}%` : "not available";
+  const medianAgeValue = safeNumber(census.medianAge);
+  const medianAge = medianAgeValue !== null ? `${Math.round(medianAgeValue)}` : "not available";
 
   return {
     ...baseProfile,
@@ -986,13 +987,13 @@ function enrichProfileWithCensus(baseProfile, census) {
     affluenceLabel: `market demographics profile with median income ${medianIncome}, median age ${medianAge}, and renter share ${renterShare}`,
     audience: [
       ["Money profile", `Median household income is ${medianIncome}; median gross rent is ${medianRent}.`],
-      ["Household profile", `Population is ${census.population?.toLocaleString() || "not available"} with ${census.households?.toLocaleString() || "not available"} households and ${renterShare} renter occupancy.`],
+      ["Household profile", `Population is ${formatInteger(census.population, "not available")} with ${formatInteger(census.households, "not available")} households and ${renterShare} renter occupancy.`],
       ["Education / age", `Median age is ${medianAge}; bachelor-plus education share is ${bachelorShare}.`]
     ],
     evidence: [
       `Market Demographics: median household income ${medianIncome}.`,
       `Market Demographics: renter share ${renterShare}, median gross rent ${medianRent}.`,
-      `Market Demographics: population ${census.population?.toLocaleString() || "not available"}, median age ${medianAge}.`
+      `Market Demographics: population ${formatInteger(census.population, "not available")}, median age ${medianAge}.`
     ],
     verdict: `${baseProfile.verdict} Market demographics are now connected for income, age, households, rent, renter profile, and education.`
   };
@@ -1036,13 +1037,13 @@ function opportunityCompetition(zip, business, profile, options = {}) {
 
 function scoreCategory(profile, model, options = {}) {
   const raw = Object.entries(model.weights).reduce((total, [metric, weight]) => {
-    return total + ((profile[metric] || 50) - 50) * weight * 2.25;
+    return total + (safeNumber(profile[metric], 50) - 50) * weight * 2.25;
   }, 56);
 
   const competition = opportunityCompetition(state.zip, model.business, profile, options);
   const localFit = model.business === "restaurant"
-    ? Math.round((profile.nightlife + profile.transit + profile.density - profile.rent * 0.45) / 3)
-    : Math.round((profile.localPreference + profile.density - profile.rent * 0.35) / 2.2);
+    ? Math.round((safeNumber(profile.nightlife, 50) + safeNumber(profile.transit, 50) + safeNumber(profile.density, 50) - safeNumber(profile.rent, 50) * 0.45) / 3)
+    : Math.round((safeNumber(profile.localPreference, 50) + safeNumber(profile.density, 50) - safeNumber(profile.rent, 50) * 0.35) / 2.2);
   const contextAdjustment = Math.max(-8, Math.min(8, Math.round((localFit - 50) / 8)));
 
   return Math.max(5, Math.min(98, Math.round(raw + competition.adjustment + contextAdjustment)));
@@ -1106,9 +1107,9 @@ function estimateCompetitors(zip, business, profile, config) {
 }
 
 function estimateMonthlyProfit(item, profile) {
-  const demandFactor = item.score / 100;
-  const incomeFactor = Math.max(0.75, profile.income / 80);
-  const rentDrag = Math.max(0.68, 1 - profile.rent / 260);
+  const demandFactor = safeNumber(item.score, 50) / 100;
+  const incomeFactor = Math.max(0.75, safeNumber(profile.income, 55) / 80);
+  const rentDrag = Math.max(0.68, 1 - safeNumber(profile.rent, 60) / 260);
   const baseRevenue = {
     "Specialty coffee": 85000,
     "Boutique fitness": 95000,
@@ -1132,7 +1133,7 @@ function estimateMonthlyProfit(item, profile) {
   const monthlyProfit = baseRevenue * demandFactor * incomeFactor * rentDrag * margin;
   const low = Math.max(2500, Math.round((monthlyProfit * 0.72) / 500) * 500);
   const high = Math.max(low + 1500, Math.round((monthlyProfit * 1.28) / 500) * 500);
-  return `$${low.toLocaleString()}-${high.toLocaleString()}/mo`;
+  return `${moneyRange(low, high)}/mo`;
 }
 
 function sourceTagsForResult(result, isLive) {
@@ -1156,7 +1157,7 @@ function demandMomentumLabel(result) {
 
 function demandMomentumScore(result) {
   const signal = demandMomentumForResult(result);
-  return signal ? Number(signal.momentumScore || 50) : 50;
+  return signal ? safeNumber(signal.momentumScore, 50) : 50;
 }
 
 function scoreDrivers(profile, item) {
@@ -1190,7 +1191,8 @@ function renderOpportunities(profile) {
     .map((item) => {
       const profit = estimateMonthlyProfit(item, profile);
       const competition = opportunityCompetition(state.zip, item.business, profile);
-      const risk = item.score >= 72 ? "Good fit" : item.score >= 58 ? "Selective" : "Risky";
+      const score = clampScore(item.score);
+      const risk = score >= 72 ? "Good fit" : score >= 58 ? "Selective" : "Risky";
       const scoreType = competition.source.includes("verified") ? "signal-adjusted" : "area-adjusted";
       const confidence = competition.source.includes("verified") ? "Confidence: medium/high" : "Confidence: low/medium";
       return `
@@ -1202,7 +1204,7 @@ function renderOpportunities(profile) {
           </div>
           <div class="opportunity-metrics">
             <strong>${profit}</strong>
-            <span>${risk} · ${scoreType} score ${item.score}</span>
+            <span>${risk} · ${scoreType} score ${formatBadgeScore(score)}</span>
             <span>${confidence}</span>
           </div>
         </article>
@@ -1229,7 +1231,7 @@ function renderCategoryList(recommendations) {
             <h4>${item.name}</h4>
             <p>${item.note}</p>
           </div>
-          <div class="score ${item.band}" aria-label="${item.band} fit score">${item.score}</div>
+          <div class="score ${item.band}" aria-label="${item.band} fit score">${formatBadgeScore(item.score)}</div>
         </article>
       `
     )
@@ -1266,8 +1268,8 @@ function renderTopPlaces(result) {
             <h4>${place.name}</h4>
             <p>${place.address || "Address unavailable"}</p>
             <div class="place-meta">
-              <span>${place.rating ? `${place.rating} rating` : "No rating"}</span>
-              <span>${place.reviews?.toLocaleString() || 0} reviews</span>
+              <span>${safeNumber(place.rating) === null ? "No rating" : `${safeNumber(place.rating)} rating`}</span>
+              <span>${formatInteger(place.reviews, "0")} reviews</span>
               <span>${place.chain ? "Chain" : "Likely local"}</span>
             </div>
             <small>${tenure}</small>
@@ -1450,10 +1452,11 @@ function renderConceptFit(data) {
     : "Competitive Signals";
 
   if (!concepts.length) {
+    state.lastConceptFitResult = null;
     elements.conceptFitList.innerHTML = `
-      <article class="empty-places">
-        <strong>No concept signal returned</strong>
-        <p>Try checking a specific restaurant type in the Business Checker.</p>
+      <article class="empty-places concept-fallback">
+        <strong>Concept-specific market data is limited.</strong>
+        <p>AreaIntel used broader market and competition signals instead.</p>
       </article>
     `;
     return;
@@ -1468,10 +1471,10 @@ function renderConceptFit(data) {
         <div>
           <span class="signal-label">${escapeText(concept.verdict)}</span>
           <h4>${escapeText(concept.label)}</h4>
-          <p>${concept.verdict} competitive intensity${concept.avgRating ? ` · ${concept.avgRating} average rating signal` : ""}</p>
+          <p>${escapeText(concept.verdict || "Needs more data")} competitive intensity${safeNumber(concept.avgRating) !== null ? ` · ${safeNumber(concept.avgRating).toFixed(1)} average rating signal` : ""}</p>
           <small>Visible examples: ${topNames}</small>
         </div>
-        <strong>${concept.score}</strong>
+        <strong>${formatBadgeScore(concept.score)}</strong>
       </article>
     `;
   }).join("");
@@ -1508,11 +1511,11 @@ async function renderRestaurantConceptFit() {
   } catch {
     if (requestId !== state.conceptRequestId) return;
     state.lastConceptFitResult = null;
-    elements.conceptSource.textContent = "Unavailable";
+    elements.conceptSource.textContent = "Broader signals";
     elements.conceptFitList.innerHTML = `
-      <article class="empty-places">
-        <strong>Concept fit unavailable</strong>
-        <p>Competitive and local activity signals did not return concept data right now.</p>
+      <article class="empty-places concept-fallback">
+        <strong>Concept-specific market data is limited.</strong>
+        <p>AreaIntel used broader market and competition signals instead.</p>
       </article>
     `;
   }
@@ -1537,7 +1540,7 @@ function renderSiteIntelLoading() {
 }
 
 function numberLabel(value) {
-  return Number(value || 0).toLocaleString();
+  return formatInteger(value, "0");
 }
 
 function renderSiteIntelligence(data) {
@@ -1601,8 +1604,8 @@ function saveLeases() {
 }
 
 function rentPerSfMonthly(lease) {
-  const rent = Number(lease.rent || 0);
-  const sf = Number(lease.sf || 0);
+  const rent = safeNumber(lease.rent, 0);
+  const sf = safeNumber(lease.sf, 0);
   return rent > 0 && sf > 0 ? rent / sf : null;
 }
 
@@ -1640,10 +1643,10 @@ function leaseConceptModel(lease) {
 }
 
 function leaseFitMath(lease, profile) {
-  const rent = Number(lease.rent || 0);
-  const sf = Number(lease.sf || 0);
-  const sales = Number(lease.sales || 0);
-  const buildout = Number(lease.buildout || 0);
+  const rent = safeNumber(lease.rent, 0);
+  const sf = safeNumber(lease.sf, 0);
+  const sales = safeNumber(lease.sales, 0);
+  const buildout = safeNumber(lease.buildout, 0);
   const model = leaseConceptModel(lease);
   const [targetLow, targetHigh] = model.rentShare;
   const neededSalesLow = rent > 0 ? Math.round(rent / targetHigh) : 0;
@@ -1861,22 +1864,23 @@ function renderLeases() {
       const perSf = rentPerSfMonthly(lease);
       const fit = leaseFitLabel(lease, profile);
       const math = leaseFitMath(lease, profile);
-      const rent = Number(lease.rent || 0);
-      const sf = Number(lease.sf || 0);
+      const rent = safeNumber(lease.rent, 0);
+      const sf = safeNumber(lease.sf, 0);
       const link = lease.link
         ? `<a href="${lease.link}" target="_blank" rel="noreferrer">Open source</a>`
         : "";
-      const neededSales = math.neededSalesLow && math.neededSalesHigh
-        ? `$${math.neededSalesLow.toLocaleString()}-${math.neededSalesHigh.toLocaleString()}/mo`
+      const neededSales = safeNumber(math.neededSalesLow) !== null && safeNumber(math.neededSalesHigh) !== null
+        ? `${moneyRange(math.neededSalesLow, math.neededSalesHigh)}/mo`
         : "Enter rent";
-      const ratio = math.salesRatio !== null ? `${Math.round(math.salesRatio * 100)}% of sales` : "Add sales estimate";
-      const perSfYear = math.perSfYear !== null ? `$${Math.round(math.perSfYear).toLocaleString()}/SF/yr` : "No rent/SF";
+      const ratioValue = safeNumber(math.salesRatio);
+      const ratio = ratioValue !== null ? `${Math.round(ratioValue * 100)}% of sales` : "Add sales estimate";
+      const perSfYear = safeNumber(math.perSfYear) !== null ? `${formatCurrency(math.perSfYear)}/SF/yr` : "No rent/SF";
       const conceptLabel = math.model.label;
       return `
         <article class="lease-card lease-fit-${math.tone}">
           <div>
             <h4>${lease.address}</h4>
-            <p>${lease.use}${lease.concept ? ` · ${conceptLabel}` : ""} · ${sf ? `${sf.toLocaleString()} SF` : "SF unknown"} · ${rent ? `$${rent.toLocaleString()}/mo` : "Cost unknown"}</p>
+            <p>${lease.use}${lease.concept ? ` · ${conceptLabel}` : ""} · ${sf ? `${formatInteger(sf)} SF` : "SF unknown"} · ${rent ? `${formatCurrency(rent)}/mo` : "Cost unknown"}</p>
             <div class="lease-fit-grid">
               <span><strong>${fit}</strong><small>Cost fit</small></span>
               <span><strong>${neededSales}</strong><small>Sales needed</small></span>
@@ -1885,7 +1889,7 @@ function renderLeases() {
             </div>
             <div class="place-meta">
               <span>${rentPressureForLease(lease, profile)}</span>
-              <span>${perSf ? `$${perSf.toFixed(2)}/SF/mo` : "No rent/SF"}</span>
+              <span>${safeNumber(perSf) !== null ? `$${safeNumber(perSf).toFixed(2)}/SF/mo` : "No rent/SF"}</span>
               <span>${math.buildoutNote}</span>
             </div>
             <small>${math.model.note} ${lease.notes || ""}</small>
@@ -2061,15 +2065,18 @@ function decisionCopyFor(decision, successProbability, confidenceScore, riskScor
   if (decision === "OPEN") {
     return "Strong customer fit and healthy demand support opening, subject to normal site diligence.";
   }
+  if (decision === "NEEDS MORE DATA") {
+    return "AreaIntel needs stronger location and market evidence before making a reliable recommendation.";
+  }
   if (decision === "DO NOT OPEN") {
     return riskScore < 35
       ? "Current market conditions show severe risk signals for this business."
       : "Current market conditions appear unfavorable for this business.";
   }
   if (confidenceScore < 70) {
-    return `Opportunity exists, but confidence is ${confidenceScore}/100. More proof is needed before a yes.`;
+    return `Opportunity exists, but confidence is ${formatScore(confidenceScore)}. More proof is needed before a yes.`;
   }
-  return `Opportunity exists with a ${successProbability}/100 success probability, but conditions must be met.`;
+  return `Opportunity exists with a ${formatScore(successProbability)} success probability, but conditions must be met.`;
 }
 
 function decisionFor(profile, recommendations, businessResult) {
@@ -2083,6 +2090,15 @@ function decisionFor(profile, recommendations, businessResult) {
       copy: decisionCopyFor(analysis.decision, analysis.successProbability, analysis.confidenceScore, risk),
       next: "Verify economics",
       nextCopy: "Ask for location cost, frontage, commitment terms, buildout cost, and expected monthly sales before final advice."
+    };
+  }
+
+  if (analysis.decision === "NEEDS MORE DATA") {
+    return {
+      answer: "NEEDS MORE DATA",
+      copy: decisionCopyFor(analysis.decision, analysis.successProbability, analysis.confidenceScore, risk),
+      next: "Load more evidence",
+      nextCopy: "Use an exact address, check the business category, and verify location economics before advising a client."
     };
   }
 
@@ -2105,10 +2121,10 @@ function decisionFor(profile, recommendations, businessResult) {
   }
 
   return {
-    answer: "DO NOT OPEN",
-    copy: `${titleCase(state.business)} does not currently clear the success threshold for this location.`,
-    next: "Find a better fit",
-    nextCopy: "Look for a stronger customer base, lower cost pressure, or a clearer gap in competition."
+    answer: "NEEDS MORE DATA",
+    copy: "AreaIntel needs stronger market evidence before making a recommendation.",
+    next: "Load more evidence",
+    nextCopy: "Use an exact address, check the business category, and verify location economics before advising a client."
   };
 }
 
@@ -2147,17 +2163,52 @@ function confidenceFor(zip, businessResult) {
 }
 
 function scoreQualityLabel(value) {
-  if (value >= 85) return "HIGH";
-  if (value >= 70) return "MEDIUM";
+  const score = safeNumber(value, 0);
+  if (score >= 85) return "HIGH";
+  if (score >= 70) return "MEDIUM";
   return "LOW";
 }
 
+function safeNumber(value, fallback = null) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+function formatInteger(value, fallback = "Unavailable") {
+  const number = safeNumber(value);
+  return number === null ? fallback : Math.round(number).toLocaleString();
+}
+
+function formatCurrency(value, fallback = "Unavailable") {
+  const number = safeNumber(value);
+  return number === null ? fallback : `$${Math.round(number).toLocaleString()}`;
+}
+
+function formatScore(value, fallback = "Needs more data") {
+  const number = safeNumber(value);
+  return number === null ? fallback : `${clampScore(number)}/100`;
+}
+
+function formatBadgeScore(value, fallback = "Needs more data") {
+  const number = safeNumber(value);
+  return number === null ? fallback : String(clampScore(number));
+}
+
 function moneyRange(low, high) {
-  return `$${Math.round(low).toLocaleString()}-${Math.round(high).toLocaleString()}`;
+  const lowValue = safeNumber(low);
+  const highValue = safeNumber(high);
+  if (lowValue === null || highValue === null) return "Unavailable";
+  return `${formatCurrency(lowValue)}-${formatCurrency(Math.max(lowValue, highValue))}`;
+}
+
+function monthlyRange(low, high, suffix = "estimated factor") {
+  const range = moneyRange(low, high);
+  return range === "Unavailable" ? "Unavailable" : `${range}/mo ${suffix}`;
 }
 
 function clampScore(value) {
-  return Math.max(0, Math.min(100, Math.round(value)));
+  const number = safeNumber(value, 50);
+  return Math.max(0, Math.min(100, Math.round(number)));
 }
 
 function categoryFitForBusiness(business, profile) {
@@ -2253,7 +2304,7 @@ function buildBusinessSuccessModel(profile, recommendations) {
     {
       name: "Financial viability",
       value: financialScore,
-      why: `Estimated Factors from cost pressure, income support, category sensitivity, margin potential, budget support (${state.budget ? `$${state.budget.toLocaleString()}` : "not provided"}), and likely operating difficulty.`
+      why: `Estimated Factors from cost pressure, income support, category sensitivity, margin potential, budget support (${state.budget ? formatCurrency(state.budget) : "not provided"}), and likely operating difficulty.`
     },
     {
       name: "Area momentum",
@@ -2280,6 +2331,7 @@ function buildInstitutionalAnalysis(profile, recommendations) {
   const civic = Boolean(civicResult);
   const siteIntel = Boolean(siteIntelResult);
   const concepts = Boolean(conceptFitResult?.concepts?.length);
+  const foodBusiness = isFoodBusiness(state.business);
   const address = Boolean(state.location);
   const sources = [
     liveProfile && "Market Demographics",
@@ -2298,7 +2350,7 @@ function buildInstitutionalAnalysis(profile, recommendations) {
     !demandSignal && "Consumer demand momentum not confirmed yet",
     !civic && "Risk and development signals not loaded yet",
     !siteIntel && "Mobility and commercial mix signals not loaded yet",
-    !concepts && "Restaurant cuisine concept scan not loaded yet",
+    foodBusiness && !concepts && "Concept-specific market data is limited; broader market and competition signals are being used",
     !address && "Exact address, frontage, cost, and block visibility missing",
     "True foot traffic, dwell time, parking, location cost, and operator financials are not directly verified"
   ].filter(Boolean);
@@ -2315,7 +2367,7 @@ function buildInstitutionalAnalysis(profile, recommendations) {
   const freshness = Math.max(35, Math.min(95, 44 + (liveProfile ? 10 : 0) + (liveBusiness ? 11 : 0) + (google ? 9 : 0) + (demandSignal ? 5 : 0) + (civic ? 9 : 0) + (siteIntel ? 9 : 0) + (concepts ? 7 : 0)));
   const sourceQuality = Math.max(25, Math.min(95, 30 + sources.length * 9 - conflicts.length * 8));
   const demandPenalty = demandSignal ? 0 : 4;
-  const confidenceScore = Math.max(20, Math.round(completeness * 0.34 + freshness * 0.28 + sourceQuality * 0.38 - demandPenalty));
+  const confidenceScore = clampScore(Math.max(20, completeness * 0.34 + freshness * 0.28 + sourceQuality * 0.38 - demandPenalty));
   const successModel = buildBusinessSuccessModel(profile, recommendations);
   const scores = successModel.scores;
   const riskScoreItem = scores.find((item) => item.name === "Risk");
@@ -2333,18 +2385,21 @@ function buildInstitutionalAnalysis(profile, recommendations) {
     location.value = Math.min(100, location.value + 5);
     location.why = `${location.why} Verified Signals: the area has meaningful commercial capacity.`;
   }
+  const scoreValue = (name) => safeNumber(scores.find((item) => item.name === name)?.value, 50);
   const opportunityScore = clampScore(
-    scores.find((item) => item.name === "Demand").value * businessSuccessWeights.demand +
-      scores.find((item) => item.name === "Customer fit").value * businessSuccessWeights.customerFit +
-      scores.find((item) => item.name === "Competition").value * businessSuccessWeights.competition +
-      scores.find((item) => item.name === "Financial viability").value * businessSuccessWeights.financial +
-      scores.find((item) => item.name === "Location quality").value * businessSuccessWeights.location +
-      scores.find((item) => item.name === "Area momentum").value * businessSuccessWeights.growth +
-      scores.find((item) => item.name === "Risk").value * businessSuccessWeights.risk
+    scoreValue("Demand") * businessSuccessWeights.demand +
+      scoreValue("Customer fit") * businessSuccessWeights.customerFit +
+      scoreValue("Competition") * businessSuccessWeights.competition +
+      scoreValue("Financial viability") * businessSuccessWeights.financial +
+      scoreValue("Location quality") * businessSuccessWeights.location +
+      scoreValue("Area momentum") * businessSuccessWeights.growth +
+      scoreValue("Risk") * businessSuccessWeights.risk
   );
-  const riskScore = scores.find((item) => item.name === "Risk").value;
+  const riskScore = scoreValue("Risk");
   const severeRisk = riskScore < 35 || (civicResult?.complaints?.level === "High" && successModel.competitionPressure >= 82);
-  const decision = opportunityScore < 55 || severeRisk
+  const decision = confidenceScore < 45
+    ? "NEEDS MORE DATA"
+    : opportunityScore < 55 || severeRisk
     ? "DO NOT OPEN"
     : opportunityScore >= 75 && confidenceScore >= 70
       ? "OPEN"
@@ -2368,7 +2423,7 @@ function buildInstitutionalAnalysis(profile, recommendations) {
     : "business must show enough gross margin to survive slow months and marketing ramp";
   const conditions = [
     `Maximum location cost: ${maxRentShare} estimated factor`,
-    `Minimum revenue: ${moneyRange(revenueBase * demandMultiplier * 0.68, revenueBase * demandMultiplier * 1.02)}/mo base-case estimated factor`,
+    `Minimum revenue: ${monthlyRange(revenueBase * demandMultiplier * 0.68, revenueBase * demandMultiplier * 1.02, "base-case estimated factor")}`,
     `Target customer: ${profile.audience?.[2]?.[1] || "local customers that match the business category"}`,
     `Store size: use the unit economics calculator; smaller footprint is safer when cost pressure is high`,
     `Operational assumptions: ${marginCondition}`,
@@ -2428,10 +2483,10 @@ function buildInstitutionalAnalysis(profile, recommendations) {
     rawData: [
       `Business: ${titleCase(successModel.business)}`,
       `Location: ${state.location ? `${state.location.address} within ${state.location.radiusMiles} mi` : `ZIP ${state.zip} - ${profile.name}`}`,
-      `Demographics: density ${profile.density}/100, income ${profile.income}/100, families ${profile.families}/100, student ${profile.student}/100`,
-      `Mobility/demand: transit ${profile.transit}/100, office ${profile.office}/100, nightlife ${profile.nightlife}/100, tourist ${profile.tourist}/100`,
-      `Competition: ${businessResult?.registryExact ? `observed ${businessResult.business} market activity connected` : `modeled area competition ${profile.competition}/100`}`,
-      `Cost pressure: ${profile.rent}/100`,
+      `Demographics: density ${formatScore(profile.density)}, income ${formatScore(profile.income)}, families ${formatScore(profile.families)}, student ${formatScore(profile.student)}`,
+      `Mobility/demand: transit ${formatScore(profile.transit)}, office ${formatScore(profile.office)}, nightlife ${formatScore(profile.nightlife)}, tourist ${formatScore(profile.tourist)}`,
+      `Competition: ${businessResult?.registryExact ? `observed ${businessResult.business} market activity connected` : `modeled area competition ${formatScore(profile.competition)}`}`,
+      `Cost pressure: ${formatScore(profile.rent)}`,
       `Consumer signal: ${google ? "competitive visibility connected" : "competitive visibility not confirmed yet"}`,
       `Demand momentum: ${demandMomentumLabel(businessResult)}`,
       `Risk inputs: ${civic ? "local risk and development signals connected" : "risk sources not loaded yet"}`,
@@ -2452,7 +2507,7 @@ function buildInstitutionalAnalysis(profile, recommendations) {
     confidenceScore,
     decision,
     decisionCopy: decisionCopyFor(decision, opportunityScore, confidenceScore, riskScore),
-    summary: `${titleCase(successModel.business)} has a ${opportunityScore}/100 success probability screen in this area. ${decisionCopyFor(decision, opportunityScore, confidenceScore, riskScore)}`,
+    summary: `${titleCase(successModel.business)} has a ${formatScore(opportunityScore)} success probability screen in this area. ${decisionCopyFor(decision, opportunityScore, confidenceScore, riskScore)}`,
     topRecommendation: {
       name: titleCase(successModel.business),
       score: opportunityScore
@@ -2460,7 +2515,7 @@ function buildInstitutionalAnalysis(profile, recommendations) {
     alternatives: recommendations
       .filter((item) => item.business !== successModel.business)
       .slice(0, 5)
-      .map((item) => `${item.name} (${item.score}/100): ${item.note}`),
+      .map((item) => `${item.name} (${formatScore(item.score)}): ${item.note}`),
     explainability,
     conditions,
     topRisks,
@@ -2468,21 +2523,21 @@ function buildInstitutionalAnalysis(profile, recommendations) {
       {
         name: "BEST CASE",
         traffic: "High repeat traffic with strong operator execution",
-        revenue: `${moneyRange(revenueBase * demandMultiplier * 0.95, revenueBase * demandMultiplier * 1.35)}/mo estimated factor`,
+        revenue: monthlyRange(revenueBase * demandMultiplier * 0.95, revenueBase * demandMultiplier * 1.35),
         breakeven: "6-12 months estimated factor",
         failure: `${Math.max(8, failureBase - 16)}% estimated factor`
       },
       {
         name: "BASE CASE",
         traffic: "Normal neighborhood demand with some direct competition",
-        revenue: `${moneyRange(revenueBase * demandMultiplier * 0.68, revenueBase * demandMultiplier * 1.02)}/mo estimated factor`,
+        revenue: monthlyRange(revenueBase * demandMultiplier * 0.68, revenueBase * demandMultiplier * 1.02),
         breakeven: "12-24 months estimated factor",
         failure: `${failureBase}% estimated factor`
       },
       {
         name: "WORST CASE",
         traffic: "Weak conversion, high rent drag, or saturated category",
-        revenue: `${moneyRange(revenueBase * demandMultiplier * 0.38, revenueBase * demandMultiplier * 0.65)}/mo estimated factor`,
+        revenue: monthlyRange(revenueBase * demandMultiplier * 0.38, revenueBase * demandMultiplier * 0.65),
         breakeven: "24+ months or never estimated factor",
         failure: `${Math.min(88, failureBase + 18)}% estimated factor`
       }
@@ -2492,35 +2547,43 @@ function buildInstitutionalAnalysis(profile, recommendations) {
 
 function renderInstitutionalAnalysis(profile, recommendations) {
   const analysis = buildInstitutionalAnalysis(profile, recommendations);
-  elements.institutionalConfidence.textContent = `Confidence ${analysis.confidenceScore}/100 · ${analysis.validation.sourceReliability}`;
+  elements.institutionalConfidence.textContent = `Confidence ${formatScore(analysis.confidenceScore)} · ${analysis.validation.sourceReliability}`;
   elements.institutionalDecision.textContent = analysis.decision;
+  elements.institutionalDecision.className = `decision-badge decision-${analysis.decision.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
   elements.institutionalSummary.textContent = analysis.summary;
   elements.validationGrid.innerHTML = [
-    ["Completeness", `${analysis.validation.completeness}/100`],
-    ["Freshness", `${analysis.validation.freshness}/100`],
-    ["Source quality", `${analysis.validation.sourceQuality}/100`],
-    ["Confidence", `${analysis.confidenceScore}/100`]
+    ["Success probability", formatScore(analysis.successProbability)],
+    ["Confidence", formatScore(analysis.confidenceScore)],
+    ["Freshness", formatScore(analysis.validation.freshness)],
+    ["Source quality", formatScore(analysis.validation.sourceQuality)]
   ].map(([label, value]) => `<div><span>${label}</span><strong>${value}</strong></div>`).join("");
   elements.scoreBreakdown.innerHTML = analysis.scores
+    .filter((score) => ["Demand", "Customer fit", "Location quality", "Area momentum"].includes(score.name) && safeNumber(score.value) >= 55)
+    .slice(0, 4)
     .map((score) => `
       <div class="score-row">
         <div>
           <strong>${score.name}</strong>
-          <small>${score.why}</small>
+          <small>${scoreSignalCopy(score)}</small>
         </div>
-        <span>${score.value}</span>
+        <span>${formatBadgeScore(score.value)}</span>
       </div>
     `)
     .join("");
-  elements.scenarioAnalysis.innerHTML = analysis.scenarios
-    .map((scenario) => `
+  if (!elements.scoreBreakdown.innerHTML) {
+    elements.scoreBreakdown.innerHTML = `<div class="empty-places">Needs more data before naming strong success drivers.</div>`;
+  }
+  elements.scenarioAnalysis.innerHTML = analysis.topRisks.slice(0, 4)
+    .map((risk) => `
       <div class="scenario-card">
-        <strong>${scenario.name}</strong>
-        <span>${scenario.revenue}</span>
-        <small>${scenario.traffic}; breakeven ${scenario.breakeven}; failure probability ${scenario.failure}.</small>
+        <strong>Main risk</strong>
+        <span>${escapeText(risk)}</span>
       </div>
     `)
     .join("");
+  if (!elements.scenarioAnalysis.innerHTML) {
+    elements.scenarioAnalysis.innerHTML = `<div class="empty-places">No severe risk signals detected yet.</div>`;
+  }
   elements.rawDataList.innerHTML = analysis.rawData.map((item) => `<li>${escapeText(item)}</li>`).join("");
   const missingItems = [...analysis.validation.missing, ...analysis.validation.conflicts];
   elements.missingDataList.innerHTML = missingItems.map((item) => `<li>${escapeText(item)}</li>`).join("");
@@ -2534,10 +2597,18 @@ function renderInstitutionalAnalysis(profile, recommendations) {
     .join("");
   elements.conditionsList.innerHTML = analysis.conditions.map((item) => `<li>${escapeText(item)}</li>`).join("");
   elements.alternativesList.innerHTML = [
-    `Top recommendation: ${analysis.topRecommendation.name} (${analysis.topRecommendation.score}/100)`,
-    ...analysis.alternatives.map((item) => `Alternative: ${item}`),
-    ...analysis.topRisks.slice(0, 4).map((item) => `Risk: ${item}`)
+    `Primary screen: ${analysis.topRecommendation.name} (${formatScore(analysis.topRecommendation.score)})`,
+    ...analysis.alternatives.map((item) => `Alternative: ${item}`)
   ].map((item) => `<li>${escapeText(item)}</li>`).join("");
+}
+
+function scoreSignalCopy(score) {
+  const value = safeNumber(score?.value);
+  if (value === null) return "Needs more data before this signal can be scored.";
+  if (value >= 75) return "Strong positive signal for this business in the selected area.";
+  if (value >= 60) return "Supportive signal, but exact site economics still matter.";
+  if (value >= 45) return "Mixed signal that needs more location-specific proof.";
+  return "Weak signal or risk factor for this business in the selected area.";
 }
 
 function renderDecisionStrip(profile, recommendations) {
@@ -2549,7 +2620,7 @@ function renderDecisionStrip(profile, recommendations) {
   elements.agentAnswer.textContent = decision.answer;
   elements.agentAnswer.className = `decision-badge decision-${decision.answer.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
   elements.agentAnswerCopy.textContent = decision.copy;
-  elements.decisionSuccess.textContent = `${analysis.successProbability}/100`;
+  elements.decisionSuccess.textContent = formatScore(analysis.successProbability);
   elements.dataConfidence.textContent = confidence.label;
   elements.dataConfidenceCopy.textContent = confidence.copy;
   elements.nextMove.textContent = decision.next;
@@ -2712,8 +2783,13 @@ function stableGradeProfile(zip, profile) {
 function verdictGrade(profile) {
   const gradeProfile = stableGradeProfile(state.zip, profile);
   const stableRecommendations = buildRecommendations(gradeProfile, { includeLiveCompetition: false });
-  const topAverage = stableRecommendations.slice(0, 3).reduce((total, item) => total + item.score, 0) / 3;
-  const riskPenalty = gradeProfile.rent > 84 && gradeProfile.competition > 78 ? 8 : gradeProfile.rent > 84 ? 4 : 0;
+  const topItems = stableRecommendations.slice(0, 3);
+  const topAverage = topItems.length
+    ? topItems.reduce((total, item) => total + safeNumber(item.score, 50), 0) / topItems.length
+    : 50;
+  const rentScore = safeNumber(gradeProfile.rent, 50);
+  const competitionScore = safeNumber(gradeProfile.competition, 50);
+  const riskPenalty = rentScore > 84 && competitionScore > 78 ? 8 : rentScore > 84 ? 4 : 0;
   const score = Math.round(topAverage - riskPenalty);
 
   if (score >= 82) return "A";
@@ -2899,19 +2975,19 @@ function exportSummary() {
     "",
     "Business Success Intelligence:",
     `Decision: ${analysis.decision}`,
-    `Success probability: ${analysis.successProbability}/100`,
-    `Confidence score: ${analysis.confidenceScore}/100`,
-    `Top recommendation: ${analysis.topRecommendation.name} (${analysis.topRecommendation.score}/100)`,
+    `Success probability: ${formatScore(analysis.successProbability)}`,
+    `Confidence score: ${formatScore(analysis.confidenceScore)}`,
+    `Top recommendation: ${analysis.topRecommendation.name} (${formatScore(analysis.topRecommendation.score)})`,
     `Summary: ${analysis.summary}`,
     "",
     "Validation:",
-    `- Completeness: ${analysis.validation.completeness}/100`,
-    `- Freshness: ${analysis.validation.freshness}/100`,
-    `- Source quality: ${analysis.validation.sourceQuality}/100 (${analysis.validation.sourceReliability})`,
-    `- Confidence: ${analysis.validation.confidenceScore}/100`,
+    `- Completeness: ${formatScore(analysis.validation.completeness)}`,
+    `- Freshness: ${formatScore(analysis.validation.freshness)}`,
+    `- Source quality: ${formatScore(analysis.validation.sourceQuality)} (${analysis.validation.sourceReliability})`,
+    `- Confidence: ${formatScore(analysis.validation.confidenceScore)}`,
     "",
     "Score breakdown:",
-    ...analysis.scores.map((score) => `- ${score.name}: ${score.value}/100. ${score.why}`),
+    ...analysis.scores.map((score) => `- ${score.name}: ${formatScore(score.value)}. ${score.why}`),
     "",
     "Scenario analysis:",
     ...analysis.scenarios.map((scenario) => `- ${scenario.name}: ${scenario.revenue}; ${scenario.traffic}; breakeven ${scenario.breakeven}; failure probability ${scenario.failure}`),
@@ -2948,7 +3024,7 @@ function exportSummary() {
     ...profile.talkingPoints.map((item) => `- ${item}`),
     "",
     "Alternative businesses:",
-    ...recommendations.slice(0, 5).map((item) => `- ${item.name}: ${item.score} (${item.band})`),
+    ...recommendations.slice(0, 5).map((item) => `- ${item.name}: ${formatScore(item.score)} (${item.band})`),
     "",
     "Profit note:",
     "Profit ranges in the app are modeled screening estimates, not verified operator profit.",
