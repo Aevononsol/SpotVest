@@ -846,13 +846,12 @@ function conceptVerdict(cityCount, googleCount, avgRating) {
 }
 
 async function restaurantConceptFit(zip, location = null) {
-  const cityCounts = [];
-  for (const concept of restaurantConceptModels) {
-    cityCounts.push({
+  const cityCounts = await Promise.all(
+    restaurantConceptModels.map(async (concept) => ({
       ...concept,
       cityCount: await countRestaurants(zip, concept.key).catch(() => 0)
-    });
-  }
+    }))
+  );
   const googleLookupKeys = new Set(
     cityCounts
       .slice()

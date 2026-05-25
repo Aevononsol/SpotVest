@@ -703,12 +703,12 @@ const elements = {
   verdictLabel: document.querySelector("#verdict-label"),
   agentAnswer: document.querySelector("#agent-answer"),
   agentAnswerCopy: document.querySelector("#agent-answer-copy"),
+  decisionSuccess: document.querySelector("#decision-success"),
   dataConfidence: document.querySelector("#data-confidence"),
   dataConfidenceCopy: document.querySelector("#data-confidence-copy"),
   nextMove: document.querySelector("#next-move"),
   nextMoveCopy: document.querySelector("#next-move-copy"),
   institutionalConfidence: document.querySelector("#institutional-confidence"),
-  insufficientData: document.querySelector("#insufficient-data"),
   institutionalDecision: document.querySelector("#institutional-decision"),
   institutionalSummary: document.querySelector("#institutional-summary"),
   validationGrid: document.querySelector("#validation-grid"),
@@ -2000,6 +2000,21 @@ function currentConceptFitResult() {
   return contextMatches(state.lastConceptFitResult) ? state.lastConceptFitResult : null;
 }
 
+function decisionCopyFor(decision, successProbability, confidenceScore, riskScore) {
+  if (decision === "OPEN") {
+    return "Strong customer fit and healthy demand support opening, subject to normal site diligence.";
+  }
+  if (decision === "DO NOT OPEN") {
+    return riskScore < 35
+      ? "Current market conditions show severe risk signals for this business."
+      : "Current market conditions appear unfavorable for this business.";
+  }
+  if (confidenceScore < 70) {
+    return `Opportunity exists, but confidence is ${confidenceScore}/100. More proof is needed before a yes.`;
+  }
+  return `Opportunity exists with a ${successProbability}/100 success probability, but conditions must be met.`;
+}
+
 function decisionFor(profile, recommendations, businessResult) {
   const analysis = buildInstitutionalAnalysis(profile, recommendations);
   const financial = analysis.scores.find((item) => item.name === "Financial viability")?.value || 50;
@@ -2007,33 +2022,33 @@ function decisionFor(profile, recommendations, businessResult) {
 
   if (analysis.decision === "OPEN") {
     return {
-      answer: "Recommended with conditions",
-      copy: `${titleCase(state.business)} has a ${analysis.successProbability}/100 success probability screen with enough evidence to support a qualified recommendation.`,
+      answer: "OPEN",
+      copy: decisionCopyFor(analysis.decision, analysis.successProbability, analysis.confidenceScore, risk),
       next: "Verify economics",
       nextCopy: "Ask for location cost, frontage, commitment terms, buildout cost, and expected monthly sales before final advice."
     };
   }
 
-  if (analysis.decision === "INSUFFICIENT DATA") {
+  if (analysis.decision === "DO NOT OPEN") {
     return {
-      answer: "Insufficient data",
-      copy: "AreaIntel does not have enough independent evidence yet to recommend this business for the area.",
-      next: "Load more evidence",
-      nextCopy: "Use an exact address, check the business category, and verify location economics before advising a client."
+      answer: "DO NOT OPEN",
+      copy: decisionCopyFor(analysis.decision, analysis.successProbability, analysis.confidenceScore, risk),
+      next: "Find a better fit",
+      nextCopy: "Look for stronger demand, lower cost pressure, or a clearer gap in competition."
     };
   }
 
   if (analysis.decision === "CONDITIONAL") {
     return {
-      answer: "Conditional",
-      copy: `Success probability is ${analysis.successProbability}/100, but financial viability (${financial}/100) or risk control (${risk}/100) needs more proof.`,
+      answer: "CONDITIONAL",
+      copy: decisionCopyFor(analysis.decision, analysis.successProbability, analysis.confidenceScore, risk),
       next: "Verify conditions",
       nextCopy: "Confirm max rent, minimum revenue, exact block visibility, and operator strength."
     };
   }
 
   return {
-    answer: "Don't open yet",
+    answer: "DO NOT OPEN",
     copy: `${titleCase(state.business)} does not currently clear the success threshold for this location.`,
     next: "Find a better fit",
     nextCopy: "Look for a stronger customer base, lower cost pressure, or a clearer gap in competition."
@@ -2259,14 +2274,13 @@ function buildInstitutionalAnalysis(profile, recommendations) {
       scores.find((item) => item.name === "Area momentum").value * businessSuccessWeights.growth +
       scores.find((item) => item.name === "Risk").value * businessSuccessWeights.risk
   );
-  const decision = confidenceScore < 70
-    ? "INSUFFICIENT DATA"
-    : opportunityScore >= 76 && scores.find((item) => item.name === "Financial viability").value >= 55 && scores.find((item) => item.name === "Risk").value >= 45
-      ? "OPEN"
-      : opportunityScore >= 58
-        ? "CONDITIONAL"
-        : "DON'T OPEN";
   const riskScore = scores.find((item) => item.name === "Risk").value;
+  const severeRisk = riskScore < 35 || (civicResult?.complaints?.level === "High" && successModel.competitionPressure >= 82);
+  const decision = opportunityScore < 55 || severeRisk
+    ? "DO NOT OPEN"
+    : opportunityScore >= 75 && confidenceScore >= 70
+      ? "OPEN"
+      : "CONDITIONAL";
   const failureBase = Math.max(12, Math.min(82, Math.round(84 - opportunityScore * 0.55 + (100 - riskScore) * 0.28 + Math.max(0, 70 - confidenceScore) * 0.25)));
   const revenueBase = {
     restaurant: 165000,
@@ -2369,9 +2383,8 @@ function buildInstitutionalAnalysis(profile, recommendations) {
     successProbability: opportunityScore,
     confidenceScore,
     decision,
-    summary: decision === "INSUFFICIENT DATA"
-      ? "INSUFFICIENT DATA: AreaIntel needs more independent evidence before a final recommendation."
-      : `${titleCase(successModel.business)} has a ${opportunityScore}/100 success probability screen in this area. Final advice still depends on exact cost, frontage, operator strength, and block visibility.`,
+    decisionCopy: decisionCopyFor(decision, opportunityScore, confidenceScore, riskScore),
+    summary: `${titleCase(successModel.business)} has a ${opportunityScore}/100 success probability screen in this area. ${decisionCopyFor(decision, opportunityScore, confidenceScore, riskScore)}`,
     topRecommendation: {
       name: titleCase(successModel.business),
       score: opportunityScore
@@ -2412,7 +2425,6 @@ function buildInstitutionalAnalysis(profile, recommendations) {
 function renderInstitutionalAnalysis(profile, recommendations) {
   const analysis = buildInstitutionalAnalysis(profile, recommendations);
   elements.institutionalConfidence.textContent = `Confidence ${analysis.confidenceScore}/100 · ${analysis.validation.sourceReliability}`;
-  elements.insufficientData.hidden = analysis.confidenceScore >= 70;
   elements.institutionalDecision.textContent = analysis.decision;
   elements.institutionalSummary.textContent = analysis.summary;
   elements.validationGrid.innerHTML = [
@@ -2464,9 +2476,12 @@ function renderDecisionStrip(profile, recommendations) {
   const businessResult = currentBusinessResult();
   const decision = decisionFor(profile, recommendations, businessResult);
   const confidence = confidenceFor(state.zip, businessResult);
+  const analysis = buildInstitutionalAnalysis(profile, recommendations);
 
   elements.agentAnswer.textContent = decision.answer;
+  elements.agentAnswer.className = `decision-badge decision-${decision.answer.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
   elements.agentAnswerCopy.textContent = decision.copy;
+  elements.decisionSuccess.textContent = `${analysis.successProbability}/100`;
   elements.dataConfidence.textContent = confidence.label;
   elements.dataConfidenceCopy.textContent = confidence.copy;
   elements.nextMove.textContent = decision.next;
