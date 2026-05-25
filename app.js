@@ -653,6 +653,7 @@ const state = {
   zip: "",
   filter: "all",
   business: "restaurant",
+  budget: 0,
   location: null,
   businessRequestId: 0,
   areaRequestId: 0,
@@ -678,6 +679,7 @@ const elements = {
   addressForm: document.querySelector("#address-form"),
   addressInput: document.querySelector("#address-input"),
   radiusInput: document.querySelector("#radius-input"),
+  budgetInput: document.querySelector("#budget-input"),
   clearAddress: document.querySelector("#clear-address"),
   addressMessage: document.querySelector("#address-message"),
   startScreen: document.querySelector("#start-screen"),
@@ -2171,6 +2173,16 @@ function competitionCondition(score) {
   return "oversupplied";
 }
 
+function updateBudgetFromInput() {
+  state.budget = Math.max(0, Number(elements.budgetInput?.value || 0));
+}
+
+function budgetSupportScore(config) {
+  if (!state.budget) return 50;
+  const requiredCapital = 70000 + config.rentSensitivity * 1800 + config.operatingDifficulty * 900;
+  return clampScore(35 + Math.min(1.2, state.budget / requiredCapital) * 55);
+}
+
 function buildBusinessSuccessModel(profile, recommendations) {
   const businessResult = currentBusinessResult();
   const civicResult = currentCivicResult();
@@ -2192,11 +2204,12 @@ function buildBusinessSuccessModel(profile, recommendations) {
   const permitBoost = civicResult?.permits?.level === "Heavy" ? 10 : civicResult?.permits?.level === "Active" ? 6 : 2;
   const propertyBoost = siteIntelResult?.pluto?.retailArea > 500000 ? 6 : siteIntelResult?.pluto?.retailArea > 150000 ? 3 : 0;
   const transitBoost = siteIntelResult?.mta?.available && siteIntelResult.mta.totalDecember2024Ridership > 250000 ? 8 : 0;
+  const budgetSupport = budgetSupportScore(config);
   const demandScore = clampScore(profile.density * 0.18 + profile.transit * 0.14 + profile.office * 0.09 + profile.nightlife * 0.07 + profile.tourist * 0.05 + profile.student * 0.05 + config.baseDemand * 0.18 + reviewMomentum * 0.14 + demandSignalScore * 0.1);
   const customerFitScore = clampScore(profile.income * 0.24 + profile.families * 0.14 + profile.student * 0.08 + profile.office * 0.12 + profile.localPreference * 0.16 + profile.chainFit * 0.1 + categoryFit * 0.16);
   const competitionScore = clampScore(100 - competitionPressure * 0.78 + (businessResult?.googlePlaces?.avgRating >= 4.5 ? 4 : 0));
   const locationScore = clampScore(profile.transit * 0.34 + profile.density * 0.22 + profile.office * 0.12 + (100 - profile.rent) * 0.1 + propertyBoost + transitBoost + (state.location ? 6 : 0));
-  const financialScore = clampScore(profile.income * 0.32 + (100 - profile.rent) * 0.32 + (100 - config.rentSensitivity) * 0.12 + categoryFit * 0.14 + profile.chainFit * 0.1);
+  const financialScore = clampScore(profile.income * 0.3 + (100 - profile.rent) * 0.28 + (100 - config.rentSensitivity) * 0.1 + categoryFit * 0.14 + profile.chainFit * 0.1 + budgetSupport * 0.08);
   const growthScore = clampScore(45 + permitBoost + propertyBoost + profile.office * 0.12 + profile.density * 0.1 + profile.transit * 0.08);
   const riskRaw = clampScore(profile.rent * 0.34 + competitionPressure * 0.32 + (100 - profile.income) * 0.1 + (100 - profile.transit) * 0.08 + civicPenalty + (!state.location ? 6 : 0));
   const riskScore = clampScore(100 - riskRaw);
@@ -2240,7 +2253,7 @@ function buildBusinessSuccessModel(profile, recommendations) {
     {
       name: "Financial viability",
       value: financialScore,
-      why: "Estimated Factors from cost pressure, income support, category sensitivity, margin potential, and likely operating difficulty."
+      why: `Estimated Factors from cost pressure, income support, category sensitivity, margin potential, budget support (${state.budget ? `$${state.budget.toLocaleString()}` : "not provided"}), and likely operating difficulty.`
     },
     {
       name: "Area momentum",
@@ -2958,6 +2971,7 @@ function exportSummary() {
 
 elements.form.addEventListener("submit", (event) => {
   event.preventDefault();
+  updateBudgetFromInput();
   state.location = null;
   elements.addressMessage.textContent = "";
   render(elements.input.value.trim());
@@ -2965,6 +2979,7 @@ elements.form.addEventListener("submit", (event) => {
 
 elements.addressForm.addEventListener("submit", async (event) => {
   event.preventDefault();
+  updateBudgetFromInput();
   const address = elements.addressInput.value.trim();
   if (!address) {
     elements.addressMessage.textContent = "Enter a full NYC address.";
@@ -3018,6 +3033,7 @@ elements.filter.addEventListener("change", (event) => {
 
 elements.businessForm.addEventListener("submit", (event) => {
   event.preventDefault();
+  updateBudgetFromInput();
   state.business = elements.businessInput.value.trim() || elements.restaurantType?.value || "";
   elements.businessInput.value = state.business;
   if (elements.restaurantType) {
@@ -3033,6 +3049,7 @@ elements.businessForm.addEventListener("submit", (event) => {
 
 elements.restaurantType?.addEventListener("change", () => {
   if (!elements.restaurantType.value) return;
+  updateBudgetFromInput();
   state.business = elements.restaurantType.value;
   elements.businessInput.value = state.business;
   if (state.zip) renderBusinessCheck();
@@ -3044,6 +3061,15 @@ elements.radiusInput.addEventListener("change", () => {
   elements.addressMessage.textContent = `Using ${state.location.address} within ${state.location.radiusMiles} mile.`;
   renderBusinessCheck();
   renderRestaurantConceptFit();
+});
+
+elements.budgetInput?.addEventListener("change", () => {
+  updateBudgetFromInput();
+  if (!state.zip) return;
+  const profile = profileForZip(state.zip);
+  const recommendations = buildRecommendations(profile);
+  renderDecisionStrip(profile, recommendations);
+  renderInstitutionalAnalysis(profile, recommendations);
 });
 
 elements.leaseForm.addEventListener("submit", async (event) => {
