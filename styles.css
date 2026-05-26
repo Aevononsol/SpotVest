@@ -305,6 +305,76 @@ textarea:focus {
   display: none !important;
 }
 
+/* Absolute final cascade guard. Keep this block last. */
+#start-screen[hidden],
+#results[hidden],
+section[hidden],
+div[hidden] {
+  display: none !important;
+}
+
+@media (max-width: 860px) {
+  .app-shell {
+    padding: 0 !important;
+  }
+
+  .workspace {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    width: 100% !important;
+    min-height: 100vh !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    overflow: visible !important;
+  }
+
+  .sidebar {
+    grid-column: 1 / -1 !important;
+    grid-row: auto !important;
+    width: 100% !important;
+    max-height: none !important;
+    overflow: visible !important;
+    padding: 18px !important;
+  }
+
+  .results,
+  .start-screen {
+    grid-column: 1 / -1 !important;
+    grid-row: auto !important;
+    width: 100% !important;
+    padding: 18px !important;
+  }
+
+  .hero-report {
+    grid-template-columns: 1fr !important;
+    min-height: auto !important;
+  }
+
+  .hero-report h2 {
+    font-size: clamp(2rem, 11vw, 3.2rem) !important;
+  }
+
+  .decision-strip,
+  .summary-grid,
+  .business-results,
+  .institutional-grid,
+  .analysis-columns,
+  .start-steps {
+    grid-template-columns: 1fr !important;
+  }
+
+  .decision-badge {
+    width: 100% !important;
+    min-width: 0 !important;
+    font-size: clamp(1.35rem, 8vw, 2rem) !important;
+    line-height: 1.05 !important;
+    text-align: center !important;
+    white-space: normal !important;
+    overflow-wrap: normal !important;
+    word-break: normal !important;
+  }
+}
+
 #start-screen[hidden],
 #results[hidden],
 section[hidden],
@@ -4396,4 +4466,74 @@ body {
 
 [hidden] {
   display: none !important;
+}
+
+/* Absolute final cascade guard. Keep this block last. */
+#start-screen[hidden],
+#results[hidden],
+section[hidden],
+div[hidden] {
+  display: none !important;
+}
+
+@media (max-width: 860px) {
+  .app-shell {
+    padding: 0 !important;
+  }
+
+  .workspace {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    width: 100% !important;
+    min-height: 100vh !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    overflow: visible !important;
+  }
+
+  .sidebar {
+    grid-column: 1 / -1 !important;
+    grid-row: auto !important;
+    width: 100% !important;
+    max-height: none !important;
+    overflow: visible !important;
+    padding: 18px !important;
+  }
+
+  .results,
+  .start-screen {
+    grid-column: 1 / -1 !important;
+    grid-row: auto !important;
+    width: 100% !important;
+    padding: 18px !important;
+  }
+
+  .hero-report {
+    grid-template-columns: 1fr !important;
+    min-height: auto !important;
+  }
+
+  .hero-report h2 {
+    font-size: clamp(2rem, 11vw, 3.2rem) !important;
+  }
+
+  .decision-strip,
+  .summary-grid,
+  .business-results,
+  .institutional-grid,
+  .analysis-columns,
+  .start-steps {
+    grid-template-columns: 1fr !important;
+  }
+
+  .decision-badge {
+    width: 100% !important;
+    min-width: 0 !important;
+    font-size: clamp(1.35rem, 8vw, 2rem) !important;
+    line-height: 1.05 !important;
+    text-align: center !important;
+    white-space: normal !important;
+    overflow-wrap: normal !important;
+    word-break: normal !important;
+  }
 }
