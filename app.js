@@ -1283,13 +1283,78 @@ function buildRecommendations(profile, options = {}) {
     .sort((a, b) => b.score - a.score);
 }
 
+function normalizeRestaurantCuisine(input) {
+  const value = String(input || "").trim().toLowerCase();
+  const match = Object.entries(restaurantCuisineTypes).find(([, config]) => {
+    return config.aliases.some((alias) => value.includes(alias));
+  });
+  return match ? match[0] : null;
+}
+
 function normalizeBusiness(input) {
-  const value = input.trim().toLowerCase();
+  const value = String(input || "").trim().toLowerCase();
+  const cuisine = normalizeRestaurantCuisine(value);
+  if (cuisine) return cuisine;
+
   const match = Object.entries(businessTypes).find(([, config]) => {
     return config.aliases.some((alias) => value.includes(alias));
   });
 
   return match ? match[0] : value || "business";
+}
+
+function businessDisplayName(input) {
+  const normalized = normalizeBusiness(input);
+  const labels = {
+    restaurant: "Restaurant",
+    deli: "Deli / bodega",
+    pizza: "Pizza / slice shop",
+    cafe: "Cafe / coffee",
+    coffee: "Cafe / coffee",
+    bakery: "Bakery / bagel",
+    breakfast: "Breakfast / brunch",
+    italian: "Italian restaurant",
+    greek: "Greek restaurant",
+    mediterranean: "Mediterranean / halal",
+    turkish: "Turkish restaurant",
+    french: "French restaurant",
+    japanese: "Japanese / sushi / ramen",
+    chinese: "Chinese / dim sum",
+    korean: "Korean restaurant",
+    thai: "Thai restaurant",
+    vietnamese: "Vietnamese / pho",
+    filipino: "Filipino restaurant",
+    indian: "Indian restaurant",
+    pakistani: "Pakistani / Bangladeshi",
+    mexican: "Mexican / tacos",
+    latin: "Latin American restaurant",
+    dominican: "Dominican restaurant",
+    "puerto rican": "Puerto Rican restaurant",
+    peruvian: "Peruvian restaurant",
+    colombian: "Colombian restaurant",
+    brazilian: "Brazilian restaurant",
+    caribbean: "Caribbean / Jamaican",
+    african: "African restaurant",
+    ethiopian: "Ethiopian restaurant",
+    american: "American / diner",
+    burger: "Burger restaurant",
+    chicken: "Chicken / wings",
+    bbq: "BBQ restaurant",
+    seafood: "Seafood restaurant",
+    steakhouse: "Steakhouse",
+    vegan: "Vegan / vegetarian",
+    juice: "Juice / smoothie",
+    dessert: "Dessert / ice cream",
+    "bubble tea": "Bubble tea",
+    bar: "Bar / pub",
+    "food truck": "Food truck / cart"
+  };
+  return labels[normalized] || titleCase(normalized);
+}
+
+function syncBusinessInput() {
+  const value = elements.businessInput?.value?.trim();
+  if (value) state.business = value;
 }
 
 function titleCase(value) {
@@ -1848,7 +1913,14 @@ function renderConceptFit(data) {
     return;
   }
 
-  elements.conceptFitList.innerHTML = concepts.slice(0, 6).map((concept) => {
+  const selectedFoodBusiness = normalizeBusiness(state.business);
+  const displayConcepts = concepts.slice().sort((a, b) => {
+    if (a.key === selectedFoodBusiness) return -1;
+    if (b.key === selectedFoodBusiness) return 1;
+    return safeNumber(b.score, 0) - safeNumber(a.score, 0);
+  });
+
+  elements.conceptFitList.innerHTML = displayConcepts.slice(0, 6).map((concept) => {
     const cleanNames = (concept.topNames || []).filter(
       (n) => typeof n === "string" && /[a-zA-Z]/.test(n)
     );
@@ -1883,7 +1955,7 @@ async function renderRestaurantConceptFit() {
   const requestId = ++state.conceptRequestId;
   renderConceptLoading();
 
-  const params = new URLSearchParams({ zip: state.zip });
+  const params = new URLSearchParams({ zip: state.zip, business: state.business });
   if (state.location) {
     params.set("lat", state.location.lat);
     params.set("lng", state.location.lng);
@@ -3178,9 +3250,10 @@ function businessVerdictFor(score, profile, config) {
   return "Worth checking at the exact block level.";
 }
 
-function applyBusinessResult({ count, business, sourceNote, isLive, result, loading = false }) {
+function applyBusinessResult({ count, business, sourceNote, isLive, result, loading = false, displayBusiness = null }) {
   const profile = profileForZip(state.zip);
   const config = modeledBusinessConfig(business);
+  const businessLabel = displayBusiness || businessDisplayName(state.business || business);
   const saturation = saturationFromCount(count, profile);
   const localAdvantage = Math.round((profile.localPreference + config.localBias - config.chainBias) / 2);
   const mix =
@@ -3193,8 +3266,8 @@ function applyBusinessResult({ count, business, sourceNote, isLive, result, load
   elements.businessInput.value = state.business;
   elements.businessCount.textContent = loading ? "..." : saturationLabel(saturation);
   elements.businessCountLabel.textContent = isLive
-    ? `${titleCase(business)} market pressure`
-    : `${titleCase(business)} directional pressure`;
+    ? `${businessLabel} market pressure`
+    : `${businessLabel} directional pressure`;
   elements.businessSourceTags.innerHTML = sourceTagsForResult(result, isLive)
     .map((tag) => `<span>${tag}</span>`)
     .join("");
@@ -3209,10 +3282,10 @@ function applyBusinessResult({ count, business, sourceNote, isLive, result, load
         ? "Recognized brands may have an advantage because customers can support familiar, consistent operators."
         : "The winner depends more on reviews, visibility, price point, and site economics than brand type.";
   elements.businessVerdict.textContent = loading ? "Checking market signals." : businessVerdictFor(saturation, profile, config);
-  elements.businessReason.textContent = `${titleCase(business)} demand: ${config.notes} ${sourceNote || (isLive ? "Verified signals are connected." : "Modeled local estimate.")}`;
+  elements.businessReason.textContent = `${businessLabel} demand: ${config.notes} ${sourceNote || (isLive ? "Verified signals are connected." : "Modeled local estimate.")}`;
   elements.heroBusiness.textContent = loading
-    ? `Checking ${titleCase(business)} demand`
-    : `${titleCase(business)} demand · ${saturationLabel(saturation)} competition`;
+    ? `Checking ${businessLabel} demand`
+    : `${businessLabel} demand · ${saturationLabel(saturation)} competition`;
   elements.heroSource.textContent = state.location
     ? `Address radius: ${state.location.radiusMiles} mi`
     : isLive ? "Verified market signals" : "Modeled while signals load";
@@ -3220,8 +3293,10 @@ function applyBusinessResult({ count, business, sourceNote, isLive, result, load
 }
 
 async function renderBusinessCheck() {
+  syncBusinessInput();
   const profile = profileForZip(state.zip);
   const business = normalizeBusiness(state.business);
+  const businessLabel = businessDisplayName(state.business);
   const config = modeledBusinessConfig(business);
   const count = estimateCompetitors(state.zip, business, profile, config);
   const requestId = ++state.businessRequestId;
@@ -3230,6 +3305,7 @@ async function renderBusinessCheck() {
   applyBusinessResult({
     count: 0,
     business,
+    displayBusiness: businessLabel,
     isLive: false,
     loading: true,
     sourceNote: "Checking connected market signals now."
@@ -3259,6 +3335,7 @@ async function renderBusinessCheck() {
       applyBusinessResult({
         count: result.count,
         business: result.business || business,
+        displayBusiness: businessLabel,
         isLive: true,
         result,
         sourceNote: "Verified local activity and competitive signals are connected."
@@ -3281,6 +3358,7 @@ async function renderBusinessCheck() {
       applyBusinessResult({
         count: 0,
         business: result.business || business,
+        displayBusiness: businessLabel,
         isLive: true,
         result,
         sourceNote: "Market signals found limited exact matches for this area and search term. Try a broader term or verify the exact block."
@@ -3318,6 +3396,7 @@ async function renderBusinessCheck() {
     applyBusinessResult({
       count,
       business,
+      displayBusiness: businessLabel,
       isLive: false,
       result: state.lastBusinessResult,
       sourceNote: "Live lookup failed, so AreaIntel is clearly marking this as a modeled estimate."
@@ -3406,6 +3485,7 @@ function narrativeFor(zip, profile, recommendations) {
 }
 
 function render(zip, options = {}) {
+  syncBusinessInput();
   const profile = profileForZip(zip);
   if (!profile) {
     elements.message.textContent = "Enter a valid NYC ZIP code.";
@@ -3619,6 +3699,7 @@ function exportSummary() {
 elements.form.addEventListener("submit", (event) => {
   event.preventDefault();
   updateBudgetFromInput();
+  syncBusinessInput();
   state.location = null;
   elements.addressMessage.textContent = "";
   render(elements.input.value.trim());
@@ -3627,6 +3708,7 @@ elements.form.addEventListener("submit", (event) => {
 elements.addressForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   updateBudgetFromInput();
+  syncBusinessInput();
   const address = elements.addressInput.value.trim();
   if (!address) {
     elements.addressMessage.textContent = "Enter a full NYC address.";
@@ -3684,12 +3766,13 @@ elements.filter.addEventListener("change", (event) => {
 elements.businessForm.addEventListener("submit", (event) => {
   event.preventDefault();
   updateBudgetFromInput();
-  state.business = elements.businessInput.value.trim();
+  syncBusinessInput();
   if (!state.zip) {
     elements.message.textContent = "Enter a ZIP code before checking a business type.";
     return;
   }
   renderBusinessCheck();
+  renderRestaurantConceptFit();
 });
 
 elements.radiusInput.addEventListener("change", () => {
