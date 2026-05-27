@@ -828,6 +828,7 @@ const elements = {
   scenarioAnalysis: document.querySelector("#scenario-analysis"),
   rawDataList: document.querySelector("#raw-data-list"),
   missingDataList: document.querySelector("#missing-data-list"),
+  sourceMapList: document.querySelector("#source-map-list"),
   explainabilityList: document.querySelector("#explainability-list"),
   conditionsList: document.querySelector("#conditions-list"),
   alternativesList: document.querySelector("#alternatives-list"),
@@ -3077,6 +3078,7 @@ function renderInstitutionalAnalysis(profile, recommendations) {
   elements.missingDataList.innerHTML = missingItems.length
     ? missingItems.map((item) => `<li>${escapeText(item)}</li>`).join("")
     : "<li>No major unknown factors detected from the connected signals. Still verify rent, operator strength, and final lease terms before committing.</li>";
+  renderSourceMap(analysis);
   elements.explainabilityList.innerHTML = analysis.explainability
     .map((group) => `
       <article class="explainability-card explainability-${group.type.toLowerCase().replace(/[^a-z0-9]+/g, "-")}">
@@ -3090,6 +3092,89 @@ function renderInstitutionalAnalysis(profile, recommendations) {
     `Primary screen: ${analysis.topRecommendation.name} (${formatScore(analysis.topRecommendation.score)})`,
     ...analysis.alternatives.map((item) => `Alternative: ${item}`)
   ].map((item) => `<li>${escapeText(item)}</li>`).join("");
+}
+
+function sourceStatus(connected, partial = false) {
+  if (connected) return { label: "Connected", className: "connected" };
+  if (partial) return { label: "Partially connected", className: "partial" };
+  return { label: "Needs confirmation", className: "needs-confirmation" };
+}
+
+function renderSourceMap(analysis) {
+  if (!elements.sourceMapList) return;
+  const businessResult = currentBusinessResult();
+  const civicResult = currentCivicResult();
+  const siteIntelResult = currentSiteIntelResult();
+  const conceptFitResult = currentConceptFitResult();
+  const rows = [
+    {
+      section: "Market demographics",
+      key: "Census API key",
+      powers: "Population, income, age, education, household profile",
+      status: sourceStatus(Boolean(state.liveProfiles[state.zip]))
+    },
+    {
+      section: "Competition",
+      key: "NYC Open Data app token + Google Places API key",
+      powers: "Local business records, nearby competitors, ratings, reviews, visibility",
+      status: sourceStatus(Boolean(businessResult?.registryExact && businessResult?.googlePlaces), Boolean(businessResult?.registryExact || businessResult?.googlePlaces))
+    },
+    {
+      section: "Food concept fit",
+      key: "NYC Open Data app token + Google Places API key",
+      powers: "Cuisine-level activity and visible nearby restaurant matches",
+      status: sourceStatus(Boolean(conceptFitResult?.concepts?.length))
+    },
+    {
+      section: "Risk and development",
+      key: "NYC Open Data app token",
+      powers: "Quality-of-life activity, construction permits, development momentum",
+      status: sourceStatus(Boolean(civicResult && !civicResult.fallback))
+    },
+    {
+      section: "Mobility and commercial mix",
+      key: "NYC Open Data app token / public transit and property feeds",
+      powers: "Transit proximity, license activity, outdoor dining, commercial mix",
+      status: sourceStatus(Boolean(siteIntelResult && !siteIntelResult.fallback))
+    },
+    {
+      section: "Consumer demand",
+      key: "Demand momentum service, no user API key",
+      powers: "Directional demand momentum; lightly weighted in the score",
+      status: sourceStatus(Boolean(businessResult?.demandMomentum?.available))
+    },
+    {
+      section: "Exact address / radius",
+      key: "Google Places API key",
+      powers: "Address lookup, coordinates, radius-based nearby analysis",
+      status: sourceStatus(Boolean(state.location))
+    },
+    {
+      section: "Decision report",
+      key: "OpenAI API key",
+      powers: "Optional written client-ready memo only; core scoring still runs without it",
+      status: sourceStatus(false, true)
+    },
+    {
+      section: "Still needs verification",
+      key: "No API can fully verify this",
+      powers: "True foot traffic, dwell time, rent, buildout cost, parking, operator financials",
+      status: { label: "Manual diligence", className: "manual" }
+    }
+  ];
+
+  elements.sourceMapList.innerHTML = rows
+    .map(({ section, key, powers, status }) => `
+      <div class="source-map-row">
+        <div>
+          <strong>${escapeText(section)}</strong>
+          <span>${escapeText(powers)}</span>
+          <small>${escapeText(key)}</small>
+        </div>
+        <em class="source-map-status ${status.className}">${escapeText(status.label)}</em>
+      </div>
+    `)
+    .join("");
 }
 
 function renderScoreDrivers(analysis) {
