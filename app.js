@@ -731,7 +731,6 @@ const elements = {
   exportButton: document.querySelector("#export-button"),
   businessForm: document.querySelector("#business-form"),
   businessInput: document.querySelector("#business-input"),
-  restaurantType: document.querySelector("#restaurant-type"),
   businessCount: document.querySelector("#business-count"),
   businessCountLabel: document.querySelector("#business-count-label"),
   businessSourceTags: document.querySelector("#business-source-tags"),
@@ -839,7 +838,8 @@ function ensureMap() {
   if (!marketMap) {
     marketMap = L.map(elements.map, { scrollWheelZoom: false });
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: "© OpenStreetMap contributors"
+      attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      maxZoom: 19
     }).addTo(marketMap);
   }
 
@@ -922,7 +922,7 @@ function renderMarketMap() {
   elements.mapStatus.textContent = state.location
     ? `Address radius · ${state.location.radiusMiles} mi`
     : `Area view · ZIP ${state.zip}`;
-  window.setTimeout(() => map.invalidateSize(), 120);
+  requestAnimationFrame(() => window.setTimeout(() => map.invalidateSize(), 60));
 }
 
 function labelFor(metric, value) {
@@ -1476,7 +1476,7 @@ function renderConceptFit(data) {
         <div>
           <span class="signal-label">${escapeText(concept.verdict)}</span>
           <h4>${escapeText(concept.label)}</h4>
-          <p>${escapeText(concept.verdict || "Needs more data")} competitive intensity${safeNumber(concept.avgRating) !== null ? ` · ${safeNumber(concept.avgRating).toFixed(1)} average rating signal` : ""}</p>
+          <p>${escapeText(concept.verdict || "Needs more data")} competitive intensity${safeNumber(concept.avgRating) > 0 ? ` · ${safeNumber(concept.avgRating).toFixed(1)} avg rating` : ""}</p>
           <small>Visible examples: ${topNames}</small>
         </div>
         <strong>${formatBadgeScore(concept.score)}</strong>
@@ -2749,10 +2749,6 @@ function applyBusinessResult({ count, business, sourceNote, isLive, result, load
         : "Mixed market";
 
   elements.businessInput.value = state.business;
-  if (elements.restaurantType) {
-    const hasOption = [...elements.restaurantType.options].some((option) => option.value === business);
-    elements.restaurantType.value = hasOption ? business : "";
-  }
   elements.businessCount.textContent = loading ? "..." : saturationLabel(saturation);
   elements.businessCountLabel.textContent = isLive
     ? `${titleCase(business)} market pressure`
@@ -3210,25 +3206,12 @@ elements.filter.addEventListener("change", (event) => {
 elements.businessForm.addEventListener("submit", (event) => {
   event.preventDefault();
   updateBudgetFromInput();
-  state.business = elements.businessInput.value.trim() || elements.restaurantType?.value || "";
-  elements.businessInput.value = state.business;
-  if (elements.restaurantType) {
-    const hasOption = [...elements.restaurantType.options].some((option) => option.value === state.business);
-    elements.restaurantType.value = hasOption ? state.business : "";
-  }
+  state.business = elements.businessInput.value.trim();
   if (!state.zip) {
     elements.message.textContent = "Enter a ZIP code before checking a business type.";
     return;
   }
   renderBusinessCheck();
-});
-
-elements.restaurantType?.addEventListener("change", () => {
-  if (!elements.restaurantType.value) return;
-  updateBudgetFromInput();
-  state.business = elements.restaurantType.value;
-  elements.businessInput.value = state.business;
-  if (state.zip) renderBusinessCheck();
 });
 
 elements.radiusInput.addEventListener("change", () => {
