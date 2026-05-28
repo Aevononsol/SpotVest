@@ -961,7 +961,7 @@ function updatePanelTimestamp(panelSelector) {
 
 function statusTone(status) {
   const normalized = String(status || "").toLowerCase();
-  if (normalized.includes("connected") || normalized.includes("verified") || normalized.includes("confidence")) return "connected";
+  if (normalized.includes("available") || normalized.includes("connected") || normalized.includes("verified") || normalized.includes("confidence")) return "connected";
   if (normalized.includes("checking") || normalized.includes("loading") || normalized.includes("refresh")) return "refreshing";
   return "estimated";
 }
@@ -1231,7 +1231,7 @@ function _finishRenderMap() {
   setStatusPill(
     elements.mapStatus,
     state.location ? `Address radius · ${state.location.radiusMiles} mi` : `Area view · ZIP ${state.zip}`,
-    "Connected"
+    "Available"
   );
   updatePanelTimestamp(".map-panel");
   requestAnimationFrame(() => window.setTimeout(() => map.invalidateSize(), 60));
@@ -1518,8 +1518,8 @@ const businessSuggestionOptions = [
   "Smoke / vape shop"
 ];
 
-function filteredBusinessSuggestions() {
-  const query = elements.businessInput?.value?.trim().toLowerCase() || "";
+function filteredBusinessSuggestions({ showAll = false } = {}) {
+  const query = showAll ? "" : elements.businessInput?.value?.trim().toLowerCase() || "";
   const options = businessSuggestionOptions.filter((option) => {
     const normalized = option.toLowerCase();
     return !query || normalized.includes(query) || normalizeBusiness(option).includes(query);
@@ -1527,10 +1527,10 @@ function filteredBusinessSuggestions() {
   return (options.length ? options : businessSuggestionOptions).slice(0, 80);
 }
 
-function showBusinessSuggestions() {
+function showBusinessSuggestions(options = {}) {
   if (!elements.businessSuggestions) return;
-  const options = filteredBusinessSuggestions();
-  elements.businessSuggestions.innerHTML = options
+  const suggestions = filteredBusinessSuggestions(options);
+  elements.businessSuggestions.innerHTML = suggestions
     .map((option) => `<button type="button" role="option" data-business="${escapeText(option)}">${escapeText(option)}</button>`)
     .join("");
   elements.businessSuggestions.hidden = false;
@@ -1674,7 +1674,7 @@ function renderOpportunities(profile) {
   setStatusPill(
     elements.opportunitySource,
     liveCompetition ? "Verified signals + model ranges" : "Directional model",
-    liveCompetition ? "Connected" : "Estimated"
+    liveCompetition ? "Available" : "Estimated"
   );
   elements.opportunityList.innerHTML = recommendations
     .map((item) => {
@@ -1712,7 +1712,7 @@ function renderCategoryList(recommendations) {
   setStatusPill(
     elements.categorySource,
     liveCompetition ? `Signal-adjusted for ${currentBusinessResult().business}` : "Directional area model",
-    liveCompetition ? "Connected" : "Estimated"
+    liveCompetition ? "Available" : "Estimated"
   );
   elements.categoryList.innerHTML = visibleRecommendations
     .map(
@@ -1737,7 +1737,7 @@ function renderTopPlaces(result) {
     result?.searchContext?.mode === "address-radius"
       ? `Competitive Signals · ${result.searchContext.radiusMiles} mi`
       : result?.googlePlaces ? "Competitive Signals" : "Waiting for competitive signals",
-    places.length ? "Connected" : "Estimated"
+    places.length ? "Available" : "Estimated"
   );
   updatePanelTimestamp(".places-panel");
 
@@ -2001,7 +2001,7 @@ function renderCivicSignals(data) {
   elements.civicSource.textContent = data.searchContext?.mode === "address-radius"
     ? "Address radius + area signal"
     : "Area-level signals";
-  setStatusPill(elements.civicSource, elements.civicSource.textContent, data.fallback ? "Estimated" : "Connected");
+  setStatusPill(elements.civicSource, elements.civicSource.textContent, data.fallback ? "Estimated" : "Available");
   clearLoadingText(elements.complaintLevel, elements.permitLevel);
   elements.complaintLevel.textContent = `${data.complaints.level} local activity`;
   elements.complaintCopy.textContent =
@@ -2126,7 +2126,7 @@ function renderConceptFit(data) {
   setStatusPill(
     elements.conceptSource,
     data.searchContext?.mode === "address-radius" ? `Competitive Signals · ${data.searchContext.radiusMiles} mi` : "Competitive Signals",
-    data.fallback ? "Estimated" : "Connected"
+    data.fallback ? "Estimated" : "Available"
   );
   updatePanelTimestamp(".concept-fit-panel");
 
@@ -2245,7 +2245,7 @@ function renderSiteIntelligence(data) {
   setStatusPill(
     elements.siteIntelSource,
     data.searchContext?.mode === "address-radius" ? "Address radius + area" : "Area-level signals",
-    data.fallback ? "Estimated" : "Connected"
+    data.fallback ? "Estimated" : "Available"
   );
   clearLoadingText(elements.sidewalkLevel, elements.liquorLevel, elements.mtaLevel, elements.plutoLevel);
 
@@ -3266,7 +3266,7 @@ function renderInstitutionalAnalysis(profile, recommendations) {
   setStatusPill(
     elements.institutionalConfidence,
     `Evidence confidence ${formatScore(analysis.confidenceScore)} · ${analysis.validation.sourceReliability}`,
-    analysis.confidenceScore >= 70 ? "Connected" : "Estimated"
+    analysis.confidenceScore >= 70 ? "Available" : "Estimated"
   );
   elements.institutionalDecision.textContent = analysis.decision;
   elements.institutionalDecision.className = `decision-badge decision-${analysis.decision.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
@@ -3467,7 +3467,7 @@ function renderEvidenceCoverage(analysis) {
   const cards = [
     {
       title: "Market demographics",
-      status: liveProfile ? "Connected" : "Profile model",
+      status: liveProfile ? "Available" : "Area model",
       tone: liveProfile ? "good" : "partial",
       copy: liveProfile
         ? "Income, age, households, rent pressure, renter profile, and education are loaded."
@@ -3475,7 +3475,7 @@ function renderEvidenceCoverage(analysis) {
     },
     {
       title: "Competitive signals",
-      status: hasCompetitiveExamples || hasLocalActivity ? "Connected" : businessFallback ? "Estimated" : "Checking",
+      status: hasCompetitiveExamples || hasLocalActivity ? "Available" : businessFallback ? "Estimated" : "Checking",
       tone: hasCompetitiveExamples || hasLocalActivity ? "good" : "partial",
       copy: hasCompetitiveExamples
         ? "Nearby operators surfaced with ratings, reviews, and location visibility."
@@ -3495,7 +3495,7 @@ function renderEvidenceCoverage(analysis) {
     },
     {
       title: "Local market activity",
-      status: hasLocalActivity ? "Connected" : "Estimated",
+      status: hasLocalActivity ? "Available" : "Estimated",
       tone: hasLocalActivity ? "good" : "partial",
       copy: localMatches !== null
         ? businessFallback
@@ -3505,7 +3505,7 @@ function renderEvidenceCoverage(analysis) {
     },
     {
       title: "Mobility and site signals",
-      status: hasSiteSignals ? "Connected" : siteIntelResult?.fallback ? "Estimated" : "Checking",
+      status: hasSiteSignals ? "Available" : siteIntelResult?.fallback ? "Estimated" : "Checking",
       tone: hasSiteSignals ? "good" : "partial",
       copy: hasSiteSignals
         ? "Transit access, commercial mix, licenses, and outdoor activity signals are available."
@@ -3515,7 +3515,7 @@ function renderEvidenceCoverage(analysis) {
     },
     {
       title: "Risk and development",
-      status: hasRiskSignals ? "Connected" : civicResult?.fallback ? "Estimated" : "Checking",
+      status: hasRiskSignals ? "Available" : civicResult?.fallback ? "Estimated" : "Checking",
       tone: hasRiskSignals ? "good" : "partial",
       copy: hasRiskSignals
         ? "Quality-of-life, development activity, and permit signals are included."
@@ -3525,7 +3525,7 @@ function renderEvidenceCoverage(analysis) {
     },
     {
       title: "Concept fit",
-      status: hasConceptSignals ? "Connected" : "Broader signal",
+      status: hasConceptSignals ? "Available" : "Broader signal",
       tone: hasConceptSignals ? "good" : "partial",
       copy: hasConceptSignals
         ? "Sub-category fit is visible for this business type where enough signal exists."
@@ -3534,7 +3534,7 @@ function renderEvidenceCoverage(analysis) {
   ];
 
   if (elements.evidenceSource) {
-    setStatusPill(elements.evidenceSource, `Confidence ${formatScore(analysis.confidenceScore)}`, "Connected");
+    setStatusPill(elements.evidenceSource, `Confidence ${formatScore(analysis.confidenceScore)}`, "Available");
   }
   updatePanelTimestamp(".evidence-panel");
 
@@ -3636,14 +3636,14 @@ function applyBusinessResult({ count, business, sourceNote, isLive, result, load
   } else {
     elements.businessVerdict.textContent = businessVerdictFor(saturation, profile, config);
   }
-  elements.businessReason.textContent = `${businessLabel} demand: ${config.notes} ${sourceNote || (isLive ? "Verified signals are connected." : "Modeled local estimate.")}`;
+  elements.businessReason.textContent = `${businessLabel} demand: ${config.notes} ${sourceNote || (isLive ? "Verified market signals are available." : "Modeled local estimate.")}`;
   elements.heroBusiness.textContent = loading
     ? `Checking ${businessLabel} demand`
     : `${businessLabel} demand · ${saturationLabel(saturation)} competition`;
   setStatusPill(
     elements.heroSource,
     state.location ? `Address radius: ${state.location.radiusMiles} mi` : isLive ? "Verified market signals" : "Modeled while signals load",
-    loading ? "Refreshing" : isLive ? "Connected" : "Estimated"
+    loading ? "Refreshing" : isLive ? "Available" : "Estimated"
   );
   elements.heroMarket.textContent = `${saturationLabel(saturation)} competition`;
   updatePanelTimestamp(".business-checker");
@@ -4131,9 +4131,12 @@ elements.businessForm.addEventListener("submit", (event) => {
   renderRestaurantConceptFit();
 });
 
-elements.businessInput?.addEventListener("focus", showBusinessSuggestions);
-elements.businessInput?.addEventListener("click", showBusinessSuggestions);
-elements.businessInput?.addEventListener("input", showBusinessSuggestions);
+elements.businessInput?.addEventListener("focus", () => showBusinessSuggestions({ showAll: true }));
+elements.businessInput?.addEventListener("click", () => {
+  elements.businessInput.select();
+  showBusinessSuggestions({ showAll: true });
+});
+elements.businessInput?.addEventListener("input", () => showBusinessSuggestions());
 
 elements.businessInput?.addEventListener("keydown", (event) => {
   if (event.key === "Escape") hideBusinessSuggestions();
