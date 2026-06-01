@@ -3368,8 +3368,8 @@ function renderInstitutionalAnalysis(profile, recommendations) {
   }
   elements.scenarioAnalysis.innerHTML = analysis.topRisks.slice(0, 4)
     .map((risk) => `
-      <div class="scenario-card">
-        <strong>Main risk</strong>
+      <div class="scenario-card scenario-card--risk">
+        <span class="status status--risk"><i class="status__dot"></i>Risk</span>
         <span>${escapeText(risk)}</span>
       </div>
     `)
