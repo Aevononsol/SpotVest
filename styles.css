@@ -2658,13 +2658,33 @@ meter::-webkit-meter-optimum-value { background: var(--teal); }
 
 .compare-body { margin-top: 4px; }
 
-.compare-table-wrap { overflow-x: auto; }
+.compare-table-wrap { position: relative; overflow-x: auto; }
+/* Scroll affordance: a soft right fade hinting more columns. */
+.compare-table-wrap::after {
+  content: "";
+  position: sticky;
+  top: 0; right: 0;
+  float: right;
+  width: 24px;
+  height: 1px;
+  box-shadow: 18px 0 18px -10px rgba(15, 23, 42, 0.18) inset;
+  pointer-events: none;
+}
 
 .compare-table {
   width: 100%;
   border-collapse: collapse;
   min-width: 480px;
   font-size: 0.86rem;
+}
+
+/* Keep the metric label column visible while scrolling locations. */
+.compare-table th[scope="row"],
+.compare-table thead th:first-child {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: #ffffff;
 }
 
 .compare-table th,
@@ -2694,8 +2714,8 @@ meter::-webkit-meter-optimum-value { background: var(--teal); }
   align-self: flex-start;
   padding: 2px 8px;
   border-radius: 999px;
-  background: #e5f7ef;
-  color: #08724a;
+  background: var(--st-verified-bg);
+  color: var(--st-verified-fg);
   font-size: 0.66rem;
   font-weight: 850;
   text-transform: uppercase;
@@ -2725,9 +2745,10 @@ meter::-webkit-meter-optimum-value { background: var(--teal); }
 }
 
 .compare-best {
-  background: #ecfaf3;
+  background: var(--st-verified-bg);
+  color: var(--st-verified-fg);
   font-weight: 850;
-  color: #075e3a;
+  box-shadow: inset 3px 0 0 var(--st-verified-accent);
 }
 
 /* Saved reports (Phase 5)

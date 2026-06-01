@@ -1044,7 +1044,7 @@ function animateNumber(element, value, options = {}) {
   const numeric = Number(value);
   const suffix = options.suffix ?? "";
   if (!Number.isFinite(numeric)) {
-    element.textContent = String(value ?? "Unavailable");
+    element.textContent = String(value ?? "Needs Validation");
     return;
   }
   if (prefersReducedMotion()) {
@@ -1290,7 +1290,7 @@ function _finishRenderMap() {
         lease.lat,
         lease.lng,
         "lease-marker",
-        `<strong>${lease.address}</strong><br>${safeNumber(lease.sf) === null ? "SF unknown" : `${formatInteger(lease.sf)} SF`} · ${safeNumber(lease.rent) === null ? "Cost unknown" : `${formatCurrency(lease.rent)}/mo`}`
+        `<strong>${lease.address}</strong><br>${safeNumber(lease.sf) === null ? "SF: Needs Validation" : `${formatInteger(lease.sf)} SF`} · ${safeNumber(lease.rent) === null ? "Cost: Needs Validation" : `${formatCurrency(lease.rent)}/mo`}`
       );
     });
 
@@ -2479,7 +2479,7 @@ function leaseFitMath(lease, profile) {
 
 function rentPressureForLease(lease, profile) {
   const perSf = rentPerSfMonthly(lease);
-  if (perSf === null) return "Rent unknown";
+  if (perSf === null) return "Rent: Needs Validation";
   if (perSf >= 18 || profile.rent >= 84) return "High rent pressure";
   if (perSf >= 10 || profile.rent >= 68) return "Moderate rent pressure";
   return "Manageable rent";
@@ -2658,7 +2658,7 @@ function renderLeases() {
         <article class="lease-card lease-fit-${math.tone}">
           <div>
             <h4>${lease.address}</h4>
-            <p>${lease.use}${lease.concept ? ` · ${conceptLabel}` : ""} · ${sf ? `${formatInteger(sf)} SF` : "SF unknown"} · ${rent ? `${formatCurrency(rent)}/mo` : "Cost unknown"}</p>
+            <p>${lease.use}${lease.concept ? ` · ${conceptLabel}` : ""} · ${sf ? `${formatInteger(sf)} SF` : "SF: Needs Validation"} · ${rent ? `${formatCurrency(rent)}/mo` : "Cost: Needs Validation"}</p>
             <div class="lease-fit-grid">
               <span><strong>${fit}</strong><small>Cost fit</small></span>
               <span><strong>${neededSales}</strong><small>Sales needed</small></span>
@@ -2957,12 +2957,12 @@ function safeNumber(value, fallback = null) {
   return Number.isFinite(number) ? number : fallback;
 }
 
-function formatInteger(value, fallback = "Unavailable") {
+function formatInteger(value, fallback = "Needs Validation") {
   const number = safeNumber(value);
   return number === null ? fallback : Math.round(number).toLocaleString();
 }
 
-function formatCurrency(value, fallback = "Unavailable") {
+function formatCurrency(value, fallback = "Needs Validation") {
   const number = safeNumber(value);
   return number === null ? fallback : `$${Math.round(number).toLocaleString()}`;
 }
@@ -2980,13 +2980,13 @@ function formatBadgeScore(value, fallback = "Needs more data") {
 function moneyRange(low, high) {
   const lowValue = safeNumber(low);
   const highValue = safeNumber(high);
-  if (lowValue === null || highValue === null) return "Unavailable";
+  if (lowValue === null || highValue === null) return "Needs Validation";
   return `${formatCurrency(lowValue)}-${formatCurrency(Math.max(lowValue, highValue))}`;
 }
 
 function monthlyRange(low, high, suffix = "estimated factor") {
   const range = moneyRange(low, high);
-  return range === "Unavailable" ? "Unavailable" : `${range}/mo ${suffix}`;
+  return range === "Needs Validation" ? "Needs Validation" : `${range}/mo ${suffix}`;
 }
 
 function clampScore(value) {
