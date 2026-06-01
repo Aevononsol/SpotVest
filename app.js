@@ -5031,9 +5031,11 @@ function assistantAppend(role, text, options = {}) {
 
 function renderAssistantSuggestions() {
   if (!assistantEls.suggestions) return;
-  assistantEls.suggestions.innerHTML = assistantPrompts
-    .map((p) => `<button type="button" class="assistant-chip">${escapeText(p)}</button>`)
-    .join("");
+  assistantEls.suggestions.innerHTML =
+    `<span class="assistant-suggestions-label">Suggested questions</span>` +
+    assistantPrompts
+      .map((p) => `<button type="button" class="assistant-chip">${escapeText(p)}</button>`)
+      .join("");
 }
 
 function openAssistant() {

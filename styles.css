@@ -2979,6 +2979,28 @@ body.assistant-open .assistant-toggle { display: none; }
   white-space: nowrap;
 }
 .assistant-cta button:hover { background: rgba(14, 116, 144, 0.4); color: #fff; }
+/* Advisor review is the escalation/conversion action — make it primary. */
+.assistant-cta button[data-cta="advisor"] {
+  order: -1;
+  flex-basis: 100%;
+  padding: 10px 12px;
+  border-color: transparent;
+  background: linear-gradient(145deg, #14b8a6, #0e7490);
+  color: #04222b;
+  font-weight: 850;
+}
+.assistant-cta button[data-cta="advisor"]:hover { filter: brightness(1.08); color: #04222b; }
+
+/* Suggested-questions heading in the empty/idle state. */
+.assistant-suggestions-label {
+  flex-basis: 100%;
+  margin: 2px 0 0;
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #7e93a8;
+}
 
 .assistant-form {
   display: flex;
@@ -3017,9 +3039,22 @@ body.assistant-open .assistant-toggle { display: none; }
     right: 0; left: 0; bottom: 0;
     width: 100%;
     max-width: 100%;
-    height: 82vh;
-    border-radius: 16px 16px 0 0;
+    height: 86vh;
+    max-height: 86dvh;
+    padding-top: 12px;
+    border-radius: 18px 18px 0 0;
   }
+  /* Bottom-sheet grabber affordance. */
+  .assistant-panel::before {
+    content: "";
+    position: absolute;
+    top: 6px; left: 50%;
+    transform: translateX(-50%);
+    width: 40px; height: 4px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.28);
+  }
+  .assistant-form { padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px)); }
   .assistant-toggle { right: 14px; bottom: 14px; padding: 11px 15px; }
 }
 
