@@ -18,7 +18,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="./styles.css?v=20260604-map-intel-4" />
+    <link rel="stylesheet" href="./styles.css?v=20260604-no-blank-gaps-1" />
   </head>
   <body>
     <main class="app-shell">
@@ -279,7 +279,7 @@
             <div class="launch-section-header">
               <p class="section-label">Paid report request</p>
               <h3>Get a location report prepared for a real decision</h3>
-              <p>Send the business, location, and timeline. AreaIntel stores the request and creates a follow-up task for the revenue agents.</p>
+              <p>Send the business, location, and timeline. AreaIntel stores the request and sends it to our team for follow-up.</p>
             </div>
             <form id="paid-report-form" class="launch-form">
               <input name="name" placeholder="Your name" autocomplete="name" />
@@ -287,11 +287,31 @@
               <input name="company" placeholder="Company optional" autocomplete="organization" />
               <input name="business" placeholder="Business type, e.g. Italian restaurant" required />
               <input name="location" placeholder="ZIP or address" required />
+              <select name="businessCategory" aria-label="Business category">
+                <option value="">Choose business category</option>
+                <option value="restaurant-food">Restaurant / food</option>
+                <option value="retail">Retail</option>
+                <option value="franchise">Franchise</option>
+                <option value="fitness">Fitness</option>
+                <option value="daycare">Daycare / education</option>
+                <option value="beauty-wellness">Beauty / wellness</option>
+                <option value="medical">Medical / healthcare</option>
+                <option value="service">Local service business</option>
+                <option value="other">Other</option>
+              </select>
               <select name="package" aria-label="Report package">
                 <option value="free-demo">Free Demo — decision, score, summary</option>
                 <option value="full-report">Full Report — $9</option>
                 <option value="three-location-compare">Compare 3 Locations — $29</option>
                 <option value="team-enterprise">Team / Enterprise — custom</option>
+              </select>
+              <select name="timeline" aria-label="Decision timeline">
+                <option value="">Decision timeline</option>
+                <option value="asap">ASAP</option>
+                <option value="one-two-weeks">1–2 weeks</option>
+                <option value="thirty-days">30 days</option>
+                <option value="sixty-ninety-days">60–90 days</option>
+                <option value="planning-only">Planning only</option>
               </select>
               <textarea name="message" placeholder="Timeline, budget, site details, or questions"></textarea>
               <button type="submit">Request paid report</button>
@@ -324,6 +344,24 @@
               <input name="email" type="email" placeholder="Email" autocomplete="email" required />
               <input name="business" placeholder="Business or client concept" />
               <input name="location" placeholder="ZIP or address" />
+              <select name="consultationType" aria-label="Consultation type">
+                <option value="">Choose consultation type</option>
+                <option value="report-question">Report question</option>
+                <option value="business-concept">Business concept review</option>
+                <option value="compare-locations">Compare locations</option>
+                <option value="franchise-site-selection">Franchise / site selection</option>
+                <option value="broker-client-memo">Broker or client memo</option>
+                <option value="other">Other</option>
+              </select>
+              <select name="businessCategory" aria-label="Business category">
+                <option value="">Business category</option>
+                <option value="restaurant-food">Restaurant / food</option>
+                <option value="retail">Retail</option>
+                <option value="franchise">Franchise</option>
+                <option value="fitness">Fitness</option>
+                <option value="professional-service">Professional service</option>
+                <option value="other">Other</option>
+              </select>
               <textarea name="message" placeholder="What decision do you need help with?"></textarea>
               <button type="submit">Request consultation</button>
               <p id="advisor-status" class="launch-status" role="status"></p>
@@ -347,41 +385,18 @@
                 <option value="broker">Broker or advisor workflow</option>
                 <option value="partnership">Partnership</option>
               </select>
+              <select name="teamSize" aria-label="Team size">
+                <option value="">Team size</option>
+                <option value="solo">Solo operator</option>
+                <option value="small-team">2–5 people</option>
+                <option value="broker-team">Broker / advisor team</option>
+                <option value="multi-location">Multi-location operator</option>
+                <option value="enterprise">Enterprise</option>
+              </select>
               <textarea name="message" placeholder="How can AreaIntel help?"></textarea>
               <button type="submit">Send message</button>
               <p id="contact-status" class="launch-status" role="status"></p>
             </form>
-          </section>
-
-          <section id="agents-dashboard" class="launch-section agents-section">
-            <div class="launch-section-header">
-              <p class="section-label">Internal agents</p>
-              <h3>Automatic launch operating system</h3>
-              <p>Each incoming lead creates a follow-up task for the right AreaIntel agent.</p>
-            </div>
-            <div id="agents-list" class="agents-grid" aria-live="polite"></div>
-          </section>
-
-          <section id="admin-dashboard" class="launch-section admin-section">
-            <div class="launch-section-header">
-              <p class="section-label">Admin dashboard</p>
-              <h3>Leads and agent tasks</h3>
-              <p>Private launch dashboard. Set <code>ADMIN_TOKEN</code> in Render to protect it, then enter the token here.</p>
-            </div>
-            <form id="admin-form" class="admin-token-row">
-              <input id="admin-token" type="password" placeholder="Admin token optional" autocomplete="current-password" />
-              <button type="submit">Load admin</button>
-            </form>
-            <div class="admin-grid">
-              <article>
-                <h4>Leads</h4>
-                <div id="admin-leads" class="admin-list"></div>
-              </article>
-              <article>
-                <h4>Agent tasks</h4>
-                <div id="admin-tasks" class="admin-list"></div>
-              </article>
-            </div>
           </section>
         </section>
 
@@ -403,6 +418,21 @@
                 <span id="hero-market">Decision-ready screening</span>
               </div>
             </div>
+            <div class="report-visual" aria-hidden="true">
+              <div class="visual-monitor">
+                <div class="visual-toolbar"></div>
+                <div class="visual-map">
+                  <span class="visual-zone visual-zone-a"></span>
+                  <span class="visual-zone visual-zone-b"></span>
+                  <span class="visual-zone visual-zone-c"></span>
+                  <span class="visual-pin visual-pin-a"></span>
+                  <span class="visual-pin visual-pin-b"></span>
+                  <span class="visual-pin visual-pin-c"></span>
+                </div>
+              </div>
+              <span class="visual-bubble visual-bubble-a">Demand</span>
+              <span class="visual-bubble visual-bubble-b">Risk</span>
+            </div>
             <div class="hero-actions">
               <button id="new-search-button" class="ghost-button" type="button">↺ New Search</button>
               <button id="export-pdf-button" class="primary-button" type="button">Export PDF</button>
@@ -413,6 +443,25 @@
               <button id="export-button" class="ghost-button" type="button">Download .txt</button>
             </div>
           </section>
+
+          <nav class="analyst-tabs" aria-label="Executive report sections">
+            <a href="#market-map">
+              <span class="tab-icon tab-location" aria-hidden="true"></span>
+              <strong>Find the best location</strong>
+            </a>
+            <a href="#memo-thesis-list">
+              <span class="tab-icon tab-demand" aria-hidden="true"></span>
+              <strong>Market potential</strong>
+            </a>
+            <a href="#memo-risk-list">
+              <span class="tab-icon tab-risk" aria-hidden="true"></span>
+              <strong>Risk screen</strong>
+            </a>
+            <a href="#memo-action-list">
+              <span class="tab-icon tab-action" aria-hidden="true"></span>
+              <strong>Next steps</strong>
+            </a>
+          </nav>
 
           <section class="decision-strip executive-decision-strip">
             <article class="decision-main-card" title="AreaIntel's screening call for this business here: Open, Conditional, Do not open, or Needs more data.">
