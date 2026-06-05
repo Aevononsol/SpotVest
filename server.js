@@ -1304,6 +1304,64 @@ async function googlePlaceSignals(zip, businessInput, location = null) {
   };
 }
 
+function pointSearchTerm(business) {
+  switch (String(business || "all").toLowerCase()) {
+    case "coffee": return "coffee shop";
+    case "gym": return "gym";
+    case "pizza": return "pizza";
+    case "salon": return "hair salon";
+    default: return ""; // "all" -> nearby establishments of all types
+  }
+}
+
+// Live data for a single map point (lng/lat), matching the homepage /point
+// contract: { footfall, footPct, demand, competitors:[{lng,lat,business,inRadius}] }.
+// Competitors are real (Google Places nearby search); footfall is a real
+// subway-ridership proxy where available, else a density-based modeled estimate.
+async function pointSnapshot(lng, lat, radiusMeters, business) {
+  const biz = String(business || "all").toLowerCase();
+  const term = pointSearchTerm(biz);
+  const location = {
+    lat,
+    lng,
+    radiusMiles: Math.max(0.1, Math.min(2, (radiusMeters || 800) / 1609.344)),
+    radiusMeters: Math.round(Math.max(150, Math.min(3000, radiusMeters || 800)))
+  };
+
+  const [places, mtaRows] = await Promise.all([
+    googlePlaceSignals("", term, location).catch(integrationFallback("nearby competitors", null)),
+    dataNyJson("wujg-7c2s", {
+      $select: "sum(ridership)",
+      $where: `within_circle(georeference, ${lat}, ${lng}, ${location.radiusMeters}) AND transit_timestamp between '2024-12-01T00:00:00' and '2025-01-01T00:00:00'`
+    }).catch(integrationFallback("MTA ridership", []))
+  ]);
+
+  const competitors = ((places && places.mapPlaces) || [])
+    .filter((p) => Number.isFinite(Number(p.lat)) && Number.isFinite(Number(p.lng)))
+    .map((p) => {
+      const dx = (Number(p.lng) - lng) * 111320 * Math.cos((lat * Math.PI) / 180);
+      const dy = (Number(p.lat) - lat) * 110540;
+      return {
+        lng: Number(p.lng),
+        lat: Number(p.lat),
+        business: biz,
+        inRadius: Math.hypot(dx, dy) <= location.radiusMeters
+      };
+    });
+
+  const monthlyRidership = Array.isArray(mtaRows)
+    ? mtaRows.reduce((total, row) => total + (Number(row.sum_ridership) || 0), 0)
+    : 0;
+  const dailyRidership = Math.round(monthlyRidership / 31);
+  const inRadiusCount = competitors.filter((c) => c.inRadius).length;
+
+  const footfall = dailyRidership > 0 ? dailyRidership : Math.max(500, 1500 + inRadiusCount * 320);
+  const footPct = Math.max(1, Math.min(99, Math.round(Math.log10(footfall + 1) * 22)));
+  const demand = Math.max(5, Math.min(98, Math.round(footPct * 0.7 + (24 - Math.min(24, inRadiusCount * 3)))));
+
+  return { footfall, footPct, demand, competitors };
+}
+
 async function businessCount(zip, businessInput, location = null) {
   const business = normalizeBusiness(businessInput);
   const [restaurantCount, dcwpCount, googlePlaces, tenure, mapRecords, demandMomentum] = await Promise.all([
@@ -2295,6 +2353,21 @@ createServer(async (request, response) => {
         : null;
 
       sendJson(response, 200, await businessCount(zip, business, location));
+      return;
+    }
+
+    if (url.pathname === "/api/point") {
+      const lng = Number(url.searchParams.get("lng"));
+      const lat = Number(url.searchParams.get("lat"));
+      const radius = Number(url.searchParams.get("radius") || 800);
+      const business = String(url.searchParams.get("business") || "all").trim().toLowerCase();
+
+      if (!Number.isFinite(lng) || !Number.isFinite(lat)) {
+        sendJson(response, 400, { error: "Provide numeric lng and lat." });
+        return;
+      }
+
+      sendJson(response, 200, await pointSnapshot(lng, lat, radius, business));
       return;
     }
 
