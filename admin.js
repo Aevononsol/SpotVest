@@ -21,9 +21,15 @@ function escapeText(value) {
     .replaceAll("'", "&#039;");
 }
 
-function tokenQuery() {
-  const token = adminEls.token?.value?.trim() || sessionStorage.getItem("areaIntelAdminToken") || "";
-  return token ? `?token=${encodeURIComponent(token)}` : "";
+function adminToken() {
+  return adminEls.token?.value?.trim() || sessionStorage.getItem("areaIntelAdminToken") || "";
+}
+
+// Send the admin token in the Authorization header — never in the URL,
+// which would leak it into access logs, history and Referer headers.
+function authHeaders(extra = {}) {
+  const token = adminToken();
+  return token ? { ...extra, Authorization: `Bearer ${token}` } : { ...extra };
 }
 
 function setStatus(message, type = "") {
@@ -33,16 +39,16 @@ function setStatus(message, type = "") {
 }
 
 async function getJson(path) {
-  const response = await fetch(`${path}${tokenQuery()}`);
+  const response = await fetch(path, { headers: authHeaders() });
   const result = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(result.error || "Admin request failed.");
   return result;
 }
 
 async function postJson(path, payload = {}) {
-  const response = await fetch(`${path}${tokenQuery()}`, {
+  const response = await fetch(path, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify(payload)
   });
   const result = await response.json().catch(() => ({}));
@@ -101,7 +107,7 @@ function renderAgents(agents) {
 }
 
 async function loadAdmin() {
-  if (!tokenQuery()) {
+  if (!adminToken()) {
     setStatus("Enter the admin token first.", "launch-status-error");
     return;
   }
@@ -139,7 +145,7 @@ adminEls.form?.addEventListener("submit", (event) => {
 });
 
 adminEls.runButton?.addEventListener("click", async () => {
-  if (!tokenQuery()) {
+  if (!adminToken()) {
     adminEls.runStatus.textContent = "Enter the admin token first.";
     adminEls.runStatus.className = "launch-status launch-status-error";
     return;
@@ -166,7 +172,7 @@ adminEls.runButton?.addEventListener("click", async () => {
 
 adminEls.taskForm?.addEventListener("submit", async (event) => {
   event.preventDefault();
-  if (!tokenQuery()) {
+  if (!adminToken()) {
     adminEls.taskStatus.textContent = "Enter the admin token first.";
     adminEls.taskStatus.className = "launch-status launch-status-error";
     return;

@@ -356,3 +356,9 @@
 .sv3-app .map .legend { z-index: 3; }
 .sv3-app .maplibregl-ctrl-attrib { font-size: 9px !important; }
 .sv3-app .maplibregl-ctrl-bottom-right { z-index: 2; }
+
+/* Bottom-nav buttons must be transparent icon+label (teal when active).
+   Override legacy bare-button background bleed from styles.css. */
+body:not(.landing-mode) .sv3-app .nav button { background: transparent !important; color: var(--txt-faint); box-shadow: none; border: none; }
+body:not(.landing-mode) .sv3-app .nav button.on { color: var(--teal); }
+body:not(.landing-mode) .sv3-app .nav button svg { stroke: currentColor; }

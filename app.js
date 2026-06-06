@@ -4280,7 +4280,18 @@ function initSpotVestV3Controls() {
   const runArea = () => {
     const refs = sv3Refs();
     syncFields();
-    if (refs.zip?.value?.trim() && elements.input) elements.input.value = refs.zip.value.trim();
+    const zip = (refs.zip?.value || "").trim();
+    // Validate before switching to the report so a non-NYC ZIP shows a clear
+    // message on the search screen instead of an empty report.
+    if (!/^\d{5}$/.test(zip) || !boroughForZip(zip)) {
+      if (refs.stepnote) refs.stepnote.textContent = /^\d{5}$/.test(zip)
+        ? "🗽 SpotVest currently covers New York City only. Try a NYC ZIP like 10003, 11201, or 10458."
+        : "Enter a 5-digit NYC ZIP code (for example 10003).";
+      refs.zip?.focus();
+      return;
+    }
+    if (elements.input) elements.input.value = zip;
+    if (refs.stepnote) refs.stepnote.textContent = "Analyzing the area…";
     state.location = null;
     sv3ShowMain("report");
     elements.form?.requestSubmit();
@@ -4991,6 +5002,11 @@ function render(zip, options = {}) {
     elements.message.classList.add("form-message-warn");
     elements.analyzeButton.disabled = false;
     elements.analyzeButton.textContent = "Analyze";
+    // Surface the same message inside the SpotVest app and return it to the
+    // search screen so it never sits on an empty report.
+    const sv3note = document.querySelector("#sv3-stepnote");
+    if (sv3note) sv3note.textContent = elements.message.textContent;
+    if (document.querySelector("#sv3-app") && typeof sv3ShowMain === "function") sv3ShowMain("search");
     return;
   }
   elements.message.classList.remove("form-message-warn");

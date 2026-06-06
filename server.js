@@ -673,12 +673,17 @@ function startAgentAutopilot() {
   console.log(`AreaIntel agent autorun enabled every ${minutes} minutes`);
 }
 
-function adminAuthorized(request, url) {
+function adminAuthorized(request) {
   const configured = process.env.ADMIN_TOKEN || process.env.ADMIN_PASSWORD;
   if (!configured) return false;
-  const headerToken = String(request.headers.authorization || "").replace(/^Bearer\s+/i, "");
-  const queryToken = String(url.searchParams.get("token") || "");
-  return headerToken === configured || queryToken === configured;
+  // Header-only (never accept the admin token via URL query, which would
+  // leak it into access logs, browser history and Referer headers) and
+  // compared in constant time.
+  const provided = String(request.headers.authorization || "").replace(/^Bearer\s+/i, "");
+  if (!provided) return false;
+  const a = Buffer.from(provided);
+  const b = Buffer.from(String(configured));
+  return a.length === b.length && timingSafeEqual(a, b);
 }
 
 function checkoutUrlFor(plan) {
@@ -916,6 +921,18 @@ function assistantRateLimited(ip) {
   recent.push(now);
   assistantHits.set(ip, recent);
   if (assistantHits.size > 5000) assistantHits.clear();
+  return false;
+}
+
+// Generic per-key sliding-window limiter (used to slow auth brute-force).
+const rateBuckets = new Map();
+function rateLimited(key, max, windowMs) {
+  const now = Date.now();
+  const recent = (rateBuckets.get(key) || []).filter((t) => now - t < windowMs);
+  if (recent.length >= max) { rateBuckets.set(key, recent); return true; }
+  recent.push(now);
+  rateBuckets.set(key, recent);
+  if (rateBuckets.size > 20000) rateBuckets.clear();
   return false;
 }
 
@@ -2279,6 +2296,10 @@ createServer(async (request, response) => {
     }
 
     if (url.pathname === "/api/signup" && request.method === "POST") {
+      if (rateLimited(`signup:${clientIp(request)}`, 5, 60_000)) {
+        sendJson(response, 429, { error: "Too many attempts. Please wait a minute and try again." });
+        return;
+      }
       const body = await readRequestJson(request);
       const email = normalizeEmail(body.email);
       const password = String(body.password || "");
@@ -2331,6 +2352,10 @@ createServer(async (request, response) => {
     }
 
     if (url.pathname === "/api/login" && request.method === "POST") {
+      if (rateLimited(`login:${clientIp(request)}`, 8, 60_000)) {
+        sendJson(response, 429, { error: "Too many sign-in attempts. Please wait a minute and try again." });
+        return;
+      }
       const body = await readRequestJson(request);
       const email = normalizeEmail(body.email);
       const password = String(body.password || "");
@@ -2463,6 +2488,10 @@ createServer(async (request, response) => {
     }
 
     if (url.pathname === "/api/password-reset/request" && request.method === "POST") {
+      if (rateLimited(`reset:${clientIp(request)}`, 5, 60_000)) {
+        sendJson(response, 429, { error: "Too many requests. Please wait a minute and try again." });
+        return;
+      }
       const body = await readRequestJson(request);
       const email = normalizeEmail(body.email);
       const accounts = await readJsonStore("accounts", []);
@@ -2567,7 +2596,7 @@ createServer(async (request, response) => {
     }
 
     if (url.pathname === "/api/admin/leads") {
-      if (!adminAuthorized(request, url)) {
+      if (!adminAuthorized(request)) {
         sendJson(response, 401, { error: "Admin token required." });
         return;
       }
@@ -2577,7 +2606,7 @@ createServer(async (request, response) => {
     }
 
     if (url.pathname === "/api/admin/agents" || url.pathname === "/api/agents") {
-      if (!adminAuthorized(request, url)) {
+      if (!adminAuthorized(request)) {
         sendJson(response, 401, { error: "Admin token required." });
         return;
       }
@@ -2592,7 +2621,7 @@ createServer(async (request, response) => {
     }
 
     if (url.pathname === "/api/admin/agent-tasks" && request.method === "POST") {
-      if (!adminAuthorized(request, url)) {
+      if (!adminAuthorized(request)) {
         sendJson(response, 401, { error: "Admin token required." });
         return;
       }
@@ -2615,7 +2644,7 @@ createServer(async (request, response) => {
     }
 
     if (url.pathname === "/api/admin/agents/run" && request.method === "POST") {
-      if (!adminAuthorized(request, url)) {
+      if (!adminAuthorized(request)) {
         sendJson(response, 401, { error: "Admin token required." });
         return;
       }
@@ -2630,7 +2659,7 @@ createServer(async (request, response) => {
     }
 
     if (url.pathname === "/api/admin/agent-runs") {
-      if (!adminAuthorized(request, url)) {
+      if (!adminAuthorized(request)) {
         sendJson(response, 401, { error: "Admin token required." });
         return;
       }
@@ -2640,7 +2669,7 @@ createServer(async (request, response) => {
     }
 
     if (url.pathname === "/api/admin/agent-tasks") {
-      if (!adminAuthorized(request, url)) {
+      if (!adminAuthorized(request)) {
         sendJson(response, 401, { error: "Admin token required." });
         return;
       }

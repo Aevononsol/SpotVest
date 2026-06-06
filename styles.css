@@ -5773,6 +5773,9 @@ body.landing-mode .advisor-grid p{color:#64748B;font-size:13px;}
   body.landing-mode .launch-form{padding-bottom:calc(24px + env(safe-area-inset-bottom, 0px));}
   body.landing-mode .assistant-toggle{bottom:calc(18px + env(safe-area-inset-bottom, 0px));}
 }
+/* Lift the assistant launcher above the SpotVest app's bottom nav so the
+   chat bubble never overlaps the Search / Report / Compare buttons. */
+body:not(.landing-mode) .assistant-toggle{bottom:calc(78px + env(safe-area-inset-bottom, 0px));}
 @media(max-width:700px){
   body.landing-mode span.nl{display:none;}
   body.landing-mode .navL{gap:14px;}
