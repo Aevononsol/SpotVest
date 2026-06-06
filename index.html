@@ -25,7 +25,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/4.7.1/maplibre-gl.min.css" />
     <script defer src="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/4.7.1/maplibre-gl.min.js"></script>
     <link rel="stylesheet" href="./styles.css?v=20260606-sv3-replacement-final" />
-    <link rel="stylesheet" href="./inside-v3.css?v=20260606-qa1" />
+    <link rel="stylesheet" href="./inside-v3.css?v=20260606-qabugs" />
   </head>
   <body class="landing-mode">
     <main class="app-shell">
@@ -609,35 +609,22 @@
               <div class="card accent"><div class="desc" style="margin-top:0"><b style="color:var(--txt);font-weight:700">Answer first:</b> should this business open here? SpotVest returns the decision, then the evidence behind it.</div></div>
 
               <div class="section-label"><span class="n">1</span> Business type</div>
-              <div class="field"><label>What business is the client opening?</label>
-                <select class="input" id="sv3-biztype">
-                  <optgroup label="🍽  Restaurants &amp; Food">
-                    <option>Italian restaurant</option><option>Mexican restaurant</option><option>Chinese restaurant</option><option>Japanese / sushi</option><option>Thai restaurant</option><option>Indian restaurant</option><option>Korean restaurant</option><option>Mediterranean / Middle Eastern</option><option>American / diner</option><option>Caribbean / Jamaican</option><option>Latin American</option><option>Vietnamese / pho</option><option>French / bistro</option><option>Pizza</option><option>Burgers</option><option>Chicken / wings</option><option>Seafood</option><option>BBQ / smokehouse</option><option>Steakhouse</option><option>Vegan / vegetarian</option><option>Fast casual lunch</option><option>Breakfast / brunch</option><option>Deli / sandwich shop</option><option>Food hall stall</option><option>Ghost / delivery kitchen</option>
-                  </optgroup>
-                  <optgroup label="☕  Cafés, Bars &amp; Beverage">
-                    <option>Specialty coffee</option><option>Café / bakery</option><option>Dessert / ice cream</option><option>Juice / smoothie bar</option><option>Bubble tea</option><option>Cocktail bar</option><option>Wine bar</option><option>Beer / taproom</option><option>Hookah lounge</option>
-                  </optgroup>
-                  <optgroup label="🛍  Retail">
-                    <option>Boutique clothing</option><option>Shoes / sneakers</option><option>Jewelry / accessories</option><option>Convenience / bodega</option><option>Grocery / market</option><option>Specialty food market</option><option>Liquor store</option><option>Bookstore</option><option>Gift / home goods</option><option>Electronics</option><option>Furniture</option><option>Pet supplies</option><option>Vape / smoke shop</option><option>Cannabis dispensary</option><option>Discount / dollar retail</option><option>Pop-up / market stall</option>
-                  </optgroup>
-                  <optgroup label="💪  Fitness &amp; Wellness">
-                    <option>Boutique fitness studio</option><option>Gym / health club</option><option>Yoga / pilates</option><option>Cycling studio</option><option>Boxing / martial arts</option><option>CrossFit box</option><option>Dance studio</option><option>Physical therapy</option><option>Wellness / recovery spa</option>
-                  </optgroup>
-                  <optgroup label="💅  Beauty &amp; Personal Care">
-                    <option>Hair salon</option><option>Barbershop</option><option>Nail salon</option><option>Day spa</option><option>Med spa / aesthetics</option><option>Brows / lashes</option><option>Tattoo / piercing</option><option>Tanning</option>
-                  </optgroup>
-                  <optgroup label="🧰  Services">
-                    <option>Dry cleaning / laundry</option><option>Auto repair</option><option>Car wash</option><option>Phone / device repair</option><option>Print / shipping</option><option>Locksmith</option><option>Tailor / alterations</option><option>Real estate office</option><option>Insurance / financial office</option><option>Co-working space</option><option>Daycare / childcare</option><option>Tutoring / enrichment</option><option>Veterinary clinic</option><option>Medical / dental office</option><option>Urgent care / clinic</option><option>Pharmacy</option>
-                  </optgroup>
-                  <optgroup label="🎉  Entertainment &amp; Leisure">
-                    <option>Event / party venue</option><option>Arcade / games</option><option>Karaoke</option><option>Art gallery</option><option>Music venue</option><option>Comedy club</option><option>Escape room</option><option>Bowling / mini golf</option><option>Theater / performance</option>
-                  </optgroup>
-                </select>
+              <div class="field"><label for="sv3-biztype">What business is the client opening?</label>
+                <input class="input" id="sv3-biztype" list="sv3-biz-options" autocomplete="off" placeholder="Type or pick — e.g. Italian restaurant, gym, nail salon" />
+                <datalist id="sv3-biz-options">
+                  <option value="Italian restaurant"></option><option value="Mexican restaurant"></option><option value="Chinese restaurant"></option><option value="Japanese / sushi"></option><option value="Thai restaurant"></option><option value="Indian restaurant"></option><option value="Korean restaurant"></option><option value="Mediterranean / Middle Eastern"></option><option value="American / diner"></option><option value="Caribbean / Jamaican"></option><option value="Latin American"></option><option value="Vietnamese / pho"></option><option value="French / bistro"></option><option value="Pizza"></option><option value="Burgers"></option><option value="Chicken / wings"></option><option value="Seafood"></option><option value="BBQ / smokehouse"></option><option value="Steakhouse"></option><option value="Vegan / vegetarian"></option><option value="Fast casual lunch"></option><option value="Breakfast / brunch"></option><option value="Deli / sandwich shop"></option><option value="Food hall stall"></option><option value="Ghost / delivery kitchen"></option>
+                  <option value="Specialty coffee"></option><option value="Café / bakery"></option><option value="Dessert / ice cream"></option><option value="Juice / smoothie bar"></option><option value="Bubble tea"></option><option value="Cocktail bar"></option><option value="Wine bar"></option><option value="Beer / taproom"></option><option value="Hookah lounge"></option>
+                  <option value="Boutique clothing"></option><option value="Shoes / sneakers"></option><option value="Jewelry / accessories"></option><option value="Convenience / bodega"></option><option value="Grocery / market"></option><option value="Specialty food market"></option><option value="Liquor store"></option><option value="Bookstore"></option><option value="Gift / home goods"></option><option value="Electronics"></option><option value="Furniture"></option><option value="Pet supplies"></option><option value="Vape / smoke shop"></option><option value="Cannabis dispensary"></option><option value="Discount / dollar retail"></option><option value="Pop-up / market stall"></option>
+                  <option value="Boutique fitness studio"></option><option value="Gym / health club"></option><option value="Yoga / pilates"></option><option value="Cycling studio"></option><option value="Boxing / martial arts"></option><option value="CrossFit box"></option><option value="Dance studio"></option><option value="Physical therapy"></option><option value="Wellness / recovery spa"></option>
+                  <option value="Hair salon"></option><option value="Barbershop"></option><option value="Nail salon"></option><option value="Day spa"></option><option value="Med spa / aesthetics"></option><option value="Brows / lashes"></option><option value="Tattoo / piercing"></option><option value="Tanning"></option>
+                  <option value="Dry cleaning / laundry"></option><option value="Auto repair"></option><option value="Car wash"></option><option value="Phone / device repair"></option><option value="Print / shipping"></option><option value="Locksmith"></option><option value="Tailor / alterations"></option><option value="Real estate office"></option><option value="Insurance / financial office"></option><option value="Co-working space"></option><option value="Daycare / childcare"></option><option value="Tutoring / enrichment"></option><option value="Veterinary clinic"></option><option value="Medical / dental office"></option><option value="Urgent care / clinic"></option><option value="Pharmacy"></option>
+                  <option value="Event / party venue"></option><option value="Arcade / games"></option><option value="Karaoke"></option><option value="Art gallery"></option><option value="Music venue"></option><option value="Comedy club"></option><option value="Escape room"></option><option value="Bowling / mini golf"></option><option value="Theater / performance"></option>
+                </datalist>
               </div>
               <div class="section-label"><span class="n">2</span> Location</div>
-              <div class="field"><label>NYC ZIP code</label><input class="input" id="sv3-zip" inputmode="numeric" value="10009"></div>
+              <div class="field"><label for="sv3-zip">NYC ZIP code</label><input class="input" id="sv3-zip" inputmode="numeric" autocomplete="off" placeholder="e.g. 10003"></div>
               <div class="section-label"><span class="n">3</span> Exact address</div>
-              <div class="field"><label>Address for block-level analysis</label><input class="input" id="sv3-address" value="156 1st Ave, New York, NY 10009"></div>
+              <div class="field"><label for="sv3-address">Address for block-level analysis</label><input class="input" id="sv3-address" autocomplete="off" placeholder="e.g. 156 1st Ave, New York, NY 10009"></div>
               <div class="field"><div class="row2"><input class="input" id="sv3-budget" placeholder="Budget ($) optional" inputmode="numeric"><select class="input" id="sv3-radius"><option value="0.5">0.5 mi</option><option value="1">1 mi</option><option value="2">2 mi</option></select></div></div>
               <button class="btn" type="button" id="sv3-analyze-address">Analyze address →</button>
               <button class="btn ghost sm" type="button" id="sv3-analyze-area" style="margin-top:10px">Use area only</button>
@@ -1415,7 +1402,7 @@
     </aside>
 
     <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script defer src="./app.js?v=20260606-harden2"></script>
+    <script defer src="./app.js?v=20260606-qabugs"></script>
     <script defer src="./home.js?v=20260604-home-1"></script>
   </body>
 </html>

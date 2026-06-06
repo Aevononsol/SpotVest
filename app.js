@@ -3629,6 +3629,7 @@ function sv3RiskCardV3(text, index) {
 }
 function sv3CompCard(place, index) {
   const grads = ["linear-gradient(135deg,#3a2a20,#1a1410)", "linear-gradient(135deg,#2a3340,#141a24)", "linear-gradient(135deg,#202f2a,#101a16)", "linear-gradient(135deg,#2f2436,#171022)"];
+  const grad = grads[index % grads.length];
   const rating = safeNumber(place.rating);
   const reviews = safeNumber(place.reviews);
   const chips = [
@@ -3636,7 +3637,12 @@ function sv3CompCard(place, index) {
     reviews ? `<span class="chip">${formatInteger(reviews)} reviews</span>` : "",
     `<span class="chip">${place.chain ? "Chain brand" : "Likely local"}</span>`
   ].join("");
-  return `<div class="comp"><div class="img" style="background:${grads[index % grads.length]}"></div><div class="cb"><div class="cn">${escapeText(place.name || "Nearby operator")}</div><div class="ca">${escapeText(place.address || "New York, NY")}</div><div class="ct">${chips}</div></div></div>`;
+  // Real Google Places photo when available (proxied same-origin), otherwise a
+  // clean icon placeholder — never a blank/gray box.
+  const img = place.photoRef
+    ? `<div class="img" style="background-image:url('/api/place-photo?ref=${encodeURIComponent(place.photoRef)}');background-size:cover;background-position:center;background-color:#101827"></div>`
+    : `<div class="img sv3-img-ph" style="background:${grad}"><svg viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,.5)" stroke-width="1.6"><path d="M4 9h16v10a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V9z"/><path d="M3 9l1.4-4.2A1 1 0 0 1 5.3 4h13.4a1 1 0 0 1 .9.8L21 9"/><path d="M9 13h6"/></svg></div>`;
+  return `<div class="comp">${img}<div class="cb"><div class="cn">${escapeText(place.name || "Nearby operator")}</div><div class="ca">${escapeText(place.address || "New York, NY")}</div><div class="ct">${chips}</div></div></div>`;
 }
 function sv3CovCard(title, desc, statusText, statusClass) {
   return `<div class="cov"><div class="cvt">${escapeText(title)}</div><div class="cvd">${escapeText(desc)}</div><span class="stat ${statusClass}">${escapeText(statusText)}</span></div>`;
@@ -3957,17 +3963,16 @@ function renderSpotVestV3(profile, recommendations, analysis) {
     .sort((a, b) => safeNumber(b.value, 0) - safeNumber(a.value, 0));
 
   // Sync the in-app search fields with current state
-  if (refs.biztype && business) {
-    const opt = [...refs.biztype.options].find((o) => o.value.toLowerCase() === String(state.business || "").toLowerCase());
-    if (opt) refs.biztype.value = opt.value;
-  }
+  // biztype is a typeable combobox (input + datalist): reflect the analyzed
+  // business back into it (works for free-typed values too).
+  if (refs.biztype) refs.biztype.value = state.business || refs.biztype.value || "";
   if (refs.zip) refs.zip.value = state.zip || refs.zip.value;
   if (refs.address && state.location?.address) refs.address.value = state.location.address;
 
   // Bottom line for the owner (composed from real signals)
   const altTop = recommendations.find((r) => r.business !== normalizeBusiness(state.business));
   const revRange = sv3ElText("revenue-projection") || elements.revenueProjection?.textContent || "";
-  const bottomLine = `${escapeText(decision.copy)} ${competitionCount > 0 ? `There are about <b>${formatInteger(competitionCount)}</b> directly comparable operators nearby, so differentiation and site economics decide the outcome.` : "Competitive density is light, so demand proof and the exact block decide the outcome."}${altTop ? ` If the numbers don't hold, <b>${escapeText(altTop.name.toLowerCase())}</b> screens stronger here (${formatBadgeScore(altTop.score)}).` : ""}`;
+  const bottomLine = `${escapeText(decision.copy)} ${competitionCount > 0 ? `There are about <b>${formatInteger(competitionCount)}</b> directly comparable operators nearby, so differentiation and site economics decide the outcome.` : "Competitive density is light, so demand proof and the exact block decide the outcome."}${altTop ? ` If the numbers don't hold, <b>${escapeText(altTop.name.toLowerCase())}</b> is a stronger fit here — see Better alternatives.` : ""}`;
 
   // signal pills
   const signalPills = [
@@ -4204,14 +4209,31 @@ function sv3BindActions() {
     "generate": "#export-full-button",
     "new": "#new-search-button"
   };
+  const flash = (btn, text) => {
+    if (btn.__flashing) return;
+    btn.__flashing = true;
+    const original = btn.innerHTML;
+    btn.innerHTML = escapeText(text);
+    window.setTimeout(() => { btn.innerHTML = original; btn.__flashing = false; }, 1500);
+  };
   document.querySelectorAll("#sv3-app [data-sv3-action]").forEach((btn) => {
     if (btn.dataset.sv3Bound) return;
     btn.dataset.sv3Bound = "1";
     btn.addEventListener("click", () => {
       const action = btn.dataset.sv3Action;
-      if (action === "compare") { try { addToCompare(); } catch {} sv3RenderCompare(); sv3ShowMain("compare"); return; }
+      if (action === "compare") {
+        try { addToCompare(); } catch {}
+        sv3RenderCompare();
+        sv3ShowMain("compare");
+        return;
+      }
       const sel = map[action];
       if (sel) document.querySelector(sel)?.click();
+      // Visible confirmation in the redesigned UI (the underlying handlers
+      // live on hidden legacy buttons, so without this the actions look dead).
+      if (action === "copy") flash(btn, "Link copied ✓");
+      else if (action === "save") flash(btn, (document.querySelector("#save-report-button")?.textContent || "").includes("Saved") ? "Saved ✓" : "Removed");
+      else if (action === "export-pdf" || action === "generate") flash(btn, "Opening print…");
     });
   });
 }
