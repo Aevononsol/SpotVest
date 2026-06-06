@@ -3734,8 +3734,8 @@ function sv3RenderMarketMap() {
 function sv3Bucket(raw) {
   const s = String(raw || "").toLowerCase();
   if (/coffee|caf|bakery|\btea\b|juice|smoothie|dessert|ice cream/.test(s)) return "cafe";
-  if (/\bbar\b|cocktail|wine|beer|tap|hookah|night|club|lounge/.test(s)) return "bar";
   if (/gym|fitness|yoga|pilates|cycl|crossfit|boxing|martial|dance|\bspa\b|wellness|salon|barber|nail|tattoo|tanning/.test(s)) return "gym";
+  if (/\bbar\b|cocktail|wine|beer|tap|hookah|nightclub|night club|lounge/.test(s)) return "bar";
   if (/restaurant|pizza|deli|sandwich|burger|chicken|sushi|ramen|taco|mexican|italian|thai|indian|korean|kitchen|\bfood\b|bbq|steak|grill|diner|brunch|seafood|vegan/.test(s)) return "food";
   return "retail";
 }
@@ -3776,13 +3776,22 @@ function sv3WeekSVG(weekdayPct) {
     return `<rect x="${x}" y="${y}" width="32" height="${hgt}" rx="5" fill="${fill}"/>`;
   }).join("");
 }
-function sv3RevCostSVG(beMonth) {
+// Category operating-cost ratio (modeled total monthly cost as a share of
+// projected revenue): thin-margin food highest, fitness lowest.
+function sv3CostRatio(rawBusiness) {
+  return { food: 0.9, cafe: 0.86, bar: 0.82, gym: 0.74, retail: 0.84 }[sv3Bucket(rawBusiness)] || 0.85;
+}
+function sv3RevCostSVG(beMonth, costFrac) {
   const be = Math.max(3, Math.min(24, beMonth || 14));
   const x = Math.round((be / 24) * 320);
-  const costY = (xx) => 70 + (58 - 70) * (xx / 320);
-  const cy = Math.round(costY(x));
+  // Flat-ish cost line whose height reflects the modeled cost level
+  // relative to the high-revenue endpoint (y=22 high … y=128 baseline).
+  const cf = Math.max(0.25, Math.min(0.85, costFrac || 0.6));
+  const yCost = Math.round(128 - (128 - 22) * cf);
+  const cy = yCost;
+  const costLine = `M0,${yCost + 6} L320,${yCost - 6}`;
   const rev = `M0,128 C${Math.round(x * 0.55)},122 ${Math.round(x * 0.9)},${cy + 8} ${x},${cy} C${Math.round(x + (320 - x) * 0.4)},${cy - 26} ${Math.round(x + (320 - x) * 0.78)},30 320,22`;
-  return { x, cy, rev, costLine: "M0,70 L320,58" };
+  return { x, cy, rev, costLine };
 }
 function sv3SeasonSVG(rawBusiness, score) {
   const patterns = {
@@ -3864,11 +3873,12 @@ function sv3MoneyHTML(ctx) {
   const aud = ctx.profile.audience || [];
   const profileCards = aud.map((row) => `<div style="margin-bottom:14px"><div class="cvt" style="font-size:13.5px;font-weight:650">${escapeText(row[0])}</div><div class="cvd" style="font-size:12px;color:var(--txt-3);margin-top:3px">${escapeText(row[1])}</div></div>`).join("");
   return `
-    <div class="section-label" style="margin-top:20px"><span class="n">15</span> Cost vs revenue at a glance</div>
+    <div class="note" style="margin-top:18px"><b>Modeled estimates — not live financials.</b> SpotVest has live demographics and competition data, but not per-business revenue, costs, or seasonality. The figures below are projected from category economics, area income and the modeled local rent. Verify against real operator P&amp;Ls.</div>
+    <div class="section-label"><span class="n">15</span> Cost vs revenue at a glance</div>
     <div class="cvr">
-      <div class="cvr-row"><div class="lab"><span class="n">Projected revenue (low)</span><span class="v" style="color:var(--green)">${escapeText(revLow)}/mo</span></div><div class="tk"><div class="fl rev"></div></div></div>
-      <div class="cvr-row"><div class="lab"><span class="n">Est. total monthly cost</span><span class="v" style="color:var(--amber)">~${escapeText(cost)}/mo</span></div><div class="tk"><div class="fl cost"></div></div></div>
-      <div class="desc" style="margin-top:4px">Modeled comparison of base-case revenue against estimated total monthly cost. Confirm real rent and labor before committing.</div>
+      <div class="cvr-row"><div class="lab"><span class="n">Projected revenue (low)</span><span class="v" style="color:var(--green)">${escapeText(revLow)}/mo</span></div><div class="tk"><div class="fl rev" style="width:100%"></div></div></div>
+      <div class="cvr-row"><div class="lab"><span class="n">Est. total monthly cost</span><span class="v" style="color:var(--amber)">~${escapeText(cost)}/mo</span></div><div class="tk"><div class="fl cost" style="width:${ctx.costPct}%"></div></div></div>
+      <div class="desc" style="margin-top:4px">Base-case projected revenue vs. estimated total monthly cost (modeled at ~${ctx.costPct}% of revenue for this category). Confirm real rent and labor before committing.</div>
     </div>
     <div class="card"><div class="sub">Revenue vs cost · first 24 months</div><div class="chart"><svg viewBox="0 0 320 150" style="margin-top:8px"><line class="gl" x1="0" y1="35" x2="320" y2="35"/><line class="gl" x1="0" y1="75" x2="320" y2="75"/><line class="gl" x1="0" y1="115" x2="320" y2="115"/><path d="${ctx.revCost.costLine}" fill="none" stroke="#FF6B6B" stroke-width="2.5"/><path d="${ctx.revCost.rev}" fill="none" stroke="#4ADE80" stroke-width="2.5"/><line x1="${ctx.revCost.x}" y1="18" x2="${ctx.revCost.x}" y2="140" stroke="rgba(57,194,214,.4)" stroke-width="1.5" stroke-dasharray="4 4"/><circle cx="${ctx.revCost.x}" cy="${ctx.revCost.cy}" r="4.5" fill="#4FE3D8" stroke="#0c1120" stroke-width="2"/></svg><div style="position:relative"><span class="peaktag" style="left:${Math.max(8, Math.min(82, Math.round(ctx.revCost.x / 320 * 100)))}%;top:-2px;transform:translateX(-50%)">Break-even ≈ ${escapeText(ctx.breakevenShort)}</span></div><div style="display:flex;justify-content:space-between;margin-top:10px" class="axlab"><span>Mo 1</span><span>6</span><span>12</span><span>18</span><span>24</span></div></div><div class="legend-row"><span class="li"><span class="sw" style="background:#4ADE80"></span>Projected revenue</span><span class="li"><span class="sw" style="background:#FF6B6B"></span>Total cost</span></div><div class="src">Modeled · SpotVest unit-economics engine</div></div>
     <div class="card whatif"><div class="sub">What-if · drag to test the deal</div>
@@ -3877,9 +3887,9 @@ function sv3MoneyHTML(ctx) {
       <div class="wf-out"><div class="wf-box"><div class="k">Projected revenue</div><div class="v" id="sv3-wf-rev">$102k–$171k</div></div><div class="wf-box"><div class="k">Break-even</div><div class="v" id="sv3-wf-be">14–28 mo</div></div><div class="wf-box"><div class="k">Rent % of sales</div><div class="v" id="sv3-wf-pct">6%</div></div><div class="wf-box"><div class="k">Verdict</div><div class="v" id="sv3-wf-verd" style="color:var(--amber)">Conditional</div></div></div>
       <div class="src">Live estimate · recalculated locally</div>
     </div>
-    <div class="card"><div class="sub">Seasonality · projected demand by month</div><div class="chart"><svg viewBox="0 0 320 110"><g>${ctx.seasonSVG}</g></svg><div style="display:flex;justify-content:space-between" class="axlab"><span>J</span><span>F</span><span>M</span><span>A</span><span>M</span><span>J</span><span>J</span><span>A</span><span>S</span><span>O</span><span>N</span><span>D</span></div></div><div class="desc">Summer &amp; early fall are strongest; <b style="color:var(--txt)">Jan–Feb dip ~35%</b> — keep 2–3 months of runway for the slow season.</div><div class="src">Modeled · category seasonality + local activity</div></div>
+    <div class="card"><div class="sub">Seasonality · projected demand by month</div><div class="chart"><svg viewBox="0 0 320 110"><g>${ctx.seasonSVG}</g></svg><div style="display:flex;justify-content:space-between" class="axlab"><span>J</span><span>F</span><span>M</span><span>A</span><span>M</span><span>J</span><span>J</span><span>A</span><span>S</span><span>O</span><span>N</span><span>D</span></div></div><div class="desc">Modeled from typical seasonality for this category — plan 2–3 months of runway for the slower months.</div><div class="src">Modeled estimate · category seasonality pattern</div></div>
     <div class="section-label"><span class="n">16</span> Revenue estimator · estimate only</div>
-    <div class="card"><div class="statline"><span class="sl">Projected monthly revenue</span><span class="sv" style="color:var(--teal-bright)">${escapeText(ctx.revenueProjection)}</span></div><div class="statline"><span class="sl">Break-even estimate</span><span class="sv">${escapeText(ctx.revenueBreakeven)}</span></div><div class="statline"><span class="sl">Rent %</span><span class="sv">${escapeText(ctx.revenueRentPercent)}</span></div><div class="desc" style="margin-top:12px">${escapeText(ctx.revenueNote)}</div><div class="src">Modeled · CartoDB rent comps · SpotVest unit-economics model</div></div>
+    <div class="card"><div class="statline"><span class="sl">Projected monthly revenue</span><span class="sv" style="color:var(--teal-bright)">${escapeText(ctx.revenueProjection)}</span></div><div class="statline"><span class="sl">Break-even estimate</span><span class="sv">${escapeText(ctx.revenueBreakeven)}</span></div><div class="statline"><span class="sl">Rent %</span><span class="sv">${escapeText(ctx.revenueRentPercent)}</span></div><div class="desc" style="margin-top:12px">${escapeText(ctx.revenueNote)}</div><div class="src">Modeled estimate · SpotVest unit-economics model (area income, rent &amp; category)</div></div>
     <div class="section-label"><span class="n">17</span> Customer profile</div>
     <div class="card">${profileCards}<div class="src">Census ACS 5-year · NYC Open Data</div></div>
     <div class="section-label"><span class="n">18</span> Market pulse</div>
@@ -4022,8 +4032,16 @@ function renderSpotVestV3(profile, recommendations, analysis) {
   const revenueNote = elements.revenueNote?.textContent || "Modeled ranges — verify against operator P&Ls.";
   const revNums = revenueProjection.match(/\$([\d.,]+)\s*[kK]?/g) || [];
   const parseK = (s) => { const n = Number(String(s).replace(/[^\d.]/g, "")); return /k/i.test(s) ? n : n / 1000; };
-  const revenueLowK = revNums.length ? `$${Math.round(parseK(revNums[0]))}k` : "$—";
-  const costK = revNums.length ? `$${Math.round(parseK(revNums[0]) * 0.62)}k` : "$—";
+  const revLowNum = revNums.length ? parseK(revNums[0]) : 0;            // $k/mo (modeled, low)
+  const revHighNum = revNums.length > 1 ? parseK(revNums[1]) : revLowNum * 1.55;
+  // Total monthly cost is modeled consistently from the revenue model using a
+  // category operating-cost ratio (no invented multiplier).
+  const costRatio = sv3CostRatio(state.business);
+  const costNum = Math.round(revLowNum * costRatio);
+  const revenueLowK = revLowNum ? `$${Math.round(revLowNum)}k` : "$—";
+  const costK = revLowNum ? `$${costNum}k` : "$—";
+  const costPct = revLowNum ? Math.max(35, Math.min(98, Math.round(costRatio * 100))) : 60;
+  const costFrac = revHighNum ? Math.max(0.25, Math.min(0.85, costNum / revHighNum)) : 0.6;
   const beMatch = revenueBreakeven.match(/(\d+)/);
   const breakevenShort = beMatch ? `mo ${beMatch[1]}` : "mo 14";
 
@@ -4082,13 +4100,13 @@ function renderSpotVestV3(profile, recommendations, analysis) {
     ftPeak: elements.footTrafficPeaks?.textContent || "Morning / lunch / evening",
     ftSplit: (elements.footTrafficWeekSplit?.textContent || "").replace(/Weekday\s*/i, "").replace(/\s*\/\s*weekend\s*/i, " / ").replace(/\s*modeled split\.?$/i, "") || "64% / 36%",
     freshness: formatBadgeScore(analysis.validation.freshness), sourceQuality: formatBadgeScore(analysis.validation.sourceQuality),
-    revenueProjection, revenueBreakeven, revenueRentPercent, revenueNote, revenueLowK, costK, breakevenShort,
+    revenueProjection, revenueBreakeven, revenueRentPercent, revenueNote, revenueLowK, costK, costPct, breakevenShort,
     pulseFoot: sv3Level((String(elements.footTrafficScore?.textContent || "").match(/\d+/) || [String(safeNumber(profile.transit, 50))])[0]), pulseSpend: sv3Level(profile.income),
     pulseCost: safeNumber(profile.rent, 50) >= 70 ? "Elevated" : "Manageable",
     chainFitPct: sv3Pct(safeNumber(profile.chainFit, 50)),
     footHourSVG: sv3FootHourSVG(state.business, ftScoreNum, seed),
     weekSVG: sv3WeekSVG(weekdayPct),
-    revCost: sv3RevCostSVG(beMonth),
+    revCost: sv3RevCostSVG(beMonth, costFrac),
     seasonSVG: sv3SeasonSVG(state.business, ftScoreNum),
     mapCenterLabel: state.location ? "Address" : "ZIP center",
     mapCount: mapComps.length
