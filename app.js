@@ -5921,9 +5921,17 @@ document.querySelectorAll("[data-start-analysis]").forEach((button) => {
   button.addEventListener("click", () => {
     closePublicActionPanels();
     document.body.classList.remove("landing-mode");
-    elements.businessInput?.focus({ preventScroll: true });
-    elements.businessForm?.scrollIntoView({ behavior: "smooth", block: "center" });
-    showBusinessSuggestions({ showAll: true });
+    if (elements.startScreen) elements.startScreen.hidden = true;
+    if (elements.results) elements.results.hidden = false;
+    const sv3App = document.querySelector("#sv3-app");
+    sv3App?.querySelectorAll("[data-sv3-main]").forEach((screen) => {
+      screen.classList.toggle("active", screen.dataset.sv3Main === "search");
+    });
+    sv3App?.querySelectorAll("[data-sv3-nav]").forEach((navButton) => {
+      navButton.classList.toggle("active", navButton.dataset.sv3Nav === "search");
+    });
+    document.querySelector("#sv3-search-business")?.focus({ preventScroll: true });
+    sv3App?.scrollIntoView({ behavior: "smooth", block: "start" });
   });
 });
 

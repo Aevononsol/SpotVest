@@ -7920,6 +7920,14 @@ body:not(.landing-mode) .results {
   padding: 0 !important;
 }
 
+body:not(.landing-mode) .start-screen:not([hidden]) {
+  display: none !important;
+}
+
+.results .start-screen:not([hidden]) {
+  display: none !important;
+}
+
 body:not(.landing-mode) .sv3-app {
   --sv3-navy: #080e1c;
   --sv3-panel: #0d1424;
@@ -8735,4 +8743,29 @@ body:not(.landing-mode) .sv3-bottom-nav {
   body:not(.landing-mode) .sv3-row2 {
     grid-template-columns: 1fr;
   }
+}
+
+/* SpotVest v3 replacement guard.
+   The old in-app placeholder/sidebar must never compete with the replacement
+   experience once the public homepage hands off to the app. */
+body:not(.landing-mode) #start-screen,
+body:not(.landing-mode) #start-screen:not([hidden]),
+body:not(.landing-mode) #start-screen::before,
+body:not(.landing-mode) #start-screen::after {
+  content: none !important;
+  display: none !important;
+}
+
+body:not(.landing-mode) .sidebar {
+  display: none !important;
+}
+
+body:not(.landing-mode) .workspace {
+  display: block !important;
+  grid-template-columns: 1fr !important;
+}
+
+body:not(.landing-mode) .results {
+  display: block !important;
+  margin: 0 auto !important;
 }
