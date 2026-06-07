@@ -3686,6 +3686,7 @@ function sv3OverviewHTML(ctx) {
       <p>${ctx.bottomLine}</p>
       <div class="src">Generated · OpenAI summary over SpotVest signals</div>
     </div>
+    ${/CONDITIONAL/i.test(ctx.decision) ? `<div class="section-label"><span class="n">!</span> Conditions to open</div><div class="card accent"><div class="sub">This location works for ${escapeText(ctx.business.toLowerCase())} only if</div><ul class="bullets">${(ctx.conditions || []).slice(0, 5).map(sv3SplitLabel).join("") || "<li>Verify site economics before committing.</li>"}</ul></div>` : ""}
     <div class="duo">
       <div class="metric"><div class="k">Success probability</div><div class="v">${ctx.score}<span class="u">/100</span></div></div>
       <div class="metric good"><div class="k">Evidence confidence</div><div class="v">${ctx.confidence}<span class="u">/100·${escapeText(ctx.confidenceLabel)}</span></div></div>
@@ -4206,7 +4207,7 @@ function sv3BindActions() {
     "export-pdf": "#export-pdf-button",
     "save": "#save-report-button",
     "copy": "#copy-link-button",
-    "generate": "#export-full-button",
+    "generate": "#export-pdf-button",
     "new": "#new-search-button"
   };
   const flash = (btn, text) => {
@@ -4239,33 +4240,56 @@ function sv3BindActions() {
 }
 
 /* ---------- compare view ---------- */
+function sv3Short(text, n) {
+  const s = String(text || "").trim();
+  return s.length > n ? s.slice(0, n - 1).replace(/[ ,;:.]+$/, "") + "…" : s;
+}
+function sv3CompareCard(it, isWinner) {
+  const sc = formatBadgeScore(it.successProbability);
+  const scls = safeNumber(it.successProbability, 0) >= 70 ? "g" : "a";
+  const loc = it.address || it.area || (it.zip ? `ZIP ${it.zip}` : "Location");
+  return `<div class="cmp-col${isWinner ? " win" : ""}">
+      <div class="cmp-head"><div class="ct">${escapeText(it.business || "Business")}</div><div class="cl">${escapeText(loc)}</div>${isWinner ? '<span class="winbadge">★ Best fit</span>' : ""}</div>
+      <div class="cmp-score"><div class="s ${scls}">${sc}</div><div class="sl">${escapeText(it.decision || "Screened")}</div></div>
+      <div class="cmp-rows">
+        <div class="r"><span class="rl">Confidence</span><span class="rv">${formatBadgeScore(it.confidenceScore)}${it.confidenceLabel ? ` · ${escapeText(it.confidenceLabel)}` : ""}</span></div>
+        <div class="r"><span class="rl">Competition</span><span class="rv">${escapeText(it.competition || "—")}</span></div>
+        <div class="r"><span class="rl">ZIP</span><span class="rv">${escapeText(it.zip || "—")}</span></div>
+        <div class="r" style="display:block"><span class="rl">Main risk</span><div class="rv" style="font-weight:600;margin-top:4px;line-height:1.4;text-align:left">${escapeText(sv3Short(it.mainRisk, 90))}</div></div>
+      </div>
+      <div style="padding:0 14px 14px"><button class="btn ghost sm" type="button" data-cmp-remove="${escapeText(it.id)}">Remove</button></div>
+    </div>`;
+}
+function sv3BindCompareControls() {
+  document.querySelector("#sv3-cmp-clear")?.addEventListener("click", () => { try { clearCompare(); } catch {} sv3RenderCompare(); });
+  document.querySelectorAll("#sv3-compare-body [data-cmp-remove]").forEach((b) => {
+    b.addEventListener("click", () => { try { removeFromCompare(b.dataset.cmpRemove); } catch {} sv3RenderCompare(); });
+  });
+}
 function sv3RenderCompare() {
   const refs = sv3Refs();
   if (!refs.compareBody) return;
-  const list = Array.isArray(state.compareList) ? state.compareList : [];
-  if (!list.length) {
-    refs.compareBody.innerHTML = `<div class="bottomline"><div class="bt">Compare locations</div><p>Add this report to compare, then run another location. SpotVest will rank them side by side.</p></div>`;
+  // Winner: highest success probability; evidence confidence breaks ties.
+  const ranked = (Array.isArray(state.compareList) ? state.compareList : []).slice()
+    .sort((a, b) => safeNumber(b.successProbability, 0) - safeNumber(a.successProbability, 0)
+      || safeNumber(b.confidenceScore, 0) - safeNumber(a.confidenceScore, 0));
+
+  if (ranked.length < 2) {
+    const hint = ranked.length === 1
+      ? "One location is saved. Run another business or location, then tap <b>Add current report to compare</b> to rank them."
+      : "Run an analysis, tap <b>Add current report to compare</b>, then add a second location to compare side by side.";
+    refs.compareBody.innerHTML = `<div class="bottomline"><div class="bt">Compare locations</div><p>Add <b>two or more completed analyses</b> to compare. ${hint}</p></div>` +
+      (ranked.length === 1 ? `<div class="cmp-grid">${sv3CompareCard(ranked[0], false)}</div>` : "");
+    sv3BindCompareControls();
     return;
   }
-  const ranked = [...list].sort((a, b) => safeNumber(b.score, 0) - safeNumber(a.score, 0));
-  const top = ranked[0], second = ranked[1];
-  const summary = second
-    ? `<div class="bottomline"><div class="bt">Which spot wins?</div><p><b>${escapeText(top.label || top.zip)}</b> screens higher (${formatBadgeScore(top.score)}) than <b>${escapeText(second.label || second.zip)}</b> (${formatBadgeScore(second.score)}). It has the edge on this screen.</p></div>`
-    : `<div class="bottomline"><div class="bt">Compare locations</div><p>One location saved. Add another to see a side-by-side ranking.</p></div>`;
-  const cols = ranked.slice(0, 2).map((item, i) => {
-    const sc = formatBadgeScore(item.score);
-    const scls = safeNumber(item.score, 0) >= 70 ? "g" : "a";
-    return `<div class="cmp-col${i === 0 ? " win" : ""}">
-      <div class="cmp-head"><div class="ct">${escapeText(item.label || item.zip || "Location")}</div><div class="cl">${escapeText(item.business || "")}</div>${i === 0 ? '<span class="winbadge">★ Best fit</span>' : ""}</div>
-      <div class="cmp-score"><div class="s ${scls}">${sc}</div><div class="sl">${escapeText(item.decision || "Screened")}</div></div>
-      <div class="cmp-rows">
-        <div class="r"><span class="rl">Competition</span><span class="rv">${escapeText(item.competition || "—")}</span></div>
-        <div class="r"><span class="rl">Confidence</span><span class="rv">${formatBadgeScore(item.confidence)}</span></div>
-        <div class="r"><span class="rl">Location</span><span class="rv">${escapeText(item.zip || "—")}</span></div>
-      </div>
-    </div>`;
-  }).join("");
-  refs.compareBody.innerHTML = `${summary}<div class="cmp-grid">${cols}</div>`;
+
+  const winnerId = ranked[0].id;
+  const winLoc = ranked[0].address || ranked[0].area || `ZIP ${ranked[0].zip}`;
+  const summary = `<div class="bottomline"><div class="bt">Which location wins?</div><p><b>${escapeText(ranked[0].business)} · ${escapeText(winLoc)}</b> screens strongest at ${formatBadgeScore(ranked[0].successProbability)}/100, ahead of ${escapeText(ranked[1].business)} (${formatBadgeScore(ranked[1].successProbability)}). Highest success probability wins; evidence confidence breaks ties.</p></div>`;
+  const cards = ranked.map((it) => sv3CompareCard(it, it.id === winnerId)).join("");
+  refs.compareBody.innerHTML = summary + `<div class="cmp-grid">${cards}</div><div class="actions"><button class="btn ghost sm" type="button" id="sv3-cmp-clear">Clear all (${ranked.length})</button></div>`;
+  sv3BindCompareControls();
 }
 
 /* ---------- screen / tab controls ---------- */
@@ -5268,6 +5292,9 @@ function setPrintMeta() {
 
 // Builds the 1-2 page executive summary from the same computed data the report
 // uses, so the short PDF and the full report can never disagree.
+// Build a professional, prose consulting report (for the PDF export) rather
+// than a screenshot of the dashboard. All values come from the same live
+// analysis used on screen — one source of truth.
 function renderExecSummary() {
   if (!elements.execSummary) return;
   const profile = profileForZip(state.zip);
@@ -5276,86 +5303,110 @@ function renderExecSummary() {
   const businessResult = currentBusinessResult();
   const analysis = buildInstitutionalAnalysis(profile, recommendations);
   const confidence = confidenceFor(state.zip, businessResult);
-  const decisionSlug = analysis.decision.toLowerCase().replace(/[^a-z0-9]+/g, "-");
-  const businessLabel = businessDisplayName(state.business) || "This business";
+  const business = businessDisplayName(state.business) || "This business";
+  const location = state.location?.address
+    ? `${state.location.address}`
+    : `${profile.name} (ZIP ${state.zip})`;
+  const generated = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+  const score = clampScore(analysis.successProbability);
+  const conf = clampScore(analysis.confidenceScore);
+  const isConditional = /CONDITIONAL/i.test(analysis.decision);
 
-  const reasons = analysis.scores
-    .slice()
-    .sort((a, b) => safeNumber(b.value, 0) - safeNumber(a.value, 0))
-    .slice(0, 3)
-    .map((score) => `<li><strong>${escapeText(score.name)} ${formatScore(score.value)}</strong><span>${escapeText(scoreSignalCopy(score))}</span></li>`)
-    .join("");
-  const risks = analysis.topRisks
-    .slice(0, 4)
-    .map((risk) => `<li>${escapeText(risk)}</li>`)
-    .join("");
-  const alternatives = analysis.alternatives.length
-    ? analysis.alternatives.slice(0, 3).map((alt) => `<li>${escapeText(alt)}</li>`).join("")
-    : "<li>No stronger alternative stood out in this area screen.</li>";
+  const li = (arr, fallback) => (arr && arr.length ? arr : [fallback]).map((t) => `<li>${escapeText(t)}</li>`).join("");
+  const para = (t) => `<p>${escapeText(t)}</p>`;
 
-  const ft = {
-    score: elements.footTrafficScore?.textContent?.trim() || "Needs more data",
-    visitors: elements.footTrafficVisitors?.textContent?.trim() || "Needs analysis",
-    backing: elements.footTrafficConfidence?.textContent?.trim() || "Modeled estimate"
-  };
-  const comp = {
-    saturation: elements.businessSaturation?.textContent?.trim() || "Checking",
-    mix: elements.businessMix?.textContent?.trim() || "Mixed market",
-    verdict: elements.businessVerdict?.textContent?.trim() || "Verify at the block level."
-  };
-  const hasCompetitive = Boolean(businessResult?.googlePlaces?.topPlaces?.length || businessResult?.registryExact);
-  const compStatus = hasCompetitive
-    ? { text: "Verified", cls: "verified" }
-    : businessResult ? { text: "Modeled", cls: "modeled" } : { text: "Checking", cls: "research" };
-  const chip = (cls, text) => `<span class="status status--${cls}"><i class="status__dot"></i>${text}</span>`;
+  // Market prose from census (profile.audience holds the live ACS lines).
+  const marketLines = (profile.audience || []).map((row) => `<li><b>${escapeText(row[0])}:</b> ${escapeText(row[1])}</li>`).join("")
+    || `<li>Market demographics for ${escapeText(location)} were used as a first-pass screen.</li>`;
+
+  // Competition prose.
+  const gp = businessResult?.googlePlaces;
+  const compCount = businessResult ? safeNumber(businessResult.count, 0) : 0;
+  const topOps = (gp?.topPlaces || []).slice(0, 5).map((p) => {
+    const r = safeNumber(p.rating);
+    const rev = safeNumber(p.reviews);
+    const bits = [r !== null ? `${r.toFixed(1)}★` : null, rev ? `${formatInteger(rev)} reviews` : null].filter(Boolean).join(", ");
+    return `<li>${escapeText(p.name || "Nearby operator")}${bits ? ` — ${escapeText(bits)}` : ""}</li>`;
+  }).join("");
+  const compPara = compCount > 0
+    ? `Public records and visible search results show approximately ${formatInteger(compCount)} comparable ${business.toLowerCase()} operators in this area${gp?.avgRating ? `, averaging ${gp.avgRating.toFixed(1)}★ across rated competitors` : ""}. Differentiation against established operators is a key determinant of success.`
+    : `No matching competitor records were returned for this exact search; treat competitive intensity as directional and verify on the block.`;
+
+  // Financials (modeled).
+  const revenue = elements.revenueProjection?.textContent?.trim() || "Modeled on request";
+  const breakeven = elements.revenueBreakeven?.textContent?.trim() || "—";
+  const rentPct = elements.revenueRentPercent?.textContent?.trim() || "—";
 
   elements.execSummary.innerHTML = `
-    <div class="exec-decision">
-      <div class="exec-decision-main">
-        <span class="exec-label">Recommendation</span>
-        <strong class="exec-verdict decision-${decisionSlug}">${escapeText(analysis.decision)}</strong>
-        <p>${escapeText(analysis.decisionCopy)}</p>
+    <article class="report-doc">
+      <header class="rd-head">
+        <div class="rd-brand">Spot<span>Vest</span></div>
+        <div class="rd-title">Location Decision Report</div>
+        <div class="rd-sub">${escapeText(business)} &middot; ${escapeText(location)}</div>
+        <div class="rd-meta">Prepared ${escapeText(generated)} &middot; SpotVest Decision Intelligence</div>
+      </header>
+
+      <section class="rd-section">
+        <h2>Executive Summary</h2>
+        ${para(analysis.summary)}
+        ${para(`On the evidence reviewed, SpotVest screens this opportunity as ${analysis.decision} with a success probability of ${score}/100 and evidence confidence of ${conf}/100. The sections below set out the recommendation, the conditions and risks that drive it, and the market and financial context.`)}
+      </section>
+
+      <section class="rd-section">
+        <h2>Recommendation</h2>
+        <p class="rd-verdict rd-${analysis.decision.toLowerCase().replace(/[^a-z0-9]+/g, "-")}">${escapeText(analysis.decision)}</p>
+        ${para(analysis.decisionCopy)}
+      </section>
+
+      <div class="rd-twocol">
+        <section class="rd-section"><h2>Success Probability</h2><p class="rd-metric">${score}<span>/100</span></p><p class="rd-metric-note">${escapeText(decisionTier(score).tier)} — the modeled odds of success for this business at this location.</p></section>
+        <section class="rd-section"><h2>Evidence Confidence</h2><p class="rd-metric">${conf}<span>/100</span></p><p class="rd-metric-note">${escapeText(confidence.label)} — how much of this report is backed by live data, not the odds of success.</p></section>
       </div>
-      <div class="exec-metrics">
-        <div><span>Success probability</span><strong>${formatScore(analysis.successProbability)} · ${escapeText(decisionTier(analysis.successProbability).tier)}</strong></div>
-        <div><span>Confidence</span><strong>${escapeText(confidence.label)} · ${formatScore(analysis.confidenceScore)}</strong></div>
-      </div>
-    </div>
-    <p class="exec-confidence-note">Confidence = how much of this report is backed by live data, not the odds of success.</p>
-    <div class="exec-grid">
-      <section class="exec-card">
-        <h3>Top reasons to consider it</h3>
-        <ul class="exec-reasons">${reasons}</ul>
+
+      ${isConditional ? `<section class="rd-section"><h2>Conditions to Open</h2><p>This location can work for ${escapeText(business.toLowerCase())} only if the following conditions are met:</p><ul class="rd-list">${li(analysis.conditions, "Verify site economics before committing.")}</ul></section>` : `<section class="rd-section"><h2>Conditions &amp; Requirements</h2><ul class="rd-list">${li(analysis.conditions, "Verify site economics before committing.")}</ul></section>`}
+
+      <section class="rd-section">
+        <h2>Market Analysis</h2>
+        ${para(`Demographic and area signals for ${location}:`)}
+        <ul class="rd-list">${marketLines}</ul>
       </section>
-      <section class="exec-card">
-        <h3>Top risks</h3>
-        <ul class="exec-risks">${risks}</ul>
+
+      <section class="rd-section">
+        <h2>Competition Analysis</h2>
+        ${para(compPara)}
+        ${topOps ? `<p class="rd-subhead">Notable nearby operators</p><ul class="rd-list">${topOps}</ul>` : ""}
       </section>
-    </div>
-    <div class="exec-grid">
-      <section class="exec-card">
-        <h3>Foot traffic ${chip("modeled", "Modeled")}</h3>
-        <p class="exec-stat"><strong>${escapeText(ft.score)}</strong> foot-traffic score</p>
-        <p>Estimated daily visitors: ${escapeText(ft.visitors)}</p>
-        <p class="exec-sub">${escapeText(ft.backing)}</p>
+
+      <section class="rd-section">
+        <h2>Risks</h2>
+        <ul class="rd-list">${li(analysis.topRisks, "No severe risk signals detected in this screen.")}</ul>
       </section>
-      <section class="exec-card">
-        <h3>Competition ${chip(compStatus.cls, compStatus.text)}</h3>
-        <p class="exec-stat"><strong>${escapeText(comp.saturation)}</strong> · ${escapeText(comp.mix)}</p>
-        <p class="exec-sub">${escapeText(comp.verdict)}</p>
+
+      <section class="rd-section">
+        <h2>Financial Considerations</h2>
+        ${para(`Modeled estimates (not live financials): projected monthly revenue ${revenue}, break-even ${breakeven}, with rent at approximately ${rentPct} of sales. These are derived from category economics, area income and modeled local rent — verify against real operator P&Ls before committing.`)}
       </section>
-    </div>
-    <section class="exec-card">
-      <h3>Better alternatives to weigh</h3>
-      <ul class="exec-alternatives">${alternatives}</ul>
-    </section>
-    <div class="exec-legend" aria-hidden="true">
-      <span class="status status--verified"><i class="status__dot"></i>Verified · live data</span>
-      <span class="status status--modeled"><i class="status__dot"></i>Modeled · SpotVest model</span>
-      <span class="status status--estimated"><i class="status__dot"></i>Estimated · proxy</span>
-      <span class="status status--risk"><i class="status__dot"></i>Risk</span>
-    </div>
-    <p class="exec-foot-note">${escapeText(businessLabel)} screen · Modeled values are estimates, not guaranteed outcomes — Due Diligence Required on financials. Use “Full report PDF” for methodology, evidence coverage, and full detail.</p>
+
+      <section class="rd-section">
+        <h2>Alternative Concepts</h2>
+        <ul class="rd-list">${li(analysis.alternatives, "No stronger alternative stood out in this area screen.")}</ul>
+      </section>
+
+      <section class="rd-section">
+        <h2>Data Sources</h2>
+        <ul class="rd-list">
+          <li>U.S. Census ACS 5-year — demographics, income, housing.</li>
+          <li>NYC Open Data — business records, licenses, 311, permits.</li>
+          <li>Google Places — nearby competitors, ratings, reviews.</li>
+          <li>MTA subway ridership — mobility / foot-traffic proxy (modeled).</li>
+          <li>SpotVest decision engine &amp; OpenAI narrative layer.</li>
+        </ul>
+      </section>
+
+      <footer class="rd-foot">
+        Generated ${escapeText(generated)} by SpotVest. Modeled values are estimates, not guaranteed outcomes — Due Diligence Required on financials, lease terms, and operator strength. This report is decision-support intelligence, not brokerage, legal, or financial advice.
+      </footer>
+    </article>
   `;
 }
 
@@ -5474,6 +5525,7 @@ function buildCompareSnapshot() {
     confidenceLabel: confidence.label,
     confidenceScore: clampScore(analysis.confidenceScore),
     competition: elements.businessSaturation?.textContent?.trim() || "Checking",
+    mainRisk: (analysis.topRisks && analysis.topRisks[0]) || "Operator financials & exact economics — due diligence required.",
     radius: state.location?.radiusMiles || null,
     // Static, location-level metrics — identical across concepts at the same
     // address. (Concept demand lives in successProbability, not here.)

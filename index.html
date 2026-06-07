@@ -24,8 +24,8 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/4.7.1/maplibre-gl.min.css" />
     <script defer src="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/4.7.1/maplibre-gl.min.js"></script>
-    <link rel="stylesheet" href="./styles.css?v=20260606-sv3-replacement-final" />
-    <link rel="stylesheet" href="./inside-v3.css?v=20260606-qabugs" />
+    <link rel="stylesheet" href="./styles.css?v=20260607-qa2" />
+    <link rel="stylesheet" href="./inside-v3.css?v=20260607-qa2" />
   </head>
   <body class="landing-mode">
     <main class="app-shell">
@@ -609,8 +609,8 @@
               <div class="card accent"><div class="desc" style="margin-top:0"><b style="color:var(--txt);font-weight:700">Answer first:</b> should this business open here? SpotVest returns the decision, then the evidence behind it.</div></div>
 
               <div class="section-label"><span class="n">1</span> Business type</div>
-              <div class="field"><label for="sv3-biztype">What business is the client opening?</label>
-                <input class="input" id="sv3-biztype" list="sv3-biz-options" autocomplete="off" placeholder="Type or pick — e.g. Italian restaurant, gym, nail salon" />
+              <div class="field"><label for="sv3-biztype">Business type</label>
+                <input class="input" id="sv3-biztype" list="sv3-biz-options" autocomplete="off" placeholder="Type or select a business type" />
                 <datalist id="sv3-biz-options">
                   <option value="Italian restaurant"></option><option value="Mexican restaurant"></option><option value="Chinese restaurant"></option><option value="Japanese / sushi"></option><option value="Thai restaurant"></option><option value="Indian restaurant"></option><option value="Korean restaurant"></option><option value="Mediterranean / Middle Eastern"></option><option value="American / diner"></option><option value="Caribbean / Jamaican"></option><option value="Latin American"></option><option value="Vietnamese / pho"></option><option value="French / bistro"></option><option value="Pizza"></option><option value="Burgers"></option><option value="Chicken / wings"></option><option value="Seafood"></option><option value="BBQ / smokehouse"></option><option value="Steakhouse"></option><option value="Vegan / vegetarian"></option><option value="Fast casual lunch"></option><option value="Breakfast / brunch"></option><option value="Deli / sandwich shop"></option><option value="Food hall stall"></option><option value="Ghost / delivery kitchen"></option>
                   <option value="Specialty coffee"></option><option value="Café / bakery"></option><option value="Dessert / ice cream"></option><option value="Juice / smoothie bar"></option><option value="Bubble tea"></option><option value="Cocktail bar"></option><option value="Wine bar"></option><option value="Beer / taproom"></option><option value="Hookah lounge"></option>
@@ -622,9 +622,9 @@
                 </datalist>
               </div>
               <div class="section-label"><span class="n">2</span> Location</div>
-              <div class="field"><label for="sv3-zip">NYC ZIP code</label><input class="input" id="sv3-zip" inputmode="numeric" autocomplete="off" placeholder="e.g. 10003"></div>
+              <div class="field"><label for="sv3-zip">ZIP Code</label><input class="input" id="sv3-zip" inputmode="numeric" autocomplete="off" placeholder=""></div>
               <div class="section-label"><span class="n">3</span> Exact address</div>
-              <div class="field"><label for="sv3-address">Address for block-level analysis</label><input class="input" id="sv3-address" autocomplete="off" placeholder="e.g. 156 1st Ave, New York, NY 10009"></div>
+              <div class="field"><label for="sv3-address">Address</label><input class="input" id="sv3-address" autocomplete="off" placeholder=""></div>
               <div class="field"><div class="row2"><input class="input" id="sv3-budget" placeholder="Budget ($) optional" inputmode="numeric"><select class="input" id="sv3-radius"><option value="0.5">0.5 mi</option><option value="1">1 mi</option><option value="2">2 mi</option></select></div></div>
               <button class="btn" type="button" id="sv3-analyze-address">Analyze address →</button>
               <button class="btn ghost sm" type="button" id="sv3-analyze-area" style="margin-top:10px">Use area only</button>
@@ -1402,7 +1402,7 @@
     </aside>
 
     <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script defer src="./app.js?v=20260606-qabugs"></script>
+    <script defer src="./app.js?v=20260607-qa2"></script>
     <script defer src="./home.js?v=20260604-home-1"></script>
   </body>
 </html>

@@ -8725,3 +8725,33 @@ body:not(.landing-mode) .results {
   display: block !important;
   margin: 0 auto !important;
 }
+
+/* ================================================================
+   Professional PDF report document (#exec-summary in print-exec mode).
+   Rendered by renderExecSummary() as prose sections, not a dashboard.
+   ================================================================ */
+.report-doc{color:#1a2230;font-family:'Inter',system-ui,sans-serif;max-width:720px;margin:0 auto;line-height:1.55}
+.report-doc .rd-head{border-bottom:2px solid #0e2a40;padding-bottom:14px;margin-bottom:20px}
+.report-doc .rd-brand{font-family:'Sora',sans-serif;font-weight:800;font-size:22px;color:#0e2a40;letter-spacing:-.5px}
+.report-doc .rd-brand span{color:#0e7490}
+.report-doc .rd-title{font-family:'Sora',sans-serif;font-size:26px;font-weight:800;margin-top:8px;color:#0b1422;letter-spacing:-.5px}
+.report-doc .rd-sub{font-size:14px;color:#334155;margin-top:4px;font-weight:600}
+.report-doc .rd-meta{font-size:10.5px;color:#64748b;margin-top:6px;text-transform:uppercase;letter-spacing:1px}
+.report-doc .rd-section{margin:18px 0;page-break-inside:avoid}
+.report-doc .rd-section h2{font-family:'Sora',sans-serif;font-size:14px;font-weight:700;color:#0e2a40;text-transform:uppercase;letter-spacing:1.2px;border-bottom:1px solid #e2e8f0;padding-bottom:6px;margin:0 0 10px}
+.report-doc p{font-size:13.5px;color:#1f2937;margin:0 0 8px}
+.report-doc .rd-list{margin:0 0 6px 18px;padding:0}
+.report-doc .rd-list li{font-size:13px;color:#334155;margin-bottom:6px;line-height:1.5}
+.report-doc .rd-list li b{color:#0b1422}
+.report-doc .rd-verdict{font-family:'Sora',sans-serif;font-weight:800;font-size:18px;margin:0 0 6px}
+.report-doc .rd-conditional,.report-doc .rd-needs-more-data{color:#b45309}
+.report-doc .rd-open{color:#15803d}
+.report-doc .rd-do-not-open{color:#b91c1c}
+.report-doc .rd-twocol{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.report-doc .rd-metric{font-family:'Sora',sans-serif;font-size:34px;font-weight:800;color:#0e2a40;margin:0;line-height:1}
+.report-doc .rd-metric span{font-size:15px;color:#94a3b8;font-weight:700}
+.report-doc .rd-metric-note{font-size:12px;color:#475569;margin-top:4px}
+.report-doc .rd-subhead{font-weight:700;font-size:12.5px;color:#0b1422;margin:8px 0 4px}
+.report-doc .rd-foot{margin-top:22px;padding-top:12px;border-top:1px solid #e2e8f0;font-size:10px;color:#64748b;line-height:1.5}
+/* In the PDF, our document carries its own header/footer — drop the legacy ones. */
+body.print-exec .print-header,body.print-exec .print-footer{display:none !important}

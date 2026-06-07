@@ -34,9 +34,10 @@
 .sv3-app .topbar .dot{width:7px;height:7px;border-radius:50%;background:var(--teal);box-shadow:0 0 10px var(--teal);display:inline-block;margin-right:7px;vertical-align:middle}
 .sv3-app .circ{width:38px;height:38px;border-radius:50%;border:1px solid var(--border-strong);display:flex;align-items:center;justify-content:center;color:var(--txt-2);background:rgba(255,255,255,.02);cursor:pointer;font-size:15px}
 
-.sv3-app .tabs{position:sticky;top:63px;z-index:25;display:flex;gap:10px;padding:12px 16px 13px;overflow-x:auto;-webkit-overflow-scrolling:touch;scroll-padding:0 16px;backdrop-filter:blur(18px);background:rgba(7,11,22,.8);border-bottom:1px solid var(--line);scrollbar-width:none}
+.sv3-app .tabs{position:sticky;top:63px;z-index:25;display:flex;gap:12px;padding:14px 18px 15px;overflow-x:auto;-webkit-overflow-scrolling:touch;scroll-padding:0 18px;backdrop-filter:blur(18px);background:rgba(7,11,22,.8);border-bottom:1px solid var(--line);scrollbar-width:none}
 .sv3-app .tabs::-webkit-scrollbar{display:none}
-.sv3-app .tab{flex:0 0 auto;font-size:13px;font-weight:600;font-family:'Sora';padding:10px 18px;border-radius:999px;border:1px solid var(--border);background:var(--surface);color:var(--txt-3);cursor:pointer;transition:.15s;white-space:nowrap}
+.sv3-app .tab{flex:0 0 auto;font-size:14px;font-weight:600;font-family:'Sora';padding:12px 24px;border-radius:999px;border:1px solid var(--border);background:var(--surface);color:var(--txt-3);cursor:pointer;transition:.15s;white-space:nowrap}
+.sv3-app .tab:hover{color:var(--txt-2);border-color:var(--border-strong)}
 .sv3-app .tab.on{background:var(--grad);color:#04222a;border-color:transparent;box-shadow:0 4px 14px rgba(57,194,214,.3)}
 
 .sv3-app .screen{position:relative;z-index:1;padding:0 16px 130px}
