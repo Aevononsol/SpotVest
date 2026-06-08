@@ -1458,14 +1458,14 @@ function opportunityCompetition(zip, business, profile, options = {}) {
 
 function scoreCategory(profile, model, options = {}) {
   const raw = Object.entries(model.weights).reduce((total, [metric, weight]) => {
-    return total + (safeNumber(profile[metric], 50) - 50) * weight * 2.25;
-  }, 56);
+    return total + (safeNumber(profile[metric], 50) - 50) * weight * 3.15;
+  }, 50);
 
   const competition = opportunityCompetition(state.zip, model.business, profile, options);
   const localFit = model.business === "restaurant"
     ? Math.round((safeNumber(profile.nightlife, 50) + safeNumber(profile.transit, 50) + safeNumber(profile.density, 50) - safeNumber(profile.rent, 50) * 0.45) / 3)
     : Math.round((safeNumber(profile.localPreference, 50) + safeNumber(profile.density, 50) - safeNumber(profile.rent, 50) * 0.35) / 2.2);
-  const contextAdjustment = Math.max(-8, Math.min(8, Math.round((localFit - 50) / 8)));
+  const contextAdjustment = Math.max(-14, Math.min(14, Math.round((localFit - 50) / 5.8)));
 
   return Math.max(5, Math.min(98, Math.round(raw + competition.adjustment + contextAdjustment)));
 }
@@ -2975,7 +2975,7 @@ function decisionCopyFor(decision, successProbability, confidenceScore, riskScor
   if (confidenceScore < 70) {
     return `Opportunity exists, but confidence is ${formatScore(confidenceScore)}. More proof is needed before a yes.`;
   }
-  return `Evidence is strong enough to screen this as conditional: ${formatScore(successProbability)} success probability, with conditions that must be met before opening.`;
+  return `Evidence is strong enough to screen this as conditional: ${formatScore(successProbability)} viability score, with conditions that must be met before opening.`;
 }
 
 function decisionFor(profile, recommendations, businessResult) {
@@ -3110,6 +3110,49 @@ function clampScore(value) {
   return Math.max(0, Math.min(100, Math.round(number)));
 }
 
+function weightedBusinessScore(scoreValue) {
+  return scoreValue("Demand") * businessSuccessWeights.demand +
+    scoreValue("Customer fit") * businessSuccessWeights.customerFit +
+    scoreValue("Competition") * businessSuccessWeights.competition +
+    scoreValue("Financial viability") * businessSuccessWeights.financial +
+    scoreValue("Location quality") * businessSuccessWeights.location +
+    scoreValue("Area momentum") * businessSuccessWeights.growth +
+    scoreValue("Risk") * businessSuccessWeights.risk;
+}
+
+function calibratedDecisionScore({ weightedScore, scoreValue, confidenceScore, successModel, civicResult }) {
+  const demand = scoreValue("Demand");
+  const customerFit = scoreValue("Customer fit");
+  const competition = scoreValue("Competition");
+  const financial = scoreValue("Financial viability");
+  const location = scoreValue("Location quality");
+  const growth = scoreValue("Area momentum");
+  const risk = scoreValue("Risk");
+  const weakSignals = [demand, customerFit, competition, financial, location, growth, risk].filter((value) => value < 45).length;
+  const strongSignals = [demand, customerFit, competition, financial, location, growth, risk].filter((value) => value >= 72).length;
+
+  let adjustment = 0;
+  if (competition < 28) adjustment -= 12;
+  else if (competition < 42) adjustment -= 7;
+  if (financial < 35) adjustment -= 10;
+  else if (financial < 48) adjustment -= 5;
+  if (risk < 30) adjustment -= 12;
+  else if (risk < 45) adjustment -= 6;
+  if (demand < 42) adjustment -= 8;
+  if (customerFit < 42) adjustment -= 6;
+  if (civicResult?.complaints?.level === "High") adjustment -= 5;
+  if (successModel?.competitionPressure >= 90) adjustment -= 6;
+  if (weakSignals >= 3) adjustment -= 5;
+
+  if (demand >= 76 && location >= 72) adjustment += 5;
+  if (competition >= 64 && financial >= 62) adjustment += 5;
+  if (risk >= 68 && strongSignals >= 3) adjustment += 4;
+  if (confidenceScore < 55) adjustment -= 4;
+
+  const expanded = 50 + (safeNumber(weightedScore, 50) - 50) * 1.42;
+  return clampScore(expanded + adjustment);
+}
+
 function categoryFitForBusiness(business, profile) {
   const direct = categoryModels.find((item) => item.business === business);
   if (direct) return scoreCategory(profile, direct);
@@ -3163,15 +3206,15 @@ function buildBusinessSuccessModel(profile, recommendations) {
   const growthScore = clampScore(45 + permitBoost + propertyBoost + profile.office * 0.12 + profile.density * 0.1 + profile.transit * 0.08);
   const riskRaw = clampScore(profile.rent * 0.34 + competitionPressure * 0.32 + (100 - profile.income) * 0.1 + (100 - profile.transit) * 0.08 + civicPenalty + (!state.location ? 6 : 0));
   const riskScore = clampScore(100 - riskRaw);
-  const successProbability = clampScore(
-    demandScore * businessSuccessWeights.demand +
-      customerFitScore * businessSuccessWeights.customerFit +
-      competitionScore * businessSuccessWeights.competition +
-      financialScore * businessSuccessWeights.financial +
-      locationScore * businessSuccessWeights.location +
-      growthScore * businessSuccessWeights.growth +
-      riskScore * businessSuccessWeights.risk
-  );
+  const successProbability = clampScore(weightedBusinessScore((name) => ({
+    Demand: demandScore,
+    "Customer fit": customerFitScore,
+    Competition: competitionScore,
+    "Financial viability": financialScore,
+    "Location quality": locationScore,
+    "Area momentum": growthScore,
+    Risk: riskScore
+  }[name] ?? 50)));
 
   return {
     business,
@@ -3285,15 +3328,8 @@ function buildInstitutionalAnalysis(profile, recommendations) {
     location.why = `${location.why} Verified Signals: the area has meaningful commercial capacity.`;
   }
   const scoreValue = (name) => safeNumber(scores.find((item) => item.name === name)?.value, 50);
-  const opportunityScore = clampScore(
-    scoreValue("Demand") * businessSuccessWeights.demand +
-      scoreValue("Customer fit") * businessSuccessWeights.customerFit +
-      scoreValue("Competition") * businessSuccessWeights.competition +
-      scoreValue("Financial viability") * businessSuccessWeights.financial +
-      scoreValue("Location quality") * businessSuccessWeights.location +
-      scoreValue("Area momentum") * businessSuccessWeights.growth +
-      scoreValue("Risk") * businessSuccessWeights.risk
-  );
+  const weightedScore = weightedBusinessScore(scoreValue);
+  const opportunityScore = calibratedDecisionScore({ weightedScore, scoreValue, confidenceScore, successModel, civicResult });
   const riskScore = scoreValue("Risk");
   const financialScore = scoreValue("Financial viability");
   const severeRisk =
@@ -3377,7 +3413,7 @@ function buildInstitutionalAnalysis(profile, recommendations) {
       items: [
         `Scenario revenue and failure probability are screening estimates, Due Diligence Required on operator financials.`,
         `Maximum location cost guidance is estimated from category economics and area cost pressure.`,
-        `Success probability is weighted as Demand 25%, Customer Fit 20%, Competition 15%, Financial 15%, Location 10%, Growth 10%, Risk 5%.`
+        `Viability score is weighted as Demand 25%, Customer Fit 20%, Competition 15%, Financial 15%, Location 10%, Growth 10%, Risk 5%, then calibrated with risk gates so weak sites do not stay compressed in the middle.`
       ]
     }
   ];
@@ -3410,7 +3446,7 @@ function buildInstitutionalAnalysis(profile, recommendations) {
     confidenceScore,
     decision,
     decisionCopy: decisionCopyFor(decision, opportunityScore, confidenceScore, riskScore),
-    summary: `${titleCase(successModel.business)} has a ${formatScore(opportunityScore)} success probability screen in this area. ${decisionCopyFor(decision, opportunityScore, confidenceScore, riskScore)}`,
+    summary: `${titleCase(successModel.business)} has a ${formatScore(opportunityScore)} viability screen in this area. ${decisionCopyFor(decision, opportunityScore, confidenceScore, riskScore)}`,
     topRecommendation: {
       name: titleCase(successModel.business),
       score: opportunityScore
@@ -3460,7 +3496,7 @@ function renderInstitutionalAnalysis(profile, recommendations) {
   elements.institutionalDecision.className = `decision-badge decision-${analysis.decision.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
   elements.institutionalSummary.textContent = analysis.summary;
   elements.validationGrid.innerHTML = [
-    ["Success probability", formatScore(analysis.successProbability)],
+    ["Viability score", formatScore(analysis.successProbability)],
     ["Evidence confidence", formatScore(analysis.confidenceScore)],
     ["Freshness", formatScore(analysis.validation.freshness)],
     ["Source quality", formatScore(analysis.validation.sourceQuality)]
@@ -3683,7 +3719,7 @@ function sv3OverviewHTML(ctx) {
     </div>
     ${/CONDITIONAL/i.test(ctx.decision) ? `<div class="section-label"><span class="n">!</span> Conditions to open</div><div class="card accent"><div class="sub">This location works for ${escapeText(ctx.business.toLowerCase())} only if</div><ul class="bullets">${(ctx.conditions || []).slice(0, 5).map(sv3SplitLabel).join("") || "<li>Verify site economics before committing.</li>"}</ul></div>` : ""}
     <div class="duo">
-      <div class="metric"><div class="k">Success probability</div><div class="v">${ctx.score}<span class="u">/100</span></div></div>
+      <div class="metric"><div class="k">Viability score</div><div class="v">${ctx.score}<span class="u">/100</span></div></div>
       <div class="metric good"><div class="k">Evidence confidence</div><div class="v">${ctx.confidence}<span class="u">/100·${escapeText(ctx.confidenceLabel)}</span></div></div>
     </div>
     <div class="section-label">Signals in this report</div>
@@ -3874,7 +3910,7 @@ function sv3CashToOpen(bucket, rentDollars) {
     ["Security deposit (3 mo rent)", Math.round(rentDollars * 3)],
     ["Permits & licenses", food ? 18000 : 6000],
     ["Initial inventory & supplies", bucket === "retail" ? 40000 : food ? 22000 : 12000],
-    ["6-month operating reserve", reserve]
+    ["Operating reserve", reserve]
   ];
   const total = items.reduce((s, i) => s + i[1], 0);
   return { items, low: total, high: Math.round(total * 1.18) };
@@ -4019,17 +4055,17 @@ function sv3RiskHTML(ctx) {
     <div class="card"><ul class="bullets">${verify}</ul></div>
     <div class="section-label"><span class="n">15</span> Better alternatives</div>
     ${alts}
-    <div class="section-label"><span class="n">16</span> Survival benchmark</div>
+    <div class="section-label"><span class="n">16</span> Viability benchmark</div>
     <div class="survival">
-      <div class="k" style="font-size:11px;letter-spacing:1.5px;font-weight:700;text-transform:uppercase;color:var(--txt-3);margin-bottom:6px">Modeled 3-year survival · ${escapeText(ctx.business.toLowerCase())} · ${escapeText(ctx.profile.name || "this area")}</div>
+      <div class="k" style="font-size:11px;letter-spacing:1.5px;font-weight:700;text-transform:uppercase;color:var(--txt-3);margin-bottom:6px">Modeled viability benchmark · ${escapeText(ctx.business.toLowerCase())} · ${escapeText(ctx.profile.name || "this area")}</div>
       <div class="surv-big ${s.ok ? "ok" : "warn"}">${safeNumber(s.pct, 55)}%</div>
       <div class="survbar">
-        <span class="live" style="width:${safeNumber(s.pct, 55)}%">${safeNumber(s.pct, 55)}% likely open</span>
-        <span class="closed" style="width:${100 - safeNumber(s.pct, 55)}%">${100 - safeNumber(s.pct, 55)}% closed</span>
+        <span class="live" style="width:${safeNumber(s.pct, 55)}%">${safeNumber(s.pct, 55)}% lower risk</span>
+        <span class="closed" style="width:${100 - safeNumber(s.pct, 55)}%">${100 - safeNumber(s.pct, 55)}% pressure</span>
       </div>
-      <div class="surv-vs"><span>Still operating</span><span>Closed within 3 yrs</span></div>
-      <div class="desc" style="margin-top:12px"><b>Modeled estimate — not a measured survival rate.</b> Starts from a category baseline (~${safeNumber(s.baseline, 60)}% for this type) and adjusts for local competition. We don't yet publish a measured per-ZIP survival figure; treat this as a directional benchmark.</div>
-      <div class="src">Modeled · category baseline × local saturation</div>
+      <div class="surv-vs"><span>More viable</span><span>More pressure</span></div>
+      <div class="desc" style="margin-top:12px"><b>Modeled benchmark — not a measured survival rate.</b> This is a directional screen from category sensitivity and local market pressure. SpotVest does not currently have a validated survival outcome model for this ZIP; treat this as diligence guidance, not proof of survival.</div>
+      <div class="src">Modeled · category sensitivity × local saturation</div>
     </div>
     <div class="section-label"><span class="n">17</span> Permit &amp; licensing roadmap</div>
     ${permitRows}
@@ -4062,11 +4098,11 @@ function sv3PnLHTML(ctx) {
 
     <div class="section-label"><span class="n">20</span> Cash needed to open</div>
     <div class="card accent">
-      <div class="k">Total cash to open + 6-month runway</div>
+      <div class="k">Modeled cash to open + reserve</div>
       <div class="cashbig">${sv3Money(c.low)}<span class="u"> – ${sv3Money(c.high)}</span></div>
       <div class="divider" style="margin:14px 0"></div>
       ${(c.items || []).map((i) => `<div class="cashitem"><span class="ci-l">${escapeText(i[0])}</span><span class="ci-v">${sv3Money(i[1])}</span></div>`).join("")}
-      <div class="desc" style="margin-top:12px">Planning range only. Verify real rent, buildout, equipment, permits, working capital, and operator costs before signing.</div>
+      <div class="desc" style="margin-top:12px">Modeled planning range only. This is not live contractor, landlord, bank, or vendor pricing. Verify real rent, buildout, equipment, permits, working capital, and operator costs before signing.</div>
       <div class="src">Estimated planning model · category benchmarks, permit signals, and modeled rent pressure</div>
     </div>
 
@@ -4123,14 +4159,14 @@ function sv3MethodHTML(ctx) {
     <div class="section-label" style="margin-top:20px"><span class="n">27</span> Decision rationale</div>
     <div class="card accent"><div class="sub" style="color:var(--teal)">${escapeText(m.word)}</div><div class="desc" style="margin-top:0">${escapeText(ctx.summary)}</div></div>
     <div class="section-label"><span class="n">28</span> Evidence quality</div>
-    <div class="duo"><div class="metric"><div class="k">Success probability</div><div class="v">${ctx.score}<span class="u">/100</span></div></div><div class="metric good"><div class="k">Evidence confidence</div><div class="v">${ctx.confidence}<span class="u">/100</span></div></div></div>
+    <div class="duo"><div class="metric"><div class="k">Viability score</div><div class="v">${ctx.score}<span class="u">/100</span></div></div><div class="metric good"><div class="k">Evidence confidence</div><div class="v">${ctx.confidence}<span class="u">/100</span></div></div></div>
     <div class="duo"><div class="metric good"><div class="k">Freshness</div><div class="v">${ctx.freshness}<span class="u">/100</span></div></div><div class="metric good"><div class="k">Source quality</div><div class="v">${ctx.sourceQuality}<span class="u">/100</span></div></div></div>
     <div class="section-label"><span class="n">29</span> Why ${ctx.score}/100?</div>
     ${breakdown}
     <div class="section-label"><span class="n">30</span> Evidence summary — what SpotVest used</div>
     ${coverage}
     <div class="section-label"><span class="n">31</span> Methodology</div>
-    <div class="card"><div class="sub">Verified signals</div><ul class="bullets" style="margin-bottom:14px">${verified}</ul><div class="sub">Model insights</div><ul class="bullets" style="margin-bottom:14px">${model}</ul><div class="sub">Weighting</div><ul class="bullets"><li>Success probability weighted: Demand 25%, Customer fit 20%, Competition 15%, Financial 15%, Location 10%, Growth 10%, Risk 5%.</li></ul><div class="src">SpotVest scoring engine · OpenAI narrative layer</div></div>`;
+    <div class="card"><div class="sub">Verified signals</div><ul class="bullets" style="margin-bottom:14px">${verified}</ul><div class="sub">Model insights</div><ul class="bullets" style="margin-bottom:14px">${model}</ul><div class="sub">Weighting</div><ul class="bullets"><li>Viability score weighted: Demand 25%, Customer fit 20%, Competition 15%, Financial 15%, Location 10%, Growth 10%, Risk 5%, then calibrated with risk gates.</li></ul><div class="src">SpotVest scoring engine · OpenAI narrative layer</div></div>`;
 }
 
 function renderSpotVestV3(profile, recommendations, analysis) {
@@ -4375,9 +4411,9 @@ function renderSpotVestV3(profile, recommendations, analysis) {
     sv3ShowTab(activeTab);
   }
 
-  // Fetch real MTA ridership + hourly profile for this location once, then
-  // re-render so the foot-traffic score, activity and by-hour curve are
-  // location-specific. Guarded by centerKey so it runs only once per location.
+  // Fetch real MTA ridership + hourly profile for this location once. Do not
+  // re-render the full report after the top-line decision is shown; late async
+  // rerenders made overview numbers appear to keep changing after analysis.
   if (mapCenter && (!sv3FootReal || sv3FootReal.key !== centerKey)) {
     sv3LoadFootTraffic(mapCenter, centerKey, profile, recommendations, analysis);
   }
@@ -4389,7 +4425,8 @@ async function sv3LoadFootTraffic(center, key, profile, recommendations, analysi
     const d = await (await fetch(u)).json();
     // Only treat as real when the figure is backed by actual MTA ridership.
     sv3FootReal = { key, real: !!d.mtaSource, hourly: Array.isArray(d.hourly) ? d.hourly : null, footfall: safeNumber(d.footfall, 0), footPct: sv3Pct(d.footPct) };
-    if (sv3FootReal.real) renderSpotVestV3(profile, recommendations, analysis);
+    // Keep the cached mobility signal for the next render/tab refresh without
+    // mutating the already-presented executive decision.
   } catch (e) {
     sv3FootReal = { key, real: false }; // mark attempted; keep modeled fallback
   }
@@ -4563,7 +4600,7 @@ function sv3BindCompareControls() {
 function sv3RenderCompare() {
   const refs = sv3Refs();
   if (!refs.compareBody) return;
-  // Winner: highest success probability; evidence confidence breaks ties.
+  // Winner: highest viability score; evidence confidence breaks ties.
   const ranked = (Array.isArray(state.compareList) ? state.compareList : []).slice()
     .sort((a, b) => safeNumber(b.successProbability, 0) - safeNumber(a.successProbability, 0)
       || safeNumber(b.confidenceScore, 0) - safeNumber(a.confidenceScore, 0));
@@ -4580,7 +4617,7 @@ function sv3RenderCompare() {
 
   const winnerId = ranked[0].id;
   const winLoc = ranked[0].address || ranked[0].area || `ZIP ${ranked[0].zip}`;
-  const summary = `<div class="bottomline"><div class="bt">Which location wins?</div><p><b>${escapeText(ranked[0].business)} · ${escapeText(winLoc)}</b> screens strongest at ${formatBadgeScore(ranked[0].successProbability)}/100, ahead of ${escapeText(ranked[1].business)} (${formatBadgeScore(ranked[1].successProbability)}). Highest success probability wins; evidence confidence breaks ties.</p></div>`;
+  const summary = `<div class="bottomline"><div class="bt">Which location wins?</div><p><b>${escapeText(ranked[0].business)} · ${escapeText(winLoc)}</b> screens strongest at ${formatBadgeScore(ranked[0].successProbability)}/100, ahead of ${escapeText(ranked[1].business)} (${formatBadgeScore(ranked[1].successProbability)}). Highest viability score wins; evidence confidence breaks ties.</p></div>`;
   const cards = ranked.map((it) => sv3CompareCard(it, it.id === winnerId)).join("");
   refs.compareBody.innerHTML = summary + `<div class="cmp-grid">${cards}</div><div class="actions"><button class="btn ghost sm" type="button" id="sv3-cmp-clear">Clear all (${ranked.length})</button></div>`;
   sv3BindCompareControls();
@@ -5347,7 +5384,7 @@ function decisionTier(score) {
   return { tier: "High Risk", action: "Do Not Open Without Major Changes", slug: "risk" };
 }
 
-// Apply the decision tier (derived from the same success probability) to the
+// Apply the decision tier (derived from the same viability score) to the
 // verdict card so the label and the number always agree.
 function applyVerdictTier(profile, recommendations) {
   if (!elements.verdictGrade) return;
@@ -5561,7 +5598,7 @@ function exportSummary() {
     "",
     "Business Success Intelligence:",
     `Decision: ${analysis.decision}`,
-    `Success probability: ${formatScore(analysis.successProbability)}`,
+    `Viability score: ${formatScore(analysis.successProbability)}`,
     `Confidence score: ${formatScore(analysis.confidenceScore)}`,
     `Top recommendation: ${analysis.topRecommendation.name} (${formatScore(analysis.topRecommendation.score)})`,
     `Summary: ${analysis.summary}`,
@@ -5701,7 +5738,7 @@ function renderExecSummary() {
       <section class="rd-section">
         <h2>Executive Summary</h2>
         ${para(analysis.summary)}
-        ${para(`On the evidence reviewed, SpotVest screens this opportunity as ${analysis.decision} with a success probability of ${score}/100 and evidence confidence of ${conf}/100. The sections below set out the recommendation, the conditions and risks that drive it, and the market and financial context.`)}
+        ${para(`On the evidence reviewed, SpotVest screens this opportunity as ${analysis.decision} with a viability score of ${score}/100 and evidence confidence of ${conf}/100. The sections below set out the recommendation, the conditions and risks that drive it, and the market and financial context.`)}
       </section>
 
       <section class="rd-section">
@@ -5711,7 +5748,7 @@ function renderExecSummary() {
       </section>
 
       <div class="rd-twocol">
-        <section class="rd-section"><h2>Success Probability</h2><p class="rd-metric">${score}<span>/100</span></p><p class="rd-metric-note">${escapeText(decisionTier(score).tier)} — the modeled odds of success for this business at this location.</p></section>
+        <section class="rd-section"><h2>Viability Score</h2><p class="rd-metric">${score}<span>/100</span></p><p class="rd-metric-note">${escapeText(decisionTier(score).tier)} — a modeled screen of whether this business can work at this location.</p></section>
         <section class="rd-section"><h2>Evidence Confidence</h2><p class="rd-metric">${conf}<span>/100</span></p><p class="rd-metric-note">${escapeText(confidence.label)} — how much of this report is backed by live data, not the odds of success.</p></section>
       </div>
 
@@ -5967,7 +6004,7 @@ function addToCompare() {
     state.compareList.push(snapshot);
     if (state.compareList.length > compareMax) state.compareList.shift();
   }
-  // Force descending order by success probability so the highest-scoring concept
+  // Force descending order by viability score so the highest-scoring concept
   // is always the left-most "Top Pick" column.
   state.compareList.sort((a, b) => safeNumber(b.successProbability, 0) - safeNumber(a.successProbability, 0));
   saveCompare();
@@ -6042,7 +6079,7 @@ function renderCompare() {
         </thead>
         <tbody>
           ${row("Decision", (i) => `<td><span class="compare-badge decision-${i.decisionSlug}">${escapeText(i.decision)}</span></td>`)}
-          ${row("Success probability", (i) => `<td class="${i.successProbability === bestProb ? "compare-best" : ""}">${formatScore(i.successProbability)}</td>`)}
+          ${row("Viability score", (i) => `<td class="${i.successProbability === bestProb ? "compare-best" : ""}">${formatScore(i.successProbability)}</td>`)}
           ${row("Confidence", (i) => `<td class="${i.confidenceScore === bestConf ? "compare-best" : ""}">${escapeText(i.confidenceLabel)} · ${formatScore(i.confidenceScore)}</td>`)}
           ${row("Competition", (i) => `<td>${escapeText(i.competition)}</td>`)}
           ${row("Population density", (i) => `<td>${escapeText(getLocationMetricForColumn(i, "density", ranked))}</td>`)}

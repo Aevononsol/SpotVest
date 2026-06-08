@@ -1645,7 +1645,10 @@ async function businessCount(zip, businessInput, location = null) {
   ]);
   const countedOpenDataTotal = restaurantCount + dcwpCount;
   const mappedOpenDataTotal = mapRecords.length;
-  const openDataTotal = countedOpenDataTotal || mappedOpenDataTotal;
+  const locationScoped = !!location;
+  const openDataTotal = locationScoped
+    ? mappedOpenDataTotal
+    : (countedOpenDataTotal || mappedOpenDataTotal);
   const googleVisibleCount = googlePlaces?.count || 0;
   const hasAnySourceSignal = openDataTotal > 0 || googleVisibleCount > 0;
 
@@ -1656,6 +1659,8 @@ async function businessCount(zip, businessInput, location = null) {
     googleVisibleCount,
     mode: hasAnySourceSignal ? "live" : "live-zero",
     openDataCount: openDataTotal,
+    zipOpenDataCount: countedOpenDataTotal,
+    radiusOpenDataCount: locationScoped ? mappedOpenDataTotal : null,
     registryExact: openDataTotal > 0,
     searchContext: location
       ? {
@@ -1671,13 +1676,18 @@ async function businessCount(zip, businessInput, location = null) {
     mapRecords,
     tenure,
     sources: [
-      restaurantCount ? `DOHMH restaurant records: ${restaurantCount}` : null,
-      dcwpCount ? `DCWP active licenses: ${dcwpCount}` : null,
-      !countedOpenDataTotal && mappedOpenDataTotal ? `Mapped NYC records: ${mappedOpenDataTotal}` : null,
+      locationScoped && mappedOpenDataTotal ? `Mapped local records: ${mappedOpenDataTotal}` : null,
+      !locationScoped && restaurantCount ? `DOHMH restaurant records: ${restaurantCount}` : null,
+      !locationScoped && dcwpCount ? `DCWP active licenses: ${dcwpCount}` : null,
+      !locationScoped && !countedOpenDataTotal && mappedOpenDataTotal ? `Mapped NYC records: ${mappedOpenDataTotal}` : null,
       googlePlaces ? `Google Places visible results: ${googlePlaces.count}` : null
     ].filter(Boolean),
     note:
-      countedOpenDataTotal > 0
+      locationScoped && mappedOpenDataTotal > 0
+        ? "Observed mapped local records inside the selected radius. ZIP-level city records are used only as context, not as the address-radius count."
+        : locationScoped && googleVisibleCount > 0
+          ? "No matching mapped city records were found inside this radius. Google Places has visible results, but those are search visibility signals, not a complete registry."
+          : countedOpenDataTotal > 0
         ? "Observed city-record matches from NYC Open Data. Google Places is shown separately as visibility, not as an exact competitor count."
         : mappedOpenDataTotal > 0
           ? "Observed mapped NYC records from connected city datasets. Google Places is shown separately as visibility, not as a complete registry."
