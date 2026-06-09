@@ -3354,8 +3354,7 @@ function buildBusinessSuccessModel(profile, recommendations) {
     : profile.competition;
   const googleReviews = Number(businessResult?.googlePlaces?.reviewCount || 0);
   const googleRating = Number(businessResult?.googlePlaces?.avgRating || 0);
-  const demandSignalLabel = demandMomentumLabel(businessResult);
-  const demandSignalScore = demandMomentumScore(businessResult);
+  const demandSignalLabel = demandMomentumLabel(businessResult); // display only
   const reviewMomentum = businessResult?.googlePlaces
     ? clampScore(Math.min(100, Math.log10(googleReviews + 1) * 24 + googleRating * 7))
     : 45;
@@ -3365,7 +3364,12 @@ function buildBusinessSuccessModel(profile, recommendations) {
   const propertyBoost = siteIntelResult?.pluto?.retailArea > 500000 ? 6 : siteIntelResult?.pluto?.retailArea > 150000 ? 3 : 0;
   const transitBoost = siteIntelResult?.mta?.available && siteIntelResult.mta.totalDecember2024Ridership > 250000 ? 8 : 0;
   const budgetSupport = budgetSupportScore(config);
-  const demandScore = clampScore(profile.density * 0.18 + profile.transit * 0.14 + profile.office * 0.09 + profile.nightlife * 0.07 + profile.tourist * 0.05 + profile.student * 0.05 + config.baseDemand * 0.18 + reviewMomentum * 0.14 + demandSignalScore * 0.1);
+  // Google Trends "demand momentum" was a 0.10-weight input but is too flaky
+  // (3.5s timeout, in-memory day-cache lost on cold starts) to be deterministic,
+  // so it's removed from the SCORE (kept as a display-only signal) and the
+  // remaining demand weights are renormalized (÷0.90) to preserve scale. This
+  // removes the 39↔45 non-determinism on the same address.
+  const demandScore = clampScore((profile.density * 0.18 + profile.transit * 0.14 + profile.office * 0.09 + profile.nightlife * 0.07 + profile.tourist * 0.05 + profile.student * 0.05 + config.baseDemand * 0.18 + reviewMomentum * 0.14) / 0.9);
   const customerFitScore = clampScore(profile.income * 0.24 + profile.families * 0.14 + profile.student * 0.08 + profile.office * 0.12 + profile.localPreference * 0.16 + profile.chainFit * 0.1 + categoryFit * 0.16);
   const competitionScore = clampScore(100 - competitionPressure * 0.78 + (businessResult?.googlePlaces?.avgRating >= 4.5 ? 4 : 0));
   const locationScore = clampScore(profile.transit * 0.34 + profile.density * 0.22 + profile.office * 0.12 + (100 - profile.rent) * 0.1 + propertyBoost + transitBoost + (state.location ? 6 : 0));
