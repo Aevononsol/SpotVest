@@ -6533,25 +6533,22 @@ function applyUrlState() {
   const params = new URLSearchParams(location.search);
   const zip = params.get("zip");
   if (!zip) return false;
+  // Pre-fill the picker from a shared/old link, but NEVER auto-run the report.
+  // Every page load (incl. refresh) lands on the business picker so the user
+  // can choose. We also clean the URL so subsequent refreshes start fresh.
   const business = params.get("business");
   const address = params.get("address");
   const radius = params.get("radius");
   const budget = params.get("budget");
-  if (business && elements.businessInput) {
-    elements.businessInput.value = business;
-    state.business = business;
-    syncBusinessInput();
-  }
-  if (budget && elements.budgetInput) elements.budgetInput.value = budget;
-  if (address) {
+  try {
+    if (business && elements.businessInput) { elements.businessInput.value = business; state.business = business; syncBusinessInput(); }
+    if (budget && elements.budgetInput) elements.budgetInput.value = budget;
     if (radius && elements.radiusInput) elements.radiusInput.value = radius;
-    elements.addressInput.value = address;
-    elements.addressForm.requestSubmit();
-  } else {
-    elements.input.value = zip;
-    elements.form.requestSubmit();
-  }
-  return true;
+    if (address && elements.addressInput) elements.addressInput.value = address;
+    if (elements.input) elements.input.value = zip;
+  } catch { /* pre-fill is best-effort */ }
+  try { history.replaceState(null, "", `${location.origin}${location.pathname}`); } catch { /* ignore */ }
+  return false; // show the start/picker screen, never the old report
 }
 
 elements.form.addEventListener("submit", (event) => {
