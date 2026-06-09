@@ -2960,13 +2960,11 @@ function currentConceptFitResult() {
   return contextMatches(state.lastConceptFitResult) ? state.lastConceptFitResult : null;
 }
 
-// ---- Deterministic scoring: per-location signal cache ----------------------
-// The score is a pure function of the resolved signal set. To guarantee that
-// the SAME address always produces the SAME score, we (1) cache the fully
-// resolved signal bundle per location, (2) reuse it if a later fetch flaps or
-// times out (so the input set never silently changes), and (3) compute the
-// authoritative score once, after all signals settle (see render()).
-const SIGNAL_CACHE_TTL_MS = 20 * 60 * 1000; // matches the server's API cache window
+// ---- Deterministic scoring --------------------------------------------------
+// The score is a pure function of the resolved signal set. Do not persist this
+// signal bundle in browser localStorage: each device has its own storage, which
+// made the same address/business score differently on phone vs desktop.
+const SIGNAL_CACHE_TTL_MS = 0;
 function signalCacheKey() {
   return `sigbundle:${state.zip}|${normalizeBusiness(state.business)}|${state.location?.lat || ""}|${state.location?.lng || ""}|${state.location?.radiusMiles || ""}`;
 }
@@ -2977,49 +2975,31 @@ function sigReal(r, isBusiness) {
   return isBusiness ? Boolean(r.registryExact) : !r.fallback;
 }
 function readSignalBundleRaw() {
-  try {
-    const raw = localStorage.getItem(signalCacheKey());
-    if (!raw) return null;
-    const c = JSON.parse(raw);
-    if (!c || Date.now() - c.t > SIGNAL_CACHE_TTL_MS) return null;
-    return c;
-  } catch (e) { return null; }
+  return null;
 }
 // Accumulate the best (real) value for EACH signal independently, merging with
 // what's already cached — so a signal we obtained earlier is never lost just
 // because a different signal (or a later run) flapped.
 function persistSignalBundle() {
-  try {
-    const prev = readSignalBundleRaw() || {};
-    // First-write-wins: once a real value is cached for a location it LOCKS for
-    // the TTL window, so a later differing live response can't change the score.
-    localStorage.setItem(signalCacheKey(), JSON.stringify({
-      t: prev.t || Date.now(),
-      business: prev.business || (sigReal(state.lastBusinessResult, true) ? state.lastBusinessResult : null),
-      civic: prev.civic || (sigReal(state.lastCivicResult) ? state.lastCivicResult : null),
-      site: prev.site || (sigReal(state.lastSiteIntelResult) ? state.lastSiteIntelResult : null),
-      concept: prev.concept || (sigReal(state.lastConceptFitResult) ? state.lastConceptFitResult : null)
-    }));
-  } catch (e) { /* storage unavailable — non-fatal */ }
+  clearLegacySignalBundleCache();
 }
 // For any signal that is currently missing OR a transient fallback, substitute
 // the cached real value. This is what makes a flapping/timed-out fetch unable to
 // change the score: once a signal has been obtained for a location, it sticks.
 function reconcileSignalsFromCache() {
-  const c = readSignalBundleRaw();
-  if (!c) return;
-  // Always prefer the cached real value (it's locked first-write-wins), so the
-  // score uses identical inputs on every run within the TTL window. Cache only
-  // ever holds real (non-fallback) values.
-  if (c.business) state.lastBusinessResult = c.business;
-  if (c.civic) state.lastCivicResult = c.civic;
-  if (c.site) state.lastSiteIntelResult = c.site;
-  if (c.concept) state.lastConceptFitResult = c.concept;
+  clearLegacySignalBundleCache();
 }
 function hydrateSignalBundle() {
-  // Seed last-known-good before loaders fire (so even the first render uses
-  // stable inputs). Same logic as reconcile.
-  reconcileSignalsFromCache();
+  clearLegacySignalBundleCache();
+}
+function clearLegacySignalBundleCache() {
+  try {
+    const keys = [];
+    for (let i = 0; i < localStorage.length; i += 1) keys.push(localStorage.key(i));
+    keys.filter(Boolean).forEach((key) => {
+      if (key.startsWith("sigbundle:")) localStorage.removeItem(key);
+    });
+  } catch (e) { /* storage unavailable — non-fatal */ }
 }
 // Required score-moving signals are "real" when they're live responses (not a
 // transient timeout fallback) for the current location. A genuine empty
@@ -3093,12 +3073,12 @@ async function computeRealAlternatives(profile, currentScore) {
 }
 
 async function commitScoreWhenReady(zip) {
-  const deadline = Date.now() + 180000; // generous budget — prefer slow over wrong (risk signal must load)
+  const deadline = Date.now() + 25000; // keep the UI stable; avoid minutes of score changes
   const notReal = (r, isBiz) => !(r && contextMatches(r) && !r.fallback && (!isBiz || !r.loading));
   // Concept-fit doesn't gate the score (it's flavor) — fire once.
   safeUiUpdate("concept signal loader", () => renderRestaurantConceptFit());
   for (;;) {
-    reconcileSignalsFromCache(); // lock any already-cached real signals first
+    reconcileSignalsFromCache();
     const jobs = [];
     if (notReal(state.lastBusinessResult, true)) jobs.push(safeUiUpdate("business signal loader", () => renderBusinessCheck()));
     if (notReal(state.lastCivicResult)) jobs.push(safeUiUpdate("risk signal loader", () => renderCivicCheck()));
@@ -3107,13 +3087,11 @@ async function commitScoreWhenReady(zip) {
     await Promise.allSettled(jobs.filter((p) => p && typeof p.then === "function"));
     if (state.zip !== zip) return; // superseded by a newer analysis
     persistSignalBundle();
-    reconcileSignalsFromCache();
     if (requiredSignalsReal() || Date.now() > deadline) break;
     await new Promise((r) => setTimeout(r, 1200)); // brief pause; lets the server cache warm
   }
   if (state.zip !== zip) return;
   persistSignalBundle();
-  reconcileSignalsFromCache();
   // Score Better Alternatives with the SAME engine + each candidate's live
   // competition, so the displayed alternative scores match running them directly.
   try {
@@ -3125,6 +3103,7 @@ async function commitScoreWhenReady(zip) {
   state.scoreReady = true;
   const recs = buildRecommendations(profileForZip(state.zip));
   safeUiUpdate("final score (settled)", () => renderInstitutionalAnalysis(profileForZip(state.zip), recs));
+  updateActionGuards();
 }
 
 function decisionCopyFor(decision, successProbability, confidenceScore, riskScore) {
@@ -6233,7 +6212,7 @@ function getLocationMetricForColumn(item, key, list, siteLevel = false) {
 }
 
 function signalsReady() {
-  return Boolean(state.zip) && !state.businessCheckPending;
+  return Boolean(state.zip) && !state.businessCheckPending && state.scoreReady !== false;
 }
 
 function updateCompareButton() {
@@ -6261,6 +6240,22 @@ function updateActionGuards() {
     elements.exportPdfButton.disabled = !ready;
     elements.exportPdfButton.title = ready ? "" : "Available once market signals finish loading.";
   }
+  if (elements.exportFullButton) {
+    elements.exportFullButton.disabled = !ready;
+    elements.exportFullButton.title = ready ? "" : "Available once market signals finish loading.";
+  }
+  if (elements.saveReportButton) {
+    elements.saveReportButton.disabled = !state.zip;
+    elements.saveReportButton.title = state.zip ? "" : "Run a location first to save it.";
+  }
+  document.querySelectorAll("[data-sv3-action='export-pdf']").forEach((button) => {
+    button.disabled = !ready;
+    button.title = ready ? "" : "Available once market signals finish loading.";
+  });
+  document.querySelectorAll("[data-sv3-action='save']").forEach((button) => {
+    button.disabled = !state.zip;
+    button.title = state.zip ? "" : "Run a location first to save it.";
+  });
 }
 
 function addToCompare() {
@@ -6429,15 +6424,20 @@ function toggleSaveReport() {
   }
   if (isCurrentSaved()) {
     removeSaved(currentCompareId());
+    elements.message.textContent = "Report removed from saved reports.";
     return;
   }
   const snapshot = buildSavedSnapshot();
-  if (!snapshot) return;
+  if (!snapshot) {
+    elements.message.textContent = "Could not save this report yet. Run the analysis again after signals finish.";
+    return;
+  }
   state.savedReports.unshift(snapshot);
   if (state.savedReports.length > savedMax) state.savedReports.pop();
   persistSaved();
   renderSaved();
   updateSaveButton();
+  elements.message.textContent = "Report saved.";
 }
 
 function removeSaved(id) {
