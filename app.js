@@ -5801,7 +5801,10 @@ function render(zip, options = {}) {
   safeUiUpdate("market map", () => renderMarketMap());
   updateActionGuards();
   updateSaveButton();
-  syncUrl();
+  // Intentionally NOT writing analysis params into the address bar: a plain
+  // refresh should return to the restaurant picker, not re-run the last report.
+  // Sharing still works — the Share/Copy-link button builds the full URL on
+  // demand via shareableUrl(), and opening a shared link still loads the report.
   maybeShowAssistantOnboard();
   if (!state.liveProfiles[zip]) renderLiveAreaReport(zip);
   window.setTimeout(() => {
