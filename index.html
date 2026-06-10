@@ -35,8 +35,8 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/4.7.1/maplibre-gl.min.css" />
     <script defer src="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/4.7.1/maplibre-gl.min.js"></script>
-    <link rel="stylesheet" href="./styles.css?v=20260607-qa2" />
-    <link rel="stylesheet" href="./inside-v3.css?v=20260610-hero" />
+    <link rel="stylesheet" href="./styles.css?v=20260610-chat" />
+    <link rel="stylesheet" href="./inside-v3.css?v=20260610-chat" />
   </head>
   <body class="landing-mode">
     <main class="app-shell">
@@ -599,7 +599,7 @@
             <div class="topbar">
               <button class="circ" type="button" id="sv3-close" aria-label="New search">✕</button>
               <div class="url"><span class="dot"></span>spotvest.ai</div>
-              <button class="circ" type="button" id="sv3-assistant-button" aria-label="Ask SpotVest">▤</button>
+              <button class="circ" type="button" id="sv3-assistant-button" aria-label="Chat with SpotVest"><svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 3.5h16a1.5 1.5 0 0 1 1.5 1.5v11a1.5 1.5 0 0 1-1.5 1.5H9.6L4.9 21a.9.9 0 0 1-1.4-.75V5A1.5 1.5 0 0 1 4 3.5Z" fill="currentColor"/><circle cx="8.4" cy="10.5" r="1.25" fill="#0c1120"/><circle cx="12.2" cy="10.5" r="1.25" fill="#0c1120"/><circle cx="16" cy="10.5" r="1.25" fill="#0c1120"/></svg><i class="chat-online" aria-hidden="true"></i></button>
             </div>
 
             <div class="tabs hide" id="sv3-tabbar">
@@ -1398,8 +1398,9 @@
       <span>Get a plain-English read on this report — score, risks, foot traffic, and next steps.</span>
     </div>
     <button id="assistant-toggle" class="assistant-toggle" type="button" aria-expanded="false" aria-controls="assistant-panel">
-      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 4h16a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H9l-5 4V5a1 1 0 0 1 1-1Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
-      <span>Ask SpotVest</span>
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M4 3.5h16a1.5 1.5 0 0 1 1.5 1.5v11a1.5 1.5 0 0 1-1.5 1.5H9.6L4.9 21a.9.9 0 0 1-1.4-.75V5A1.5 1.5 0 0 1 4 3.5Z" fill="currentColor"/><circle cx="8.4" cy="10.5" r="1.25" fill="#0e2a40"/><circle cx="12.2" cy="10.5" r="1.25" fill="#0e2a40"/><circle cx="16" cy="10.5" r="1.25" fill="#0e2a40"/></svg>
+      <span>Chat with SpotVest</span>
+      <i class="chat-online" aria-hidden="true"></i>
     </button>
 
     <aside id="assistant-panel" class="assistant-panel" role="dialog" aria-label="SpotVest Assistant" aria-modal="false" hidden>

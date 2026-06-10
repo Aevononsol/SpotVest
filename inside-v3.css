@@ -32,7 +32,9 @@
 .sv3-app .topbar{position:sticky;top:0;z-index:30;display:flex;align-items:center;justify-content:space-between;padding:14px 16px 12px;backdrop-filter:blur(18px);background:rgba(7,11,22,.72);border-bottom:1px solid var(--line)}
 .sv3-app .topbar .url{font-family:'Sora';font-weight:600;font-size:17px}
 .sv3-app .topbar .dot{width:7px;height:7px;border-radius:50%;background:var(--teal);box-shadow:0 0 10px var(--teal);display:inline-block;margin-right:7px;vertical-align:middle}
-.sv3-app .circ{width:38px;height:38px;border-radius:50%;border:1px solid var(--border-strong);display:flex;align-items:center;justify-content:center;color:var(--txt-2);background:rgba(255,255,255,.02);cursor:pointer;font-size:15px}
+.sv3-app .circ{width:38px;height:38px;border-radius:50%;border:1px solid var(--border-strong);display:flex;align-items:center;justify-content:center;color:var(--txt-2);background:rgba(255,255,255,.02);cursor:pointer;font-size:15px;position:relative}
+.sv3-app .circ svg{width:18px;height:18px}
+.sv3-app .circ .chat-online{position:absolute;top:0;right:0;width:10px;height:10px;border-radius:50%;background:#22c55e;border:2px solid #0c1120;box-shadow:0 0 6px rgba(34,197,94,.8)}
 
 .sv3-app .tabs{position:sticky;top:63px;z-index:25;display:flex;gap:12px;padding:14px 18px 15px;overflow-x:auto;-webkit-overflow-scrolling:touch;scroll-padding:0 18px;backdrop-filter:blur(18px);background:rgba(7,11,22,.8);border-bottom:1px solid var(--line);scrollbar-width:none}
 .sv3-app .tabs::-webkit-scrollbar{display:none}

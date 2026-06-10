@@ -8755,3 +8755,10 @@ body:not(.landing-mode) .results {
 .report-doc .rd-foot{margin-top:22px;padding-top:12px;border-top:1px solid #e2e8f0;font-size:10px;color:#64748b;line-height:1.5}
 /* In the PDF, our document carries its own header/footer — drop the legacy ones. */
 body.print-exec .print-header,body.print-exec .print-footer{display:none !important}
+
+/* Chat affordance: filled bubble + typing dots + green "online" badge so the
+   assistant entry points read as a live chat, not a generic menu button. */
+.assistant-toggle .chat-online{position:absolute;top:-2px;right:-2px;width:12px;height:12px;border-radius:50%;background:#22c55e;border:2px solid #08111f;box-shadow:0 0 6px rgba(34,197,94,.8)}
+@media (max-width: 860px){
+  .assistant-toggle .chat-online{top:2px;right:2px}
+}
