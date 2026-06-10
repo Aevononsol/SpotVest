@@ -3918,13 +3918,13 @@ function sv3DecisionMeta(decision) {
     default: return { cls: "cond", lcls: "", word: "Conditional" };
   }
 }
-function sv3BannerHeadline(decision, business) {
-  const b = business || "this business";
+// Display wording only — same four decisions, no scoring change.
+function sv3HeroStatus(decision) {
   switch (String(decision || "").toUpperCase()) {
-    case "OPEN": return `Open: ${b}`;
-    case "DO NOT OPEN": return `High risk for ${b}`;
-    case "NEEDS MORE DATA": return `Needs more data: ${b}`;
-    default: return `Open with conditions: ${b}`;
+    case "OPEN": return "Open";
+    case "DO NOT OPEN": return "High risk";
+    case "NEEDS MORE DATA": return "Needs more data";
+    default: return "Open with conditions";
   }
 }
 function sv3GaugeNeedle(score) {
@@ -4185,13 +4185,25 @@ function sv3OverviewHTML(ctx) {
       return sv3StepCard(i + 1, title, copy);
     }).join("");
   return `
-    <div class="banner ${ctx.scoreReady ? m.cls : ""}" style="--p:${ctx.scoreReady ? sv3Pct(ctx.score) : 0}%">
-      <div class="ring"><span class="num">${ctx.scoreReady ? ctx.score : (ctx.scoreUnavailable ? "—" : "···")}</span><span class="of">${ctx.scoreReady ? "/100" : ""}</span></div>
-      <div>${ctx.scoreReady
-        ? `<div class="vl">${escapeText(m.word)}</div><h2>${escapeText(sv3BannerHeadline(ctx.decision, ctx.business))}</h2><div class="vsub">${escapeText(ctx.decisionCopy)}</div>`
+    <div class="banner hero ${ctx.scoreReady ? m.cls : ""}">
+      <div class="hero-chip">${state.location
+        ? `BLOCK · ${escapeText(String(state.location.address || "").split(",")[0] || "Selected address")} · ${escapeText(state.zip || "")} · ${escapeText(ctx.radiusLabel)}`
+        : `ZIP AREA · ${escapeText(state.zip || "")}`}</div>
+      ${ctx.scoreReady
+        ? `<div class="hero-status"><span class="hdot"></span>${escapeText(sv3HeroStatus(ctx.decision))}</div>
+           <div class="hero-score">${ctx.score}<span class="of">/100</span></div>
+           <div class="hero-sub">Success probability · ${escapeText(ctx.business)}</div>
+           <div class="hero-ev"><span class="k">Evidence</span><span class="bar"><i style="width:${sv3Pct(ctx.confidence)}%"></i></span><span class="v">${ctx.confidence}/100 · ${escapeText(ctx.confidenceLabel)}</span></div>
+           <div class="vsub">${escapeText(ctx.decisionCopy)}</div>`
         : ctx.scoreUnavailable
-          ? `<div class="vl">Data unavailable</div><h2>Live data didn't confirm in time</h2><div class="vsub">SpotVest won't show a score built on guessed data. The Competition or Risk signal didn't return — run the search again to retry. No verdict is shown until real signals confirm.</div>`
-          : `<div class="vl">Analyzing…</div><h2>Loading live signals</h2><div class="vsub">The score finalizes once all market signals arrive — this keeps the result stable and accurate.</div>`}</div>
+          ? `<div class="hero-status"><span class="hdot"></span>Data unavailable</div>
+             <div class="hero-score">—<span class="of"></span></div>
+             <div class="hero-sub">Live data didn't confirm in time</div>
+             <div class="vsub">SpotVest won't show a score built on guessed data. The Competition or Risk signal didn't return — run the search again to retry. No verdict is shown until real signals confirm.</div>`
+          : `<div class="hero-status"><span class="hdot"></span>Analyzing…</div>
+             <div class="hero-score">···<span class="of"></span></div>
+             <div class="hero-sub">Loading live signals</div>
+             <div class="vsub">The score finalizes once all market signals arrive — this keeps the result stable and accurate.</div>`}
     </div>
     ${sv3SpaceItselfCard(ctx)}
     <div class="card">
