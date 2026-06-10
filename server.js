@@ -1231,7 +1231,7 @@ function withinSearchRadius(record, location) {
   return distanceMiles(location.lat, location.lng, record.lat, record.lng) <= Number(location.radiusMiles || 0.5);
 }
 
-async function socrataJson(resource, params) {
+async function socrataJson(resource, params, { timeoutMs = 22000 } = {}) {
   const url = new URL(`https://data.cityofnewyork.us/resource/${resource}.json`);
   Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, value));
 
@@ -1244,7 +1244,7 @@ async function socrataJson(resource, params) {
     headers,
     // Generous so a slow first fetch completes and caches (20 min), keeping the
     // signal reliably present on later loads → deterministic score.
-    timeoutMs: 22000,
+    timeoutMs,
     ttlMs: cacheTtl.openData,
     cacheSuffix: process.env.NYC_OPEN_DATA_APP_TOKEN ? ":token" : ":public"
   });
@@ -1992,6 +1992,75 @@ async function nearbyTransit(lat, lng) {
       return { name: p.name, lines: p.lines, ridership: Math.round(typedNumber(r.sum_ridership)), lat: Number(r.latitude), lng: Number(r.longitude) };
     })
     .filter((s) => Number.isFinite(s.lat) && Number.isFinite(s.lng));
+}
+
+// "What's being built nearby" — new buildings + major (unit-adding) renovations
+// within ~0.5 mi, last 36 months, from DOB NOW Job Application Filings (w9ak-ipjd).
+// Display only; its own endpoint so it never gates/affects the score.
+async function nearbyConstruction(lat, lng) {
+  const dLat = 0.0075, dLng = 0.0098; // ~0.5 mi bounding box; refined by exact distance
+  const rows = await socrataJson("w9ak-ipjd", {
+    $select: "job_type,house_no,street_name,proposed_dwelling_units,existing_dwelling_units,total_construction_floor_area,filing_date,latitude,longitude",
+    $where: `latitude::number between ${lat - dLat} and ${lat + dLat} and longitude::number between ${lng - dLng} and ${lng + dLng} and (job_type='New Building' or job_type='ALT-CO - New Building with Existing Elements to Remain' or job_type='Alteration')`,
+    $order: "filing_date DESC",
+    $limit: "400"
+  }, { timeoutMs: 40000 });
+
+  const milesBetween = (a1, o1, a2, o2) => {
+    const R = 6371000 / 1609.344, toRad = Math.PI / 180;
+    const x = (o2 - o1) * toRad * Math.cos(((a1 + a2) / 2) * toRad);
+    const y = (a2 - a1) * toRad;
+    return Math.sqrt(x * x + y * y) * R;
+  };
+  const cutoff = new Date(); cutoff.setMonth(cutoff.getMonth() - 36);
+  const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
+
+  // One entry per building (address); amendments to the same job re-file repeatedly.
+  const byAddr = new Map();
+  for (const r of Array.isArray(rows) ? rows : []) {
+    const la = Number(r.latitude), lo = Number(r.longitude);
+    if (!Number.isFinite(la) || !Number.isFinite(lo)) continue;
+    const dist = milesBetween(lat, lng, la, lo);
+    if (dist > 0.5) continue;
+    const filed = r.filing_date ? new Date(r.filing_date) : null;
+    if (!filed || isNaN(filed) || filed < cutoff) continue;
+
+    const jt = r.job_type || "";
+    const isNewBuilding = jt === "New Building" || jt.startsWith("ALT-CO - New Building");
+    const proposed = num(r.proposed_dwelling_units), existing = num(r.existing_dwelling_units);
+    const addedUnits = Math.max(0, proposed - existing);
+    const isMajorReno = jt === "Alteration" && addedUnits >= 1; // adds residential units
+    if (!isNewBuilding && !isMajorReno) continue;
+
+    const newUnits = isNewBuilding ? proposed : addedUnits;
+    const key = `${r.house_no || ""} ${r.street_name || ""}`.trim().toUpperCase() || `${la},${lo}`;
+    const cand = {
+      address: `${r.house_no || ""} ${r.street_name || ""}`.replace(/\s+/g, " ").trim(),
+      type: isNewBuilding ? "New building" : "Major renovation",
+      newUnits,
+      floorArea: Math.round(num(r.total_construction_floor_area)) || null,
+      filed: String(r.filing_date || "").slice(0, 10),
+      distanceMi: Math.round(dist * 100) / 100
+    };
+    const prev = byAddr.get(key);
+    if (!prev || cand.newUnits > prev.newUnits) byAddr.set(key, cand);
+  }
+
+  const projects = [...byAddr.values()];
+  const newBuildings = projects.filter((p) => p.type === "New building").length;
+  const majorRenos = projects.filter((p) => p.type === "Major renovation").length;
+  const estNewUnits = projects.reduce((s, p) => s + (p.newUnits || 0), 0);
+  const top = projects.sort((a, b) => b.newUnits - a.newUnits).slice(0, 3);
+  return {
+    available: true,
+    radiusMiles: 0.5,
+    windowMonths: 36,
+    newBuildings,
+    majorRenos,
+    estNewUnits,
+    projects: top,
+    source: "NYC DOB NOW: Build – Job Application Filings (w9ak-ipjd)"
+  };
 }
 
 async function siteIntelligence(zip, location = null) {
@@ -3115,6 +3184,21 @@ createServer(async (request, response) => {
         sendJson(response, 200, { stations: await nearbyTransit(lat, lng) });
       } catch (error) {
         sendJson(response, 200, { stations: [], unavailable: true });
+      }
+      return;
+    }
+
+    if (url.pathname === "/api/nearby-construction") {
+      const lat = Number(url.searchParams.get("lat"));
+      const lng = Number(url.searchParams.get("lng"));
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+        sendJson(response, 400, { error: "lat/lng required" });
+        return;
+      }
+      try {
+        sendJson(response, 200, await nearbyConstruction(lat, lng));
+      } catch (error) {
+        sendJson(response, 200, { available: false, unavailable: true });
       }
       return;
     }

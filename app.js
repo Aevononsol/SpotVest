@@ -4040,6 +4040,38 @@ function sv3NearestTransitCard(ctx) {
   </div>`;
 }
 
+/* ---------- "What's being built nearby" — DOB NOW filings (display only) ---------- */
+function sv3TitleCaseAddr(s) {
+  return String(s || "").toLowerCase().replace(/\b([a-z])/g, (m, c) => c.toUpperCase());
+}
+function sv3ConstructionCard(ctx) {
+  if (!ctx.spaceAddressMode || !ctx.point) {
+    return `<div class="card"><div class="sub">What's being built nearby</div><div class="desc" style="margin-top:6px">Enter an exact storefront address to scan nearby DOB construction filings.</div></div>`;
+  }
+  if (ctx.constructionLoading) {
+    return `<div class="card"><div class="sub">What's being built nearby</div><div class="desc" style="margin-top:6px">Checking DOB construction filings within 0.5 mi…</div></div>`;
+  }
+  const c = ctx.construction;
+  const total = c ? (c.newBuildings || 0) + (c.majorRenos || 0) : 0;
+  if (!c || !c.available || total === 0) {
+    return `<div class="card"><div class="sub">What's being built nearby</div><div class="desc" style="margin-top:6px">No new construction filings found nearby (within 0.5 mi, last 36 months).</div><div class="src">NYC DOB NOW: Build – Job Application Filings</div></div>`;
+  }
+  const parts = [];
+  if (c.newBuildings) parts.push(`<b>${c.newBuildings}</b> new building${c.newBuildings > 1 ? "s" : ""}`);
+  if (c.majorRenos) parts.push(`<b>${c.majorRenos}</b> major renovation${c.majorRenos > 1 ? "s" : ""}`);
+  const projects = (c.projects || []).map((p) => `<div class="transit-row">
+      <div class="transit-main"><span class="transit-name">${escapeText(sv3TitleCaseAddr(p.address))}</span><span class="cx-tag ${p.type === "New building" ? "nb" : "reno"}">${escapeText(p.type)}</span></div>
+      <div class="transit-meta">${p.newUnits ? `${p.newUnits} units · ` : ""}${p.distanceMi} mi · filed ${escapeText(String(p.filed || "").slice(0, 10))}</div>
+    </div>`).join("");
+  return `<div class="card">
+    <div class="sub">What's being built nearby · within 0.5 mi</div>
+    <div class="big" style="font-size:19px;margin-top:4px">${parts.join(" + ")} filed <span class="u" style="font-size:13px;color:var(--txt-3)">last 36 mo</span></div>
+    ${c.estNewUnits > 0 ? `<div class="desc" style="margin-top:6px">est. <b style="color:var(--teal-bright)">~${c.estNewUnits}</b> new residential units coming <span style="font-style:italic;color:var(--txt-3)">— estimate; proposed in DOB filings, not all will complete</span></div>` : ""}
+    <div class="transit-list" style="margin-top:10px">${projects}</div>
+    <div class="src">NYC DOB NOW: Build – Job Application Filings · within 0.5 mi · last 36 months. New construction signals future demand. Display only — not used in the score.</div>
+  </div>`;
+}
+
 /* ---------- tab builders ---------- */
 function sv3OverviewHTML(ctx) {
   const m = sv3DecisionMeta(ctx.decision);
@@ -4131,6 +4163,19 @@ async function sv3LoadNearbyTransit(lat, lng, key) {
   // already committed and unaffected).
   if (state.location?.lat && state.location?.lng && `${state.location.lat},${state.location.lng}` === key) {
     try { safeUiUpdate("nearest transit (loaded)", () => renderInstitutionalAnalysis(profileForZip(state.zip), buildRecommendations(profileForZip(state.zip)))); } catch (e) { /* non-fatal */ }
+  }
+}
+let sv3NearbyConstruction = null; // { key, loading, data }
+async function sv3LoadNearbyConstruction(lat, lng, key) {
+  sv3NearbyConstruction = { key, loading: true, data: null };
+  try {
+    const d = await (await fetch(`/api/nearby-construction?lat=${lat}&lng=${lng}`)).json();
+    sv3NearbyConstruction = { key, loading: false, data: d };
+  } catch (e) {
+    sv3NearbyConstruction = { key, loading: false, data: { available: false } };
+  }
+  if (state.location?.lat && state.location?.lng && `${state.location.lat},${state.location.lng}` === key) {
+    try { safeUiUpdate("nearby construction (loaded)", () => renderInstitutionalAnalysis(profileForZip(state.zip), buildRecommendations(profileForZip(state.zip)))); } catch (e) { /* non-fatal */ }
   }
 }
 
@@ -4391,6 +4436,7 @@ function sv3MarketHTML(ctx) {
     <div class="src" style="margin:-4px 2px 8px">Google Places · Yelp Fusion API</div>
     <div class="section-label"><span class="n">09</span> Foot traffic intelligence</div>
     ${sv3NearestTransitCard(ctx)}
+    ${sv3ConstructionCard(ctx)}
     <div class="card accent"><div class="sub">${ctx.ftReal ? "Live signal · MTA ridership near this point" : "Modeled estimate · SpotVest location model"}</div><div class="k" style="margin-top:4px">Foot traffic score</div><div class="big" style="color:var(--teal-bright)">${ctx.ftScore}<span style="font-size:16px;color:var(--txt-3)">/100</span></div><div class="desc">Estimated activity: ${escapeText(ctx.ftActivity)}. ${ctx.ftReal ? "Derived from MTA subway ridership near this location." : "Modeled from area density, transit, and commercial activity."}</div></div>
     <div class="duo"><div class="metric"><div class="k">Est. daily visitors</div><div class="v" style="font-size:16px">${escapeText(ctx.ftVisitors)}</div><div class="src" style="margin-top:4px">${escapeText(ctx.ftVisitorsTag || "MODELED RANGE")}</div></div><div class="metric"><div class="k">Walkability</div><div class="v">${ctx.ftWalk}<span class="u">/100</span> <span class="src" style="display:inline">MODELED</span></div></div></div>
     <div class="card"><div class="statline"><span class="sl">Peak hours</span><span class="sv">${escapeText(ctx.ftPeak)}</span></div><div class="statline"><span class="sl">Weekday / weekend split</span><span class="sv">${escapeText(ctx.ftSplit)}</span></div><div class="src">Modeled · SpotVest mobility model (peak hours &amp; split)</div></div>
@@ -4742,6 +4788,8 @@ function renderSpotVestV3(profile, recommendations, analysis) {
     spaceAddressMode: Boolean(state.location?.lat && state.location?.lng),
     mtaNearby: (sv3NearbyTransit && state.location && sv3NearbyTransit.key === `${state.location.lat},${state.location.lng}`) ? sv3NearbyTransit.stations : [], // Nearest transit (display only)
     transitLoading: Boolean(sv3NearbyTransit && sv3NearbyTransit.loading && state.location && sv3NearbyTransit.key === `${state.location.lat},${state.location.lng}`),
+    construction: (sv3NearbyConstruction && state.location && sv3NearbyConstruction.key === `${state.location.lat},${state.location.lng}`) ? sv3NearbyConstruction.data : null,
+    constructionLoading: Boolean(sv3NearbyConstruction && sv3NearbyConstruction.loading && state.location && sv3NearbyConstruction.key === `${state.location.lat},${state.location.lng}`),
     point: state.location?.lat && state.location?.lng ? { lat: state.location.lat, lng: state.location.lng } : null,
     scoreReady: state.scoreReady !== false, // false only while live signals are still loading
     scoreUnavailable: state.scoreUnavailable === true, // real signals couldn't be confirmed
@@ -4825,6 +4873,9 @@ function renderSpotVestV3(profile, recommendations, analysis) {
     const tKey = `${state.location.lat},${state.location.lng}`;
     if (!sv3NearbyTransit || sv3NearbyTransit.key !== tKey) {
       sv3LoadNearbyTransit(state.location.lat, state.location.lng, tKey);
+    }
+    if (!sv3NearbyConstruction || sv3NearbyConstruction.key !== tKey) {
+      sv3LoadNearbyConstruction(state.location.lat, state.location.lng, tKey);
     }
   }
 }

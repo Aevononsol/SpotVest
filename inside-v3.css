@@ -119,6 +119,9 @@
 .sv3-app .transit-meta{font-size:12.5px;color:var(--txt-3);font-weight:600;white-space:nowrap}
 .sv3-app .transit-meta .u{font-style:italic;opacity:.8}
 .sv3-app .transit-busy{color:var(--teal-bright);font-weight:800}
+.sv3-app .cx-tag{display:inline-flex;align-items:center;padding:2px 9px;border-radius:999px;font-size:10.5px;font-weight:800;letter-spacing:.4px;text-transform:uppercase}
+.sv3-app .cx-tag.nb{background:rgba(59,214,201,.16);color:var(--teal-bright)}
+.sv3-app .cx-tag.reno{background:rgba(91,140,255,.16);color:#9DB6FF}
 .sv3-app .space-grid .metric{padding:13px 14px}
 .sv3-app .space-grid .metric .v{font-size:19px;margin-top:6px}
 .sv3-app .metric{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:16px}
