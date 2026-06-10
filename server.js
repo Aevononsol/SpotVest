@@ -2186,6 +2186,7 @@ async function siteIntelligence(zip, location = null) {
     sidewalkRows,
     liquorRows,
     liquorTotalRows,
+    liquorOnPremiseRows,
     mtaRows,
     plutoSummaryRows,
     plutoLandUseRows,
@@ -2209,6 +2210,12 @@ async function siteIntelligence(zip, location = null) {
       $select: "count(*)",
       $where: liquorWhere
     }).catch(integrationFallback("liquor license total", [])),
+    // On-premise consumption licenses only (true nightlife) — excludes off-
+    // premise retail (liquor/grocery/drug stores, wholesalers, off-prem caterers).
+    dataNyJson("9s3h-dpkz", {
+      $select: "count(*)",
+      $where: `${liquorWhere} AND description NOT IN('Grocery Store','Liquor Store','Drug Store','Wholesale Wine','Wholesale Beer','Off Premises Caterer Establishment','Temporary retail')`
+    }).catch(integrationFallback("liquor on-premise", [])),
     mtaWhere
       ? dataNyJson("wujg-7c2s", {
           $select: "station_complex,sum(ridership)",
@@ -2317,6 +2324,7 @@ async function siteIntelligence(zip, location = null) {
     },
     liquor: {
       total: liquorTotal,
+      onPremise: firstCount(liquorOnPremiseRows[0]), // bars/restaurants/clubs — nightlife signal (excludes off-prem retail)
       scope: location ? `within ${location.radiusMiles} mile` : `in ZIP ${zip}`,
       topTypes: liquorRows.map((row) => ({
         type: row.description || "Unknown",
