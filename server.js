@@ -1953,11 +1953,11 @@ async function civicSignals(zip, location = null) {
       $group: "complaint_type",
       $order: "count DESC,complaint_type",
       $limit: "6"
-    }).catch(integrationFallback("311 complaint categories", [])),
+    }, { timeoutMs: 20000 }).catch(integrationFallback("311 complaint categories", [])),
     socrataJson("erm2-nwe9", {
       $select: "count(*)",
       $where: complaintWhere
-    }).catch(integrationFallback("311 complaint total", [])),
+    }, { timeoutMs: 20000 }).catch(integrationFallback("311 complaint total", [])),
     socrataJson("ipu4-2q9a", {
       $select: "permit_type,count(*)",
       $where: `zip_code='${zip}'`,
@@ -2286,17 +2286,22 @@ async function siteIntelligence(zip, location = null) {
           $limit: "6"
         }).catch(integrationFallback("MTA ridership", []))
       : Promise.resolve([]),
+    // ZIP-wide PLUTO aggregations scan every tax lot in the ZIP — they can
+    // legitimately need 15-20s cold, and the score GATES on the summary
+    // (summaryAvailable). The 12s default timed them out, which silently
+    // killed every ZIP-mode analysis ("data unavailable"). Heavy aggregates
+    // get their own budget; light queries keep the fast default.
     socrataJson("64uk-42ks", {
       $select: "sum(retailarea),sum(comarea),sum(officearea),avg(yearbuilt),count(*)",
       $where: `zipcode='${zip}'`
-    }).catch(integrationFallback("PLUTO summary", [])),
+    }, { timeoutMs: 25000 }).catch(integrationFallback("PLUTO summary", [])),
     socrataJson("64uk-42ks", {
       $select: "landuse,count(*)",
       $where: `zipcode='${zip}'`,
       $group: "landuse",
       $order: "count DESC",
       $limit: "6"
-    }).catch(integrationFallback("PLUTO land use mix", [])),
+    }, { timeoutMs: 25000 }).catch(integrationFallback("PLUTO land use mix", [])),
     // Address-specific lot: pull nearby PLUTO tax lots in a small bounding box
     // around the analyzed point; the nearest one is "the space itself".
     location?.lat && location?.lng
@@ -2317,7 +2322,7 @@ async function siteIntelligence(zip, location = null) {
       : socrataJson("64uk-42ks", {
           $select: "count(*)",
           $where: `zipcode='${zip}' and starts_with(bldgclass,'H')`
-        }).catch(integrationFallback("PLUTO hotels", []))
+        }, { timeoutMs: 25000 }).catch(integrationFallback("PLUTO hotels", []))
   ]);
 
   const sidewalkActive = sidewalkRows
