@@ -3016,7 +3016,12 @@ function clearLegacySignalBundleCache() {
 // response counts as real (fallback flag is false) — only fetch failures retry.
 function requiredSignalsReal() {
   const b = state.lastBusinessResult, c = state.lastCivicResult, s = state.lastSiteIntelResult;
+  // Demographics: the score is only real when live Census is loaded for this ZIP
+  // (profileForZip otherwise falls back to a static profile whose density swings
+  // the competition score). Census is required too.
+  const demoReal = Boolean(state.liveProfiles[state.zip]);
   return Boolean(
+    demoReal &&
     b && contextMatches(b) && !b.fallback && !b.loading &&
     c && contextMatches(c) && !c.fallback &&
     s && contextMatches(s) && !s.fallback
@@ -3093,6 +3098,7 @@ async function commitScoreWhenReady(zip) {
   for (;;) {
     reconcileSignalsFromCache();
     const jobs = [];
+    if (!state.liveProfiles[state.zip]) jobs.push(safeUiUpdate("demographics loader", () => renderLiveAreaReport(state.zip)));
     if (notReal(state.lastBusinessResult, true)) jobs.push(safeUiUpdate("business signal loader", () => renderBusinessCheck()));
     if (notReal(state.lastCivicResult)) jobs.push(safeUiUpdate("risk signal loader", () => renderCivicCheck()));
     if (notReal(state.lastSiteIntelResult)) jobs.push(safeUiUpdate("site signal loader", () => renderSiteIntelCheck()));
