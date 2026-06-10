@@ -4190,7 +4190,7 @@ function sv3OverviewHTML(ctx) {
       <div>${ctx.scoreReady
         ? `<div class="vl">${escapeText(m.word)}</div><h2>${escapeText(sv3BannerHeadline(ctx.decision, ctx.business))}</h2><div class="vsub">${escapeText(ctx.decisionCopy)}</div>`
         : ctx.scoreUnavailable
-          ? `<div class="vl">Data unavailable</div><h2>Live data didn't confirm in time</h2><div class="vsub">SpotVest won't show a score built on guessed data. The Competition or Risk signal didn't return — tap <b>Refresh data</b> to retry. No verdict is shown until real signals confirm.</div>`
+          ? `<div class="vl">Data unavailable</div><h2>Live data didn't confirm in time</h2><div class="vsub">SpotVest won't show a score built on guessed data. The Competition or Risk signal didn't return — run the search again to retry. No verdict is shown until real signals confirm.</div>`
           : `<div class="vl">Analyzing…</div><h2>Loading live signals</h2><div class="vsub">The score finalizes once all market signals arrive — this keeps the result stable and accurate.</div>`}</div>
     </div>
     ${sv3SpaceItselfCard(ctx)}
@@ -4237,7 +4237,6 @@ function sv3OverviewHTML(ctx) {
       <button class="btn ghost sm btn-ico" type="button" data-sv3-action="save"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H8a2 2 0 01-2-2V7a2 2 0 012-2h7l4 4v10a2 2 0 01-2 2z"/></svg>Save report</button>
       <button class="btn ghost sm btn-ico" type="button" data-sv3-action="copy"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 007 0l3-3a5 5 0 00-7-7l-1 1m-2 8a5 5 0 00-7 0l-3 3a5 5 0 007 7l1-1"/></svg>Copy link</button>
       <button class="btn ghost sm btn-ico" type="button" data-sv3-action="compare"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 3v18M15 3v18M3 9h18M3 15h18"/></svg>Add to compare</button>
-      <button class="btn ghost sm btn-ico" type="button" data-sv3-action="refresh" title="Pull fresh live data for this location (overrides the 7-day cache)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-3-6.7M21 4v4h-4"/></svg>Refresh data</button>
       <button class="btn ghost sm btn-ico" type="button" data-sv3-action="new"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 109-9 9 9 0 00-7 3.5M3 4v4h4"/></svg>New search</button>
     </div>`;
 }
@@ -5159,24 +5158,6 @@ function sv3BindActions() {
     btn.dataset.sv3Bound = "1";
     btn.addEventListener("click", () => {
       const action = btn.dataset.sv3Action;
-      if (action === "refresh") {
-        if (!state.zip) return;
-        btn.disabled = true;
-        btn.innerHTML = "Refreshing…";
-        // Force-bypass the server's 7-day cache for this location, re-fetch the
-        // live signals, and re-score. The fresh values re-lock for everyone.
-        state.forceRefresh = true;
-        state.lastBusinessResult = null;
-        state.lastCivicResult = null;
-        state.lastSiteIntelResult = null;
-        state.lastConceptFitResult = null;
-        try { delete state.liveProfiles[state.zip]; } catch {}
-        try { render(state.zip, {}); } catch {}
-        // Keep the flag on through the commit window (≤12s), then clear it so
-        // later normal actions use the cache again.
-        window.setTimeout(() => { state.forceRefresh = false; }, 15000);
-        return;
-      }
       if (action === "compare") {
         try { addToCompare(); } catch {}
         sv3RenderCompare();

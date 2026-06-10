@@ -1235,7 +1235,12 @@ function withinSearchRadius(record, location) {
   return distanceMiles(location.lat, location.lng, record.lat, record.lng) <= Number(location.radiusMiles || 0.5);
 }
 
-async function socrataJson(resource, params, { timeoutMs = 22000 } = {}) {
+// 12s default: these sit on the score-gating path, so the page can't commit a
+// score until the slowest one answers. Socrata normally responds in 1-4s with
+// an app token; anything past 12s is effectively an outage and should fall
+// back rather than hold the loading screen. Display-only heavy queries
+// (transit map, construction, OSM) pass their own longer timeouts.
+async function socrataJson(resource, params, { timeoutMs = 12000 } = {}) {
   const url = new URL(`https://data.cityofnewyork.us/resource/${resource}.json`);
   Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, value));
 
@@ -1258,7 +1263,7 @@ async function socrataJson(resource, params, { timeoutMs = 22000 } = {}) {
   return result.data;
 }
 
-async function dataNyJson(resource, params, { timeoutMs = 20000 } = {}) {
+async function dataNyJson(resource, params, { timeoutMs = 12000 } = {}) {
   const url = new URL(`https://data.ny.gov/resource/${resource}.json`);
   Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, value));
 
