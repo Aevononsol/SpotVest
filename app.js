@@ -3375,18 +3375,24 @@ function calibratedDecisionScore({ weightedScore, scoreValue, confidenceScore, s
   const strongSignals = [demand, customerFit, competition, financial, location, growth, risk].filter((value) => value >= 72).length;
 
   let adjustment = 0;
-  if (competition < 28) adjustment -= 12;
-  else if (competition < 42) adjustment -= 7;
+  // Competition must be counted ONCE. It already sits in the weighted score
+  // (0.15) and inside Risk (0.32 of riskRaw), so the old stack — a -12 cliff
+  // here PLUS a separate -6 pressure penalty PLUS the risk cliff it dragged
+  // down — charged a saturated block ~30 points for one fact. In dense NYC,
+  // high competition usually accompanies high demand; that skew put ~80% of
+  // analyses below the 55 "DO NOT OPEN" line, contradicting the app's own
+  // strongest-fit recommendation. Cliffs softened, pressure penalty removed.
+  if (competition < 28) adjustment -= 8;
+  else if (competition < 42) adjustment -= 4;
   if (financial < 35) adjustment -= 10;
   else if (financial < 48) adjustment -= 5;
-  if (risk < 30) adjustment -= 12;
-  else if (risk < 45) adjustment -= 6;
+  if (risk < 30) adjustment -= 8;
+  else if (risk < 45) adjustment -= 3;
   if (demand < 42) adjustment -= 8;
   if (customerFit < 42) adjustment -= 6;
-  if (successModel?.competitionPressure >= 90) adjustment -= 6;
   if (weakSignals >= 3) adjustment -= 5;
 
-  if (demand >= 76 && location >= 72) adjustment += 5;
+  if (demand >= 70 && location >= 70) adjustment += 4;
   if (competition >= 64 && financial >= 62) adjustment += 5;
   if (risk >= 68 && strongSignals >= 3) adjustment += 4;
   if (confidenceScore < 55) adjustment -= 4;
@@ -4947,7 +4953,12 @@ function renderSpotVestV3(profile, recommendations, analysis) {
     confidenceLabel: analysis.confidenceScore >= 80 ? "HIGH" : analysis.confidenceScore >= 60 ? "GOOD" : "REVIEW",
     bottomLine, signalPills, summary: analysis.summary,
     whyHeadline: strongScores.length ? `${strongScores[0].name} is the strongest signal here.` : "Use this as a first-pass screen.",
-    whyCopy: `${profile.name} — ${profile.affluenceLabel || "market demographics loaded"}. Strongest current fit is ${(recommendations[0]?.name || business).toLowerCase()}. Treat as a first-pass screen, then verify the exact block, frontage, cost terms, and live competitor data before recommending.`,
+    whyCopy: `${profile.name} — ${profile.affluenceLabel || "market demographics loaded"}. ${/DO NOT OPEN/i.test(analysis.decision)
+      // The demographics-only "strongest fit" line must never contradict the
+      // scored verdict on the same screen (e.g. "strongest fit is fast casual
+      // lunch" above a High-risk badge for fast casual lunch).
+      ? `Demographics favor ${(recommendations[0]?.name || business).toLowerCase()} here, but live competition and cost signals cap the verdict for this spot.`
+      : `Strongest current fit is ${(recommendations[0]?.name || business).toLowerCase()}.`} Treat as a first-pass screen, then verify the exact block, frontage, cost terms, and live competitor data before recommending.`,
     conditions: analysis.conditions || [], missing: analysis.validation?.missing || [], topRisks: analysis.topRisks || [],
     radiusLabel: state.location ? `${state.location.radiusMiles || "0.5"} mi` : "ZIP area",
     pressureScore: sv3Pct(pressure), pressureLabel,
