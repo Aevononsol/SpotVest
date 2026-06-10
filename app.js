@@ -3,7 +3,28 @@ if (window.location.protocol === "file:") {
 }
 
 // Version marker for support: lets us confirm which build a browser is running.
-console.info("SpotVest app build: 20260610-zipwait");
+console.info("SpotVest app build: 20260610-zipdebug");
+
+// On-page debug trail (open the site with ?debug=1): shows each search step
+// and any swallowed error directly on the page, so failures can be diagnosed
+// from a single screenshot without DevTools.
+window.sv3Debug = (() => {
+  if (!/[?&]debug=1\b/.test(window.location.search)) return () => {};
+  const box = document.createElement("div");
+  box.style.cssText = "position:fixed;left:8px;bottom:8px;z-index:2147483647;max-width:92vw;max-height:45vh;overflow:auto;background:rgba(8,12,22,.96);color:#9fe8ff;font:11px/1.6 ui-monospace,monospace;padding:10px 12px;border:1px solid #39C2D6;border-radius:10px;white-space:pre-wrap;pointer-events:auto";
+  const add = (m) => { box.textContent += m + "\n"; box.scrollTop = box.scrollHeight; };
+  const attach = () => { try { document.body.appendChild(box); } catch (e) { /* retry on ready */ } };
+  if (document.body) attach(); else document.addEventListener("DOMContentLoaded", attach);
+  add("SpotVest debug · build 20260610-zipdebug");
+  window.addEventListener("error", (e) => add(`✗ error: ${e.message || e.type} @ ${(e.filename || "").split("/").pop()}:${e.lineno || "?"}`));
+  window.addEventListener("unhandledrejection", (e) => add(`✗ promise: ${e.reason?.message || String(e.reason)}`));
+  const origWarn = console.warn;
+  console.warn = function (...args) {
+    try { const t = args.map(String).join(" "); if (t.includes("[SpotVest]")) add(`⚠ ${t}`); } catch (e) { /* noop */ }
+    return origWarn.apply(console, args);
+  };
+  return add;
+})();
 
 // Silence benign third-party noise: when the Market map is recreated on a
 // re-render, MapLibre tears down the old map and its in-flight tile/glyph
@@ -5470,6 +5491,7 @@ function initSpotVestV3Controls() {
     // can be misread); the result is the ZIP's center point.
     if (elements.addressInput) elements.addressInput.value = `${zip}, New York, NY`;
     if (refs.stepnote) refs.stepnote.textContent = "Analyzing the area…";
+    sv3Debug(`zip search: ${zip} → submitting address form (${elements.addressForm ? "form found" : "FORM MISSING"})`);
     // Stay on the search screen until the location resolves — the submit
     // handler switches to the report on success. Switching first left a dead
     // blank report whenever the geocode hung or failed.
@@ -6180,6 +6202,7 @@ function narrativeFor(zip, profile, recommendations) {
 function render(zip, options = {}) {
   syncBusinessInput();
   const profile = profileForZip(zip);
+  sv3Debug(`render(): zip=${zip} profile=${profile ? (profile.name || "found") : "NOT FOUND"} business=${state.business || "?"}`);
   if (!profile) {
     elements.message.textContent = /^\d{5}$/.test(zip)
       ? "🗽 SpotVest currently covers New York City only. Try a NYC ZIP like 10003, 11201, or 10458."
@@ -7030,12 +7053,14 @@ elements.addressForm.addEventListener("submit", async (event) => {
   }
 
   elements.addressMessage.textContent = "Finding address...";
+  sv3Debug(`geocoding: "${address}"`);
   try {
     const result = await fetchJsonWithTimeout(`/api/geocode?address=${encodeURIComponent(address)}`, {
       source: "address geocoding",
       timeoutMs: 9000,
       retries: 1
     });
+    sv3Debug(`geocode result: zip=${result?.zip} lat=${result?.lat} lng=${result?.lng} addr=${result?.address}`);
     if (!/^\d{5}$/.test(result.zip) || !boroughForZip(result.zip)) {
       elements.addressMessage.textContent = "🗽 That address isn't in a supported New York City area yet. SpotVest currently covers NYC only — try a NYC address or ZIP.";
       sv3SurfaceSearchError(elements.addressMessage.textContent);
@@ -7054,7 +7079,9 @@ elements.addressForm.addEventListener("submit", async (event) => {
     // Location resolved — NOW show the report (idempotent for the address flow,
     // which already switched; required for the ZIP flow, which waits here).
     try { sv3ShowMain("report"); } catch (e) { /* legacy UI */ }
+    sv3Debug(`render start: zip=${result.zip}`);
     render(result.zip);
+    sv3Debug("render returned (loading state should be visible)");
   } catch (error) {
     logIntegrationError("address geocoding fallback", error, { address });
     elements.addressMessage.textContent = "Could not find that address. Try a fuller address or use ZIP-level analysis.";
