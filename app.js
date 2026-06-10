@@ -5463,7 +5463,9 @@ function initSpotVestV3Controls() {
     // ZIP-only mode had its own heavier whole-ZIP queries and a separate code
     // path that kept breaking; one path means one behavior and one calibration.
     if (elements.input) elements.input.value = zip;
-    if (elements.addressInput) elements.addressInput.value = zip;
+    // Full geographic context makes the geocode unambiguous (a bare "10009"
+    // can be misread); the result is the ZIP's center point.
+    if (elements.addressInput) elements.addressInput.value = `${zip}, New York, NY`;
     if (refs.stepnote) refs.stepnote.textContent = "Analyzing the area…";
     sv3ShowMain("report");
     elements.addressForm?.requestSubmit();
@@ -7031,6 +7033,7 @@ elements.addressForm.addEventListener("submit", async (event) => {
     });
     if (!/^\d{5}$/.test(result.zip) || !boroughForZip(result.zip)) {
       elements.addressMessage.textContent = "🗽 That address isn't in a supported New York City area yet. SpotVest currently covers NYC only — try a NYC address or ZIP.";
+      sv3SurfaceSearchError(elements.addressMessage.textContent);
       return;
     }
 
@@ -7047,8 +7050,19 @@ elements.addressForm.addEventListener("submit", async (event) => {
   } catch (error) {
     logIntegrationError("address geocoding fallback", error, { address });
     elements.addressMessage.textContent = "Could not find that address. Try a fuller address or use ZIP-level analysis.";
+    sv3SurfaceSearchError(elements.addressMessage.textContent);
   }
 });
+
+// Geocode failures used to write to a hidden legacy element while the report
+// screen sat blank with no explanation. Surface them on the search screen.
+function sv3SurfaceSearchError(message) {
+  try {
+    const refs = sv3Refs();
+    if (refs.stepnote) refs.stepnote.textContent = message;
+    sv3ShowMain("search");
+  } catch (e) { /* legacy UI (no sv3) — message is already visible there */ }
+}
 
 elements.clearAddress.addEventListener("click", () => {
   state.location = null;
@@ -7060,7 +7074,7 @@ elements.clearAddress.addEventListener("click", () => {
 elements.presets.forEach((button) => {
   button.addEventListener("click", () => {
     // Presets are ZIPs — route them through the address pipeline too (ZIP center).
-    elements.addressInput.value = button.dataset.zip;
+    elements.addressInput.value = `${button.dataset.zip}, New York, NY`;
     elements.addressForm?.requestSubmit();
   });
 });
