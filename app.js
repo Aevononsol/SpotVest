@@ -4953,12 +4953,22 @@ function renderSpotVestV3(profile, recommendations, analysis) {
     confidenceLabel: analysis.confidenceScore >= 80 ? "HIGH" : analysis.confidenceScore >= 60 ? "GOOD" : "REVIEW",
     bottomLine, signalPills, summary: analysis.summary,
     whyHeadline: strongScores.length ? `${strongScores[0].name} is the strongest signal here.` : "Use this as a first-pass screen.",
-    whyCopy: `${profile.name} — ${profile.affluenceLabel || "market demographics loaded"}. ${/DO NOT OPEN/i.test(analysis.decision)
-      // The demographics-only "strongest fit" line must never contradict the
-      // scored verdict on the same screen (e.g. "strongest fit is fast casual
-      // lunch" above a High-risk badge for fast casual lunch).
-      ? `Demographics favor ${(recommendations[0]?.name || business).toLowerCase()} here, but live competition and cost signals cap the verdict for this spot.`
-      : `Strongest current fit is ${(recommendations[0]?.name || business).toLowerCase()}.`} Treat as a first-pass screen, then verify the exact block, frontage, cost terms, and live competitor data before recommending.`,
+    whyCopy: `${profile.name} — ${profile.affluenceLabel || "market demographics loaded"}. ${(() => {
+      // "Fit" language must come from ONE source of truth. The demographic
+      // ranking ignores competition, so it can crown a concept (fast casual
+      // lunch) that the scored engine ranks below a less-saturated niche
+      // (Indian, 76 vs 58). When engine-scored alternatives exist, lead with
+      // those; demographics stay as flavor, not as a "strongest fit" verdict.
+      const demoFit = (recommendations[0]?.name || business).toLowerCase();
+      const altTop = Array.isArray(state.realAlternatives) && state.realAlternatives[0];
+      if (altTop && Number(altTop.score) > Number(score)) {
+        return `Demographics favor ${demoFit}, but on live scoring the strongest concept for this block right now is ${altTop.name.toLowerCase()} (${altTop.score}/100 vs ${Number(score)}/100 — less direct saturation).`;
+      }
+      if (/DO NOT OPEN/i.test(analysis.decision)) {
+        return `Demographics favor ${demoFit} here, but live competition and cost signals cap the verdict for this spot.`;
+      }
+      return `Best demographic fit is ${demoFit}; the score also weighs live competition in this exact lane.`;
+    })()} Treat as a first-pass screen, then verify the exact block, frontage, cost terms, and live competitor data before recommending.`,
     conditions: analysis.conditions || [], missing: analysis.validation?.missing || [], topRisks: analysis.topRisks || [],
     radiusLabel: state.location ? `${state.location.radiusMiles || "0.5"} mi` : "ZIP area",
     pressureScore: sv3Pct(pressure), pressureLabel,
