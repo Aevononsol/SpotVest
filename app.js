@@ -4098,6 +4098,32 @@ function sv3WhatsAroundCard(ctx) {
   </div>`;
 }
 
+/* ---------- "Business landscape (official)" — US Census ZBP (display only) ---------- */
+function sv3BusinessLandscapeCard(ctx) {
+  if (ctx.businessPatternsLoading) {
+    return `<div class="card"><div class="sub">Business landscape (official)</div><div class="desc" style="margin-top:6px">Loading official US Census business counts…</div></div>`;
+  }
+  const b = ctx.businessPatterns;
+  if (!b || !b.available) {
+    return `<div class="card"><div class="sub">Business landscape (official)</div><div class="desc" style="margin-top:6px">Official business counts unavailable for this ZIP.</div><div class="src">US Census ZIP Business Patterns</div></div>`;
+  }
+  const fmt = (n) => (n == null ? "—" : formatInteger(n));
+  const grounding = (Number.isFinite(ctx.liveCompetitors) && b.foodServiceEstablishments)
+    ? `<div class="desc" style="margin-top:10px">Live Google Places scan found ~${formatInteger(ctx.liveCompetitors)} comparable operators nearby; Census recorded ${formatInteger(b.foodServiceEstablishments)} food-service establishments in this ZIP (${b.year}).</div>`
+    : "";
+  return `<div class="card">
+    <div class="sub">Business landscape (official)</div>
+    <div class="space-grid" style="margin-top:8px">
+      <div class="metric"><div class="k">Food service</div><div class="v">${fmt(b.foodServiceEstablishments)}</div></div>
+      <div class="metric"><div class="k">Retail</div><div class="v">${fmt(b.retailEstablishments)}</div></div>
+      <div class="metric"><div class="k">Total businesses</div><div class="v">${fmt(b.totalEstablishments)}</div></div>
+      <div class="metric"><div class="k">Employees</div><div class="v">${fmt(b.totalEmployees)}</div></div>
+    </div>
+    ${grounding}
+    <div class="src">US Census ZIP Business Patterns — <b>${b.year}</b> (latest available; Census discontinued ZBP after 2018). Establishment counts for ZIP ${escapeText(b.zip)}. Display only — not used in the score.</div>
+  </div>`;
+}
+
 /* ---------- tab builders ---------- */
 function sv3OverviewHTML(ctx) {
   const m = sv3DecisionMeta(ctx.decision);
@@ -4215,6 +4241,19 @@ async function sv3LoadWhatsAround(lat, lng, key) {
   }
   if (state.location?.lat && state.location?.lng && `${state.location.lat},${state.location.lng}` === key) {
     try { safeUiUpdate("what's around (loaded)", () => renderInstitutionalAnalysis(profileForZip(state.zip), buildRecommendations(profileForZip(state.zip)))); } catch (e) { /* non-fatal */ }
+  }
+}
+let sv3BusinessPatterns = null; // { zip, loading, data } — official ZBP counts (display only)
+async function sv3LoadBusinessPatterns(zip) {
+  sv3BusinessPatterns = { zip, loading: true, data: null };
+  try {
+    const d = await (await fetch(`/api/business-patterns?zip=${encodeURIComponent(zip)}`)).json();
+    sv3BusinessPatterns = { zip, loading: false, data: d };
+  } catch (e) {
+    sv3BusinessPatterns = { zip, loading: false, data: { available: false } };
+  }
+  if (state.zip === zip) {
+    try { safeUiUpdate("business patterns (loaded)", () => renderInstitutionalAnalysis(profileForZip(state.zip), buildRecommendations(profileForZip(state.zip)))); } catch (e) { /* non-fatal */ }
   }
 }
 
@@ -4466,6 +4505,7 @@ function sv3MarketHTML(ctx) {
     <div class="src" style="margin:-4px 2px 8px">MapLibre · OpenFreeMap · ${ctx.mapCount} live Google Places + NYC competitor pins</div>
     <div class="section-label"><span class="n">06</span> Business fit in this area</div>
     <div class="card accent"><div class="sub">Market pressure</div><div class="big">${ctx.pressureScore}</div><div class="desc">${escapeText(ctx.business)} market pressure — built from local market activity, competitive signals &amp; demand momentum.</div><div class="bar-row" style="margin-top:14px"><div class="bl"><span class="bn">Saturation</span><span class="bv">${escapeText(ctx.pressureLabel)}</span></div><div class="track"><div class="fill a" style="width:${ctx.pressureScore}%"></div></div></div></div>
+    ${sv3BusinessLandscapeCard(ctx)}
     <div class="card"><div class="sub">Local vs chain</div><h3>${escapeText(ctx.localChainTitle)}</h3><div class="desc">${escapeText(ctx.localChainCopy)}</div></div>
     <div class="card"><div class="sub">Recommendation</div><h3>${escapeText(ctx.recommendationTitle)}</h3><div class="desc">${escapeText(ctx.recommendationCopy)}</div></div>
     <div class="section-label"><span class="n">07</span> Concept intelligence</div>
@@ -4832,6 +4872,9 @@ function renderSpotVestV3(profile, recommendations, analysis) {
     constructionLoading: Boolean(sv3NearbyConstruction && sv3NearbyConstruction.loading && state.location && sv3NearbyConstruction.key === `${state.location.lat},${state.location.lng}`),
     whatsAround: (sv3WhatsAround && state.location && sv3WhatsAround.key === `${state.location.lat},${state.location.lng}`) ? sv3WhatsAround.data : null,
     whatsAroundLoading: Boolean(sv3WhatsAround && sv3WhatsAround.loading && state.location && sv3WhatsAround.key === `${state.location.lat},${state.location.lng}`),
+    businessPatterns: (sv3BusinessPatterns && sv3BusinessPatterns.zip === state.zip) ? sv3BusinessPatterns.data : null,
+    businessPatternsLoading: Boolean(sv3BusinessPatterns && sv3BusinessPatterns.loading && sv3BusinessPatterns.zip === state.zip),
+    liveCompetitors: (function () { const b = currentBusinessResult(); return b && typeof b.count === "number" ? b.count : null; })(),
     point: state.location?.lat && state.location?.lng ? { lat: state.location.lat, lng: state.location.lng } : null,
     scoreReady: state.scoreReady !== false, // false only while live signals are still loading
     scoreUnavailable: state.scoreUnavailable === true, // real signals couldn't be confirmed
@@ -4922,6 +4965,10 @@ function renderSpotVestV3(profile, recommendations, analysis) {
     if (!sv3WhatsAround || sv3WhatsAround.key !== tKey) {
       sv3LoadWhatsAround(state.location.lat, state.location.lng, tKey);
     }
+  }
+  // Official ZBP counts are ZIP-keyed — load regardless of address/area mode.
+  if (state.zip && (!sv3BusinessPatterns || sv3BusinessPatterns.zip !== state.zip)) {
+    sv3LoadBusinessPatterns(state.zip);
   }
 }
 

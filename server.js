@@ -2134,6 +2134,39 @@ async function whatsAround(lat, lng) {
   return { available: totalPoints > 0, radiusMiles: 0.3, categories, source: "OpenStreetMap" };
 }
 
+// Official business counts from US Census ZIP Business Patterns (ZBP). NOTE:
+// ZBP was discontinued after 2018, so 2018 is the latest ZIP-level data — the
+// card labels the year prominently. Per-industry employment is disclosure-
+// suppressed at ZIP×NAICS level, so only TOTAL employment is used. Display only.
+async function businessPatterns(zip) {
+  const key = process.env.CENSUS_API_KEY || process.env.AREAINTEL_CENSUS_API_KEY;
+  if (!key) throw new Error("Census key unavailable");
+  const YEAR = 2018;
+  const fetchZbp = async (naics) => {
+    const url = `https://api.census.gov/data/${YEAR}/zbp?get=ESTAB,EMP&for=zipcode:${zip}&NAICS2017=${naics}&key=${key}`;
+    const r = await cachedJsonFetch(url, { timeoutMs: 20000, ttlMs: SEVEN_DAYS_MS, cacheSuffix: ":zbp" });
+    if (!r.ok || !Array.isArray(r.data) || r.data.length < 2) return null;
+    const row = r.data[1]; // [ESTAB, EMP, NAICS2017, zip]
+    return { estab: Number(row[0]) || 0, emp: Number(row[1]) || 0 };
+  };
+  const [total, food, retail] = await Promise.all([
+    fetchZbp("00").catch(() => null),
+    fetchZbp("722").catch(() => null),     // food services & drinking places
+    fetchZbp("44-45").catch(() => null)    // retail trade
+  ]);
+  if (!total) return { available: false };
+  return {
+    available: true,
+    year: YEAR,
+    zip,
+    totalEstablishments: total.estab,
+    totalEmployees: total.emp,                                   // total only (sub-NAICS EMP suppressed)
+    foodServiceEstablishments: food ? food.estab : null,
+    retailEstablishments: retail ? retail.estab : null,
+    source: "US Census ZIP Business Patterns (ZBP)"
+  };
+}
+
 async function siteIntelligence(zip, location = null) {
   const liquorWhere = location?.lat && location?.lng
     ? `within_circle(georeference, ${location.lat}, ${location.lng}, ${location.radiusMeters || 805})`
@@ -3283,6 +3316,20 @@ createServer(async (request, response) => {
       }
       try {
         sendJson(response, 200, await whatsAround(lat, lng));
+      } catch (error) {
+        sendJson(response, 200, { available: false, unavailable: true });
+      }
+      return;
+    }
+
+    if (url.pathname === "/api/business-patterns") {
+      const zip = String(url.searchParams.get("zip") || "").trim();
+      if (!/^\d{5}$/.test(zip)) {
+        sendJson(response, 400, { error: "Provide a five-digit ZIP." });
+        return;
+      }
+      try {
+        sendJson(response, 200, await businessPatterns(zip));
       } catch (error) {
         sendJson(response, 200, { available: false, unavailable: true });
       }
