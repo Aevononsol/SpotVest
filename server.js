@@ -110,6 +110,10 @@ const responseCache = new Map();
 // persisted to disk (see signal-cache.json) so it survives a Render spin-down /
 // cold start. Narrative-only data (openaiSearch) keeps a short TTL.
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+// Google's nearby competitor count drifts across cache windows (live search), which
+// would shift non-registry (e.g. gym) scores. We snapshot it write-once for ~1yr so
+// those scores stay deterministic; "refresh data" (forceRefresh) overwrites it.
+const COMPETITOR_SNAPSHOT_TTL_MS = 365 * 24 * 60 * 60 * 1000;
 const cacheTtl = {
   census: SEVEN_DAYS_MS,
   openData: SEVEN_DAYS_MS,
@@ -1702,13 +1706,31 @@ async function businessCount(zip, businessInput, location = null) {
     cityMapRecords(zip, business, location).catch(integrationFallback("map records", [])),
     fetchDemandMomentum({ keyword: businessInput || business, region: "US-NY" }).catch(integrationFallback("demand momentum", null))
   ]);
+  // Freeze the Google competitor signal on first analysis (write-once, ~1yr).
+  // Non-registry categories (gyms, etc.) score off googlePlaces.count, and Google's
+  // live nearby count drifts across cache windows (observed 20->15 -> score 61->79).
+  // Snapshotting it keeps those scores as deterministic as registry-backed ones.
+  // "Refresh data" (forceRefresh) re-resolves and re-locks the snapshot.
+  let googleSignal = googlePlaces;
+  if (googlePlaces) {
+    const snapKey = location?.lat && location?.lng
+      ? `compsnap:${business}:${location.lat.toFixed(4)}:${location.lng.toFixed(4)}`
+      : `compsnap:zip:${zip}:${business}`;
+    const forceRefresh = requestContext.getStore()?.forceRefresh === true;
+    const existing = forceRefresh ? null : readCache(snapKey);
+    if (existing) {
+      googleSignal = existing;
+    } else {
+      writeCache(snapKey, googlePlaces, COMPETITOR_SNAPSHOT_TTL_MS);
+    }
+  }
   const countedOpenDataTotal = restaurantCount + dcwpCount;
   const mappedOpenDataTotal = mapRecords.length;
   const locationScoped = !!location;
   const openDataTotal = locationScoped
     ? mappedOpenDataTotal
     : (countedOpenDataTotal || mappedOpenDataTotal);
-  const googleVisibleCount = googlePlaces?.count || 0;
+  const googleVisibleCount = googleSignal?.count || 0;
   const hasAnySourceSignal = openDataTotal > 0 || googleVisibleCount > 0;
 
   return {
@@ -1730,7 +1752,7 @@ async function businessCount(zip, businessInput, location = null) {
           lng: location.lng
         }
       : { mode: "zip", radiusMiles: null },
-    googlePlaces,
+    googlePlaces: googleSignal,
     demandMomentum,
     mapRecords,
     tenure,
@@ -1739,7 +1761,7 @@ async function businessCount(zip, businessInput, location = null) {
       !locationScoped && restaurantCount ? `DOHMH restaurant records: ${restaurantCount}` : null,
       !locationScoped && dcwpCount ? `DCWP active licenses: ${dcwpCount}` : null,
       !locationScoped && !countedOpenDataTotal && mappedOpenDataTotal ? `Mapped NYC records: ${mappedOpenDataTotal}` : null,
-      googlePlaces ? `Google Places visible results: ${googlePlaces.count}` : null
+      googleSignal ? `Google Places visible results: ${googleSignal.count}` : null
     ].filter(Boolean),
     note:
       locationScoped && mappedOpenDataTotal > 0
