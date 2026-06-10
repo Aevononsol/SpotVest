@@ -3448,6 +3448,37 @@ function budgetSupportScore(config) {
   return clampScore(35 + Math.min(1.2, state.budget / requiredCapital) * 55);
 }
 
+// Convert a quoted monthly rent into the 0-100 rent-pressure scale the score
+// uses, by comparing it to this business's modeled sales here (same revenue
+// model as the Money tab, default 1,200 sq ft venue) against the category's
+// healthy rent-to-sales band. Anchors: at/below the healthy low end → ~22
+// (great deal) · top of healthy band → 58 · double the band → 92 (heavy).
+function rentQuoteAssessment(rentMonthly, business, profile) {
+  if (!(rentMonthly > 0) || !profile) return null;
+  const defaults = revenueCategoryDefaults(business);
+  const demandScore = categoryFitForBusiness(business, profile);
+  const footForRev = footTrafficScoreFor(profile);
+  const locationFactor = Math.max(0.55, Math.min(1.5, (clampScore(demandScore) * 0.45 + footForRev * 0.35 + safeNumber(profile.income, 50) * 0.20) / 60));
+  const salesLow = safeNumber(defaults.salesPerSf?.[0], 60);
+  const salesHigh = safeNumber(defaults.salesPerSf?.[1], 120);
+  const avgRevenue = 1200 * ((salesLow + salesHigh) / 2) * locationFactor;
+  if (!(avgRevenue > 0)) return null;
+  const ratio = rentMonthly / avgRevenue;
+  const lo = safeNumber(defaults.rentShare?.[0], 0.08) || 0.08;
+  const hi = safeNumber(defaults.rentShare?.[1], 0.12) || 0.12;
+  let rentScore;
+  if (ratio <= lo) rentScore = Math.max(15, (ratio / lo) * 22);
+  else if (ratio <= hi) rentScore = 22 + ((ratio - lo) / (hi - lo)) * (58 - 22);
+  else if (ratio <= hi * 2) rentScore = 58 + ((ratio - hi) / hi) * (92 - 58);
+  else rentScore = 95;
+  return {
+    monthly: Math.round(rentMonthly),
+    ratioPct: Math.round(ratio * 100),
+    healthyPct: `${Math.round(lo * 100)}-${Math.round(hi * 100)}%`,
+    rentScore: clampScore(rentScore)
+  };
+}
+
 function buildBusinessSuccessModel(profile, recommendations) {
   const businessResult = currentBusinessResult();
   const civicResult = currentCivicResult();
@@ -3498,6 +3529,12 @@ function buildBusinessSuccessModel(profile, recommendations) {
   const propertyBoost = siteIntelResult?.pluto?.retailArea > 500000 ? 6 : siteIntelResult?.pluto?.retailArea > 150000 ? 3 : 0;
   const transitBoost = siteIntelResult?.mta?.available && siteIntelResult.mta.totalDecember2024Ridership > 250000 ? 8 : 0;
   const budgetSupport = budgetSupportScore(config);
+  // Quoted monthly rent (optional user input): score the user's ACTUAL deal
+  // instead of the area's modeled rent pressure. $4k in a high-rent area is a
+  // materially different proposition than that area's average — the financial,
+  // location, and risk components all see the quote.
+  const rentQuote = rentQuoteAssessment(safeNumber(state.actualRentMonthly, 0), business, profile);
+  const effectiveRent = rentQuote ? rentQuote.rentScore : profile.rent;
   // Google Trends "demand momentum" was a 0.10-weight input but is too flaky
   // (3.5s timeout, in-memory day-cache lost on cold starts) to be deterministic,
   // so it's removed from the SCORE (kept as a display-only signal) and the
@@ -3506,10 +3543,10 @@ function buildBusinessSuccessModel(profile, recommendations) {
   const demandScore = clampScore((profile.density * 0.18 + profile.transit * 0.14 + effectiveOffice(profile) * 0.09 + effectiveNightlife(profile) * 0.07 + effectiveTourist(profile) * 0.05 + profile.student * 0.05 + config.baseDemand * 0.18 + reviewMomentum * 0.14) / 0.9);
   const customerFitScore = clampScore(profile.income * 0.24 + profile.families * 0.14 + profile.student * 0.08 + effectiveOffice(profile) * 0.12 + profile.localPreference * 0.16 + profile.chainFit * 0.1 + categoryFit * 0.16);
   const competitionScore = clampScore(100 - competitionPressure * 0.78 + (businessResult?.googlePlaces?.avgRating >= 4.5 ? 4 : 0));
-  const locationScore = clampScore(profile.transit * 0.34 + profile.density * 0.22 + effectiveOffice(profile) * 0.12 + (100 - profile.rent) * 0.1 + propertyBoost + transitBoost + (state.location ? 6 : 0));
-  const financialScore = clampScore(profile.income * 0.3 + (100 - profile.rent) * 0.28 + (100 - config.rentSensitivity) * 0.1 + categoryFit * 0.14 + profile.chainFit * 0.1 + budgetSupport * 0.08);
+  const locationScore = clampScore(profile.transit * 0.34 + profile.density * 0.22 + effectiveOffice(profile) * 0.12 + (100 - effectiveRent) * 0.1 + propertyBoost + transitBoost + (state.location ? 6 : 0));
+  const financialScore = clampScore(profile.income * 0.3 + (100 - effectiveRent) * 0.28 + (100 - config.rentSensitivity) * 0.1 + categoryFit * 0.14 + profile.chainFit * 0.1 + budgetSupport * 0.08);
   const growthScore = clampScore(45 + permitBoost + propertyBoost + effectiveOffice(profile) * 0.12 + profile.density * 0.1 + profile.transit * 0.08);
-  const riskRaw = clampScore(profile.rent * 0.34 + competitionPressure * 0.32 + (100 - profile.income) * 0.1 + (100 - profile.transit) * 0.08 + (!state.location ? 6 : 0));
+  const riskRaw = clampScore(effectiveRent * 0.34 + competitionPressure * 0.32 + (100 - profile.income) * 0.1 + (100 - profile.transit) * 0.08 + (!state.location ? 6 : 0));
   const riskScore = clampScore(100 - riskRaw);
   const successProbability = clampScore(weightedBusinessScore((name) => ({
     Demand: demandScore,
@@ -3526,6 +3563,8 @@ function buildBusinessSuccessModel(profile, recommendations) {
     config,
     competitionPressure,
     sameBlockCount,
+    rentQuote,
+    effectiveRent,
     condition: competitionCondition(competitionScore),
     successProbability,
     scores: [
@@ -3552,7 +3591,7 @@ function buildBusinessSuccessModel(profile, recommendations) {
     {
       name: "Financial viability",
       value: financialScore,
-      why: `Estimated Factors from cost pressure, income support, category sensitivity, margin potential, budget support (${state.budget ? formatCurrency(state.budget) : "not provided"}), and likely operating difficulty.`
+      why: `Estimated Factors from cost pressure, income support, category sensitivity, margin potential, budget support (${state.budget ? formatCurrency(state.budget) : "not provided"}), and likely operating difficulty.${rentQuote ? ` Your quoted rent ($${formatInteger(rentQuote.monthly)}/mo ≈ ${rentQuote.ratioPct}% of modeled sales; healthy is ${rentQuote.healthyPct}) replaces the area's average rent pressure in this score.` : ""}`
     },
     {
       name: "Area momentum",
@@ -3675,7 +3714,9 @@ function buildInstitutionalAnalysis(profile, recommendations) {
   ];
   const topRisks = [
     successModel.sameBlockCount >= 2 && `${successModel.sameBlockCount} direct competitors within ~0.1 mi — same-block saturation is the biggest threat here`,
-    profile.rent >= 78 && "High cost pressure can erase demand advantage",
+    safeNumber(successModel.effectiveRent, profile.rent) >= 78 && (successModel.rentQuote
+      ? `Quoted rent is heavy for modeled sales here (≈${successModel.rentQuote.ratioPct}% vs healthy ${successModel.rentQuote.healthyPct})`
+      : "High cost pressure can erase demand advantage"),
     successModel.competitionPressure >= 78 && `Direct competition is ${successModel.condition}; saturation is elevated`,
     !address && "ZIP-level view may hide weak side-street conditions",
     !google && "Competitive review/rating visibility is not confirmed",
@@ -3938,6 +3979,7 @@ function sv3Refs() {
     zip: app.querySelector("#sv3-zip"),
     address: app.querySelector("#sv3-address"),
     budget: app.querySelector("#sv3-budget"),
+    rent: app.querySelector("#sv3-rent"),
     radius: app.querySelector("#sv3-radius"),
     stepnote: app.querySelector("#sv3-stepnote")
   };
@@ -4255,7 +4297,8 @@ function sv3OverviewHTML(ctx) {
            <div class="hero-sub">Success probability · ${escapeText(ctx.business)}</div>
            <div class="hero-ev"><span class="k">Evidence</span><span class="bar"><i style="width:${sv3Pct(ctx.confidence)}%"></i></span><span class="v">${ctx.confidence}/100 · ${escapeText(ctx.confidenceLabel)}</span></div>
            <div class="vsub">${escapeText(ctx.decisionCopy)}</div>
-           ${sv3IsZipCenterSearch() ? `<div class="vsub" style="margin-top:7px">Area-level result for the whole ZIP. An exact address can score differently — a busy area can contain quiet blocks (and the other way around). Run a street address for a block-level verdict.</div>` : ""}`
+           ${sv3IsZipCenterSearch() ? `<div class="vsub" style="margin-top:7px">Area-level result for the whole ZIP. An exact address can score differently — a busy area can contain quiet blocks (and the other way around). Run a street address for a block-level verdict.</div>` : ""}
+           ${state.actualRentMonthly > 0 ? `<div class="vsub" style="margin-top:7px">Your quoted rent of $${formatInteger(state.actualRentMonthly)}/mo is factored into this score (in place of the area's average rent pressure).</div>` : ""}`
         : ctx.scoreUnavailable
           ? `<div class="hero-status"><span class="hdot"></span>Data unavailable</div>
              <div class="hero-score">—<span class="of"></span></div>
@@ -5493,6 +5536,10 @@ function initSpotVestV3Controls() {
     const refs = sv3Refs();
     if (refs.biztype?.value && elements.businessInput) { elements.businessInput.value = refs.biztype.value; syncBusinessInput(); }
     if (refs.budget?.value && elements.budgetInput) elements.budgetInput.value = refs.budget.value;
+    // Quoted monthly rent (optional): replaces the area's modeled rent
+    // pressure in the score with the user's actual deal.
+    const rentVal = Number(String(refs.rent?.value || "").replace(/[^\d.]/g, ""));
+    state.actualRentMonthly = Number.isFinite(rentVal) && rentVal > 0 ? rentVal : null;
   };
   const runArea = () => {
     const refs = sv3Refs();

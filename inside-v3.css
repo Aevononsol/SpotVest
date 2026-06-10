@@ -89,6 +89,8 @@
 .sv3-app .btn-ico{display:flex;align-items:center;justify-content:center;gap:9px}
 .sv3-app .btn-ico svg{width:17px;height:17px}
 .sv3-app .stepnote{color:var(--txt-3);font-size:12.5px;margin-top:9px;padding-left:2px}
+.sv3-app .fieldnote{font-size:12px;color:var(--txt-2);line-height:1.55;margin:8px 2px 18px;padding:9px 12px;border-left:2px solid rgba(57,194,214,.5);background:rgba(57,194,214,.07);border-radius:0 10px 10px 0}
+.sv3-app .fieldnote b{color:var(--teal-bright)}
 
 .sv3-app .banner{border-radius:var(--r-xl);padding:20px;margin:18px 0 14px;border:1px solid;display:flex;gap:16px;align-items:center}
 .sv3-app .banner.cond{background:linear-gradient(135deg,rgba(245,181,68,.16),rgba(245,181,68,.04));border-color:rgba(245,181,68,.3)}
