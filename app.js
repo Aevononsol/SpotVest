@@ -3471,6 +3471,12 @@ function rentQuoteAssessment(rentMonthly, business, profile) {
   else if (ratio <= hi) rentScore = 22 + ((ratio - lo) / (hi - lo)) * (58 - 22);
   else if (ratio <= hi * 2) rentScore = 58 + ((ratio - hi) / hi) * (92 - 58);
   else rentScore = 95;
+  // NYC absolute anchor: storefront asking rents run $8k+ in most active
+  // corridors (East Village and similar), so a sub-$4k quote is a bargain
+  // almost regardless of concept — don't let a low-revenue category's ratio
+  // math rate a genuinely cheap NYC space as merely average.
+  if (rentMonthly <= 4000) rentScore = Math.min(rentScore, 22);
+  else if (rentMonthly <= 6000) rentScore = Math.min(rentScore, 40);
   return {
     monthly: Math.round(rentMonthly),
     ratioPct: Math.round(ratio * 100),
