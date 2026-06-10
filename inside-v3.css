@@ -109,6 +109,9 @@
 .sv3-app .bottomline p b{color:var(--teal-bright)}
 
 .sv3-app .duo{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px}
+.sv3-app .space-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:10px;margin-top:10px}
+.sv3-app .space-grid .metric{padding:13px 14px}
+.sv3-app .space-grid .metric .v{font-size:19px;margin-top:6px}
 .sv3-app .metric{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:16px}
 .sv3-app .metric .k{font-size:10.5px;letter-spacing:1.3px;font-weight:700;text-transform:uppercase;color:var(--txt-3)}
 .sv3-app .metric .v{font-family:'Sora';font-size:24px;font-weight:700;margin-top:8px;letter-spacing:-.5px}

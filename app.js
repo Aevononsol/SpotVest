@@ -3024,7 +3024,10 @@ function requiredSignalsReal() {
     demoReal &&
     b && contextMatches(b) && !b.fallback && !b.loading &&
     c && contextMatches(c) && !c.fallback &&
-    s && contextMatches(s) && !s.fallback
+    s && contextMatches(s) && !s.fallback &&
+    // PLUTO summary feeds the score (propertyBoost/commercial mix). If it failed,
+    // retailArea is null — don't score on a missing signal; require it real.
+    s.pluto && s.pluto.summaryAvailable !== false
   );
 }
 // Close the cold-start gap: don't commit/show the score until every required
@@ -3940,6 +3943,41 @@ function sv3CovCard(title, desc, statusText, statusClass) {
   return `<div class="cov"><div class="cvt">${escapeText(title)}</div><div class="cvd">${escapeText(desc)}</div><span class="stat ${statusClass}">${escapeText(statusText)}</span></div>`;
 }
 
+/* ---------- "The space itself" — address-specific PLUTO record (display only) ---------- */
+function sv3SpaceItselfCard(ctx) {
+  const sqft = (v) => Number.isFinite(v) && v > 0 ? `${formatInteger(v)}<span class="u"> sq ft</span>` : null;
+  if (!ctx.spaceAddressMode) {
+    return `<div class="card"><div class="section-label"><span class="n">★</span> The space itself</div><div class="desc" style="margin-top:6px">Enter an exact storefront address (not just a ZIP) to pull this building's property record from NYC PLUTO.</div></div>`;
+  }
+  const lot = ctx.spaceLot;
+  if (!lot || !lot.available) {
+    return `<div class="card"><div class="section-label"><span class="n">★</span> The space itself</div><div class="desc" style="margin-top:6px">Property data unavailable for this address — NYC PLUTO has no matching tax lot nearby. No value is guessed, and nothing here affects the score.</div></div>`;
+  }
+  const rows = [];
+  const add = (k, v) => { if (v) rows.push(`<div class="metric"><div class="k">${escapeText(k)}</div><div class="v">${v}</div></div>`); };
+  add("Building size", sqft(lot.buildingArea));
+  add("Lot size", sqft(lot.lotArea));
+  add("Floors", Number.isFinite(lot.floors) && lot.floors > 0 ? String(lot.floors) : null);
+  add("Year built", lot.yearBuilt ? `${lot.yearBuilt}<span class="u"> PLUTO</span>` : null);
+  add("Ground-floor retail", sqft(lot.retailArea));
+  const com = lot.commercialArea || 0, res = lot.residentialArea || 0, tot = com + res;
+  if (tot > 0) add("Commercial / residential", `${Math.round((com / tot) * 100)}%<span class="u"> / ${Math.round((res / tot) * 100)}%</span>`);
+  add("Units", Number.isFinite(lot.unitsTotal) && lot.unitsTotal > 0 ? `${formatInteger(lot.unitsTotal)}${lot.unitsRes ? `<span class="u"> · ${formatInteger(lot.unitsRes)} res</span>` : ""}` : null);
+  add("Assessed value", lot.assessedTotal ? `${formatCurrency(lot.assessedTotal)}<span class="u"> NYC DOF, not market price</span>` : null);
+  add("Building class", lot.bldgClass ? escapeText(lot.bldgClass) + (lot.landUse ? `<span class="u"> · ${escapeText(lot.landUse)}</span>` : "") : (lot.landUse ? escapeText(lot.landUse) : null));
+  const maxFar = Math.max(lot.maxCommercialFar || 0, lot.maxResidentialFar || 0);
+  if (maxFar > 0 && Number.isFinite(lot.builtFar) && lot.builtFar >= 0) {
+    const headroom = Math.max(0, Math.round((1 - lot.builtFar / maxFar) * 100));
+    add("Expansion headroom", `${headroom}%<span class="u"> estimate</span>`);
+  }
+  const distNote = Number.isFinite(lot.distanceMeters) && lot.distanceMeters > 60 ? ` · nearest lot ~${lot.distanceMeters}m away` : "";
+  return `<div class="card">
+    <div class="section-label"><span class="n">★</span> The space itself</div>
+    <div class="space-grid">${rows.join("")}</div>
+    <div class="desc" style="margin-top:8px;opacity:.72">Source: NYC PLUTO tax-lot record${escapeText(distNote)}. Fields shown as recorded; assessed value is the city assessment (not market price); expansion headroom is an estimate from zoning FAR. Display only — not used in the score.</div>
+  </div>`;
+}
+
 /* ---------- tab builders ---------- */
 function sv3OverviewHTML(ctx) {
   const m = sv3DecisionMeta(ctx.decision);
@@ -3963,6 +4001,7 @@ function sv3OverviewHTML(ctx) {
           ? `<div class="vl">Data unavailable</div><h2>Live data didn't confirm in time</h2><div class="vsub">SpotVest won't show a score built on guessed data. The Competition or Risk signal didn't return — tap <b>Refresh data</b> to retry. No verdict is shown until real signals confirm.</div>`
           : `<div class="vl">Analyzing…</div><h2>Loading live signals</h2><div class="vsub">The score finalizes once all market signals arrive — this keeps the result stable and accurate.</div>`}</div>
     </div>
+    ${sv3SpaceItselfCard(ctx)}
     <div class="card">
       <div class="gauge-wrap">
         <div class="gauge">
@@ -4621,6 +4660,8 @@ function renderSpotVestV3(profile, recommendations, analysis) {
 
   const ctx = {
     pnl, cashOpen, scenarios, wtbt, dining, survival, permit,
+    spaceLot: currentSiteIntelResult()?.pluto?.lot || null, // "The space itself" (display only)
+    spaceAddressMode: Boolean(state.location?.lat && state.location?.lng),
     scoreReady: state.scoreReady !== false, // false only while live signals are still loading
     scoreUnavailable: state.scoreUnavailable === true, // real signals couldn't be confirmed
     profile, scores: analysis.scores, strongScores, decision: analysis.decision, decisionCopy: decision.copy,

@@ -1979,7 +1979,8 @@ async function siteIntelligence(zip, location = null) {
     liquorTotalRows,
     mtaRows,
     plutoSummaryRows,
-    plutoLandUseRows
+    plutoLandUseRows,
+    plutoLotRows
   ] = await Promise.all([
     socrataJson("qcdj-rwhu", {
       $select: "lic_status,count(*)",
@@ -2018,7 +2019,16 @@ async function siteIntelligence(zip, location = null) {
       $group: "landuse",
       $order: "count DESC",
       $limit: "6"
-    }).catch(integrationFallback("PLUTO land use mix", []))
+    }).catch(integrationFallback("PLUTO land use mix", [])),
+    // Address-specific lot: pull nearby PLUTO tax lots in a small bounding box
+    // around the analyzed point; the nearest one is "the space itself".
+    location?.lat && location?.lng
+      ? socrataJson("64uk-42ks", {
+          $select: "address,latitude,longitude,lotarea,bldgarea,comarea,resarea,retailarea,officearea,numfloors,yearbuilt,assesstot,assessland,unitsres,unitstotal,bldgclass,landuse,builtfar,residfar,commfar",
+          $where: `latitude > ${location.lat - 0.0007} AND latitude < ${location.lat + 0.0007} AND longitude > ${location.lng - 0.0009} AND longitude < ${location.lng + 0.0009}`,
+          $limit: "40"
+        }).catch(integrationFallback("PLUTO lot lookup", []))
+      : Promise.resolve([])
   ]);
 
   const sidewalkActive = sidewalkRows
@@ -2028,10 +2038,55 @@ async function siteIntelligence(zip, location = null) {
   const liquorTotal = firstCount(liquorTotalRows[0]);
   const mtaTotal = mtaRows.reduce((total, row) => total + typedNumber(row.sum_ridership), 0);
   const plutoSummary = plutoSummaryRows[0] || {};
+  const plutoSummaryAvailable = plutoSummaryRows.length > 0 && plutoSummary.sum_retailarea !== undefined;
   const averageYearBuilt = Math.round(typedNumber(plutoSummary.avg_yearbuilt));
   const validAverageYearBuilt = averageYearBuilt >= 1800 && averageYearBuilt <= new Date().getFullYear()
     ? averageYearBuilt
     : null;
+  // Pick the PLUTO lot closest to the analyzed point = the building at the address.
+  const nowYear = new Date().getFullYear();
+  const metersBetween = (a1, o1, a2, o2) => {
+    const R = 6371000, toRad = Math.PI / 180;
+    const x = (o2 - o1) * toRad * Math.cos(((a1 + a2) / 2) * toRad);
+    const y = (a2 - a1) * toRad;
+    return Math.sqrt(x * x + y * y) * R;
+  };
+  let lotResult = { available: false, source: "NYC PLUTO tax-lot record (nearest lot to the address)" };
+  if (location?.lat && location?.lng && Array.isArray(plutoLotRows) && plutoLotRows.length) {
+    let best = null, bestD = Infinity;
+    for (const row of plutoLotRows) {
+      const la = Number(row.latitude), lo = Number(row.longitude);
+      if (!Number.isFinite(la) || !Number.isFinite(lo)) continue;
+      const d = metersBetween(location.lat, location.lng, la, lo);
+      if (d < bestD) { bestD = d; best = row; }
+    }
+    if (best) {
+      const yb = Math.round(typedNumber(best.yearbuilt));
+      lotResult = {
+        available: true,
+        distanceMeters: Math.round(bestD),
+        address: best.address || null,
+        lotArea: Math.round(typedNumber(best.lotarea)) || null,
+        buildingArea: Math.round(typedNumber(best.bldgarea)) || null,
+        commercialArea: Math.round(typedNumber(best.comarea)),
+        residentialArea: Math.round(typedNumber(best.resarea)),
+        retailArea: Math.round(typedNumber(best.retailarea)),
+        officeArea: Math.round(typedNumber(best.officearea)),
+        floors: Math.round(typedNumber(best.numfloors)) || null,
+        yearBuilt: yb >= 1800 && yb <= nowYear ? yb : null,
+        assessedTotal: Math.round(typedNumber(best.assesstot)) || null,
+        assessedLand: Math.round(typedNumber(best.assessland)) || null,
+        unitsRes: Math.round(typedNumber(best.unitsres)),
+        unitsTotal: Math.round(typedNumber(best.unitstotal)),
+        bldgClass: best.bldgclass || null,
+        landUse: landUseLabels[best.landuse] || null,
+        builtFar: Number(typedNumber(best.builtfar).toFixed(2)) || null,
+        maxCommercialFar: Number(typedNumber(best.commfar).toFixed(2)) || null,
+        maxResidentialFar: Number(typedNumber(best.residfar).toFixed(2)) || null,
+        source: "NYC PLUTO tax-lot record (nearest lot to the address)"
+      };
+    }
+  }
 
   return {
     zip,
@@ -2071,15 +2126,19 @@ async function siteIntelligence(zip, location = null) {
       source: "MTA Subway Hourly Ridership, December 2024"
     },
     pluto: {
+      summaryAvailable: plutoSummaryAvailable,
       taxLots: typedNumber(plutoSummary.count),
-      retailArea: Math.round(typedNumber(plutoSummary.sum_retailarea)),
-      commercialArea: Math.round(typedNumber(plutoSummary.sum_comarea)),
-      officeArea: Math.round(typedNumber(plutoSummary.sum_officearea)),
+      // null (not 0) when the summary call failed, so a missing signal can't
+      // silently enter the score as zero — the client gates on summaryAvailable.
+      retailArea: plutoSummaryAvailable ? Math.round(typedNumber(plutoSummary.sum_retailarea)) : null,
+      commercialArea: plutoSummaryAvailable ? Math.round(typedNumber(plutoSummary.sum_comarea)) : null,
+      officeArea: plutoSummaryAvailable ? Math.round(typedNumber(plutoSummary.sum_officearea)) : null,
       averageYearBuilt: validAverageYearBuilt,
       landUseMix: plutoLandUseRows.map((row) => ({
         type: landUseLabels[row.landuse] || `Land use ${row.landuse || "unknown"}`,
         count: typedCount(row)
       })),
+      lot: lotResult, // address-specific "the space itself" (display only, not scored)
       source: "NYC PLUTO tax-lot property data by ZIP"
     }
   };
