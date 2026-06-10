@@ -4254,7 +4254,8 @@ function sv3OverviewHTML(ctx) {
            <div class="hero-score">${ctx.score}<span class="of">/100</span></div>
            <div class="hero-sub">Success probability · ${escapeText(ctx.business)}</div>
            <div class="hero-ev"><span class="k">Evidence</span><span class="bar"><i style="width:${sv3Pct(ctx.confidence)}%"></i></span><span class="v">${ctx.confidence}/100 · ${escapeText(ctx.confidenceLabel)}</span></div>
-           <div class="vsub">${escapeText(ctx.decisionCopy)}</div>`
+           <div class="vsub">${escapeText(ctx.decisionCopy)}</div>
+           ${sv3IsZipCenterSearch() ? `<div class="vsub" style="margin-top:7px">Area-level result for the whole ZIP. An exact address can score differently — a busy area can contain quiet blocks (and the other way around). Run a street address for a block-level verdict.</div>` : ""}`
         : ctx.scoreUnavailable
           ? `<div class="hero-status"><span class="hdot"></span>Data unavailable</div>
              <div class="hero-score">—<span class="of"></span></div>
