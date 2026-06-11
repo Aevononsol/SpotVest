@@ -36,7 +36,7 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/4.7.1/maplibre-gl.min.css" />
     <script defer src="https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/4.7.1/maplibre-gl.min.js"></script>
     <link rel="stylesheet" href="./styles.css?v=20260611-subs3" />
-    <link rel="stylesheet" href="./inside-v3.css?v=20260611-subs1" />
+    <link rel="stylesheet" href="./inside-v3.css?v=20260611-subs2" />
   </head>
   <body class="landing-mode">
     <main class="app-shell">
@@ -723,6 +723,22 @@
               <div class="fieldnote">Got a real rent quote? Enter it and the score uses <b>your deal</b> instead of the area's average rent — a below-market rent raises the score, an expensive one lowers it.</div>
               <button class="btn" type="button" id="sv3-analyze">Run analysis →</button>
               <div class="stepnote" id="sv3-stepnote">Enter a business and a NYC location, then analyze.</div>
+              <div class="card" id="sv3-review-card" hidden>
+                <div class="sub">Rate SpotVest</div>
+                <div class="desc" style="margin-top:2px">Your review appears on the front page with your name after a quick check.</div>
+                <div class="sv3-review-stars" id="sv3-review-stars" aria-label="Your rating">
+                  <button type="button" data-star="1" aria-label="1 star">★</button>
+                  <button type="button" data-star="2" aria-label="2 stars">★</button>
+                  <button type="button" data-star="3" aria-label="3 stars">★</button>
+                  <button type="button" data-star="4" aria-label="4 stars">★</button>
+                  <button type="button" data-star="5" aria-label="5 stars">★</button>
+                </div>
+                <input class="input" id="sv3-review-name" placeholder="Your name (shown publicly)" autocomplete="name" style="margin-bottom:10px" />
+                <input class="input" id="sv3-review-role" placeholder="Role / company — optional" style="margin-bottom:10px" />
+                <textarea class="input" id="sv3-review-text" rows="3" placeholder="How did SpotVest help your location decision?"></textarea>
+                <button class="btn sm" type="button" id="sv3-review-submit" style="margin-top:10px">Submit review</button>
+                <div class="desc" id="sv3-review-status" role="status"></div>
+              </div>
               <div class="foot" id="sv3-account-foot"></div>
               <div class="foot">Powered by the live SpotVest decision engine</div>
             </div>
@@ -1509,7 +1525,7 @@
     </aside>
 
     <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script defer src="./app.js?v=20260611-subs1"></script>
+    <script defer src="./app.js?v=20260611-subs2"></script>
     <script defer src="./home.js?v=20260611-subs1"></script>
   </body>
 </html>

@@ -7775,8 +7775,18 @@ function renderAccountStatus(account) {
   if (appFoot) {
     const isSubscriber = sv3Purchase()?.product === "pro-monthly";
     appFoot.innerHTML = account
-      ? `Signed in as ${escapeText(account.email)}${isSubscriber ? ' · <button type="button" id="sv3-manage-sub">Manage subscription</button>' : ""} · <button type="button" id="sv3-signout">Sign out</button>`
+      ? `Signed in as ${escapeText(account.email)} · <button type="button" id="sv3-rate">★ Rate SpotVest</button>${isSubscriber ? ' · <button type="button" id="sv3-manage-sub">Manage subscription</button>' : ""} · <button type="button" id="sv3-signout">Sign out</button>`
       : "";
+    appFoot.querySelector("#sv3-rate")?.addEventListener("click", () => {
+      const card = document.querySelector("#sv3-review-card");
+      if (!card) return;
+      card.hidden = !card.hidden;
+      if (!card.hidden) {
+        const nameInput = document.querySelector("#sv3-review-name");
+        if (nameInput && !nameInput.value && account?.name) nameInput.value = account.name;
+        card.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    });
     appFoot.querySelector("#sv3-manage-sub")?.addEventListener("click", async () => {
       try {
         const response = await fetch("/api/billing-portal", { method: "POST", credentials: "same-origin" });
@@ -8866,5 +8876,46 @@ document.querySelectorAll("[data-checkout-product]").forEach((button) => {
   });
   document.addEventListener("pointerdown", (event) => {
     if (!field.contains(event.target)) menu.hidden = true;
+  });
+})();
+
+/* ---------- In-app review form (signed-in users never see the landing) ---------- */
+(function initInAppReview() {
+  const card = document.querySelector("#sv3-review-card");
+  if (!card) return;
+  const statusEl = document.querySelector("#sv3-review-status");
+  const starButtons = Array.from(card.querySelectorAll("#sv3-review-stars button"));
+  let rating = 5;
+  const paint = () => starButtons.forEach((button) => button.classList.toggle("on", Number(button.dataset.star) <= rating));
+  paint();
+  starButtons.forEach((button) => button.addEventListener("click", () => {
+    rating = Number(button.dataset.star) || 5;
+    paint();
+  }));
+  document.querySelector("#sv3-review-submit")?.addEventListener("click", async () => {
+    const submit = document.querySelector("#sv3-review-submit");
+    submit.disabled = true;
+    statusEl.textContent = "Submitting…";
+    try {
+      const response = await fetch("/api/reviews", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          rating,
+          name: (document.querySelector("#sv3-review-name")?.value || "").trim(),
+          role: (document.querySelector("#sv3-review-role")?.value || "").trim(),
+          text: (document.querySelector("#sv3-review-text")?.value || "").trim()
+        })
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || "Could not submit the review.");
+      statusEl.textContent = result.message || "Thanks! Your review appears on the site after a quick check.";
+      sv3PaywallToast("Review submitted ✓ It goes live after a quick check.");
+      window.setTimeout(() => { card.hidden = true; submit.disabled = false; }, 1500);
+    } catch (error) {
+      statusEl.textContent = error.message;
+      submit.disabled = false;
+    }
   });
 })();

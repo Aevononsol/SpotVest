@@ -579,3 +579,10 @@ body:not(.landing-mode) .sv3-app .sv3-biz-menu button:active,
 body:not(.landing-mode) .sv3-app .sv3-biz-menu button:hover{background:rgba(57,194,214,.10)!important;color:var(--txt)!important;transform:none}
 .sv3-app .sv3-biz-menu .biz-none{padding:13px 16px;color:var(--txt-3);font-size:13px}
 .sv3-app .pw-fine{color:var(--txt-3);font-size:12px;margin-top:2px}
+.sv3-app .sv3-review-stars{display:flex;gap:6px;margin:12px 0}
+.sv3-app .sv3-review-stars button{background:none;border:none;font-size:28px;line-height:1;color:#2A3550;cursor:pointer;padding:2px;box-shadow:none;width:auto}
+.sv3-app .sv3-review-stars button.on{color:var(--amber)}
+body:not(.landing-mode) .sv3-app .sv3-review-stars button{background:none!important;color:#2A3550!important;box-shadow:none!important;min-height:0}
+body:not(.landing-mode) .sv3-app .sv3-review-stars button.on{color:#F5B544!important}
+.sv3-app #sv3-review-text{resize:vertical;min-height:84px}
+.sv3-app #sv3-review-status{min-height:1em}
