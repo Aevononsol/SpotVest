@@ -7706,6 +7706,13 @@ async function refreshAccountStatus() {
     const response = await fetch("/api/me", { credentials: "same-origin" });
     const result = await response.json().catch(() => ({}));
     if (!response.ok) {
+      // The server doesn't recognize this session — drop the stale local
+      // copy so the analysis gate re-arms instead of trusting a ghost
+      // account (e.g. one deleted server-side).
+      try {
+        localStorage.removeItem("areaIntelAccount");
+        localStorage.removeItem("areaIntelSession");
+      } catch { /* ignore */ }
       renderAccountStatus(null);
       return null;
     }
