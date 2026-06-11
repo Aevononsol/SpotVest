@@ -3570,7 +3570,20 @@ createServer(async (request, response) => {
       const matches = purchases.filter(
         (purchase) => (code && purchase.code === code) || (account && purchase.accountId === account.id)
       );
-      sendJson(response, 200, { ok: true, purchases: matches.map(publicPurchase) });
+      // The owner's account carries a permanent built-in Pro Pass — no fake
+      // purchase records, no Stripe involvement.
+      if (account && normalizeEmail(account.email) === normalizeEmail(ownerEmail())) {
+        matches.unshift({
+          code: "OWNER-PASS",
+          product: "owner",
+          credits: 0,
+          creditsUsed: 0,
+          passExpiresAt: new Date(Date.now() + 3650 * 24 * 60 * 60 * 1000).toISOString(),
+          unlockedReports: [],
+          createdAt: account.createdAt
+        });
+      }
+      sendJson(response, 200, { ok: true, purchases: matches.map((purchase) => purchase.code === "OWNER-PASS" ? purchase : publicPurchase(purchase)) });
       return;
     }
 
@@ -3619,6 +3632,63 @@ createServer(async (request, response) => {
         ok: true,
         lead: publicLead(lead),
         message: "Consultation request saved. SpotVest will use the current report context and follow up when consultation support is available."
+      });
+      return;
+    }
+
+    if (url.pathname === "/api/admin/accounts") {
+      if (!adminAuthorized(request)) {
+        sendJson(response, 401, { error: "Admin token required." });
+        return;
+      }
+      const accounts = await readJsonStore("accounts", []);
+      sendJson(response, 200, {
+        total: accounts.length,
+        accounts: accounts.map((account) => ({
+          email: account.email,
+          name: account.name,
+          emailVerified: Boolean(account.emailVerifiedAt),
+          google: Boolean(account.googleId),
+          createdAt: account.createdAt
+        }))
+      });
+      return;
+    }
+
+    if (url.pathname === "/api/admin/purchases") {
+      if (!adminAuthorized(request)) {
+        sendJson(response, 401, { error: "Admin token required." });
+        return;
+      }
+      const purchases = await readJsonStore("purchases", []);
+      sendJson(response, 200, {
+        total: purchases.length,
+        revenueCents: purchases.reduce((sum, purchase) => sum + (Number(purchase.amountTotal) || 0), 0),
+        purchases: purchases.map((purchase) => ({
+          ...publicPurchase(purchase),
+          email: purchase.email,
+          amountTotal: purchase.amountTotal,
+          sessionId: purchase.sessionId
+        }))
+      });
+      return;
+    }
+
+    if (url.pathname === "/api/admin/emails") {
+      if (!adminAuthorized(request)) {
+        sendJson(response, 401, { error: "Admin token required." });
+        return;
+      }
+      const outbox = await readJsonStore("email-outbox", []);
+      sendJson(response, 200, {
+        total: outbox.length,
+        emails: outbox.slice(0, 200).map((email) => ({
+          type: email.type,
+          to: email.to,
+          subject: email.subject,
+          status: email.status,
+          createdAt: email.createdAt
+        }))
       });
       return;
     }
