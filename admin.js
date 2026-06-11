@@ -177,6 +177,7 @@ async function loadAdmin() {
     renderTasks(tasksResult.tasks || []);
     renderAgents(agentsResult.agents || []);
     renderRuns(runsResult.runs || []);
+    loadProspects();
     setStatus("Admin operations loaded.", "launch-status-ok");
   } catch (error) {
     setStatus(error.message || "Could not load admin operations.", "launch-status-error");
@@ -248,3 +249,149 @@ const savedToken = sessionStorage.getItem("areaIntelAdminToken");
 if (savedToken && adminEls.token) {
   adminEls.token.value = savedToken;
 }
+
+/* ---------- Outreach: prospect finder + pitch drafts ---------- */
+const prospectEls = {
+  form: document.querySelector("#admin-prospect-form"),
+  query: document.querySelector("#prospect-query"),
+  area: document.querySelector("#prospect-area"),
+  status: document.querySelector("#prospect-status"),
+  results: document.querySelector("#prospect-results"),
+  saved: document.querySelector("#prospect-saved")
+};
+
+function prospectPitch(prospect) {
+  const subject = "Evidence for your listings — SpotVest location reports";
+  const body = [
+    `Hi ${prospect.name} team,`,
+    "",
+    "I'm Maher, founder of SpotVest (https://spotvest.ai). We turn any NYC address into a location viability report for a retail or restaurant tenant — live MTA foot traffic, competitor density, demographics, and a clear 0-100 score with a verdict.",
+    "",
+    "Brokers use it to back a listing with evidence: \"this corner scores 78/100 for a coffee shop\" closes faster than a hunch. Reports are $9 each, with a 30-day unlimited pass for teams.",
+    "",
+    "I'd be glad to run a few free reports on your current listings so you can judge the quality yourself — just reply with an address or two.",
+    "",
+    "Best,",
+    "Maher",
+    "SpotVest — Know before you open",
+    "https://spotvest.ai"
+  ].join("\n");
+  return { subject, body };
+}
+
+function renderProspectRow(prospect, saved) {
+  const meta = [
+    prospect.address,
+    prospect.rating ? `${prospect.rating}★ (${prospect.reviews})` : "",
+    prospect.phone
+  ].filter(Boolean).join(" · ");
+  const site = prospect.website
+    ? `<a href="${escapeText(prospect.website)}" target="_blank" rel="noopener" style="color:var(--teal)">website</a>`
+    : "no website listed";
+  if (!saved) {
+    return `<div class="admin-row">
+      <strong>${escapeText(prospect.name)}</strong>
+      <span>${escapeText(meta)} · ${site}</span>
+      <small><button type="button" data-prospect-save='${escapeText(JSON.stringify(prospect))}' style="padding:7px 14px;font-size:12px">Save prospect</button></small>
+    </div>`;
+  }
+  const pitch = prospectPitch(prospect);
+  const mailto = `mailto:?subject=${encodeURIComponent(pitch.subject)}&body=${encodeURIComponent(pitch.body)}`;
+  return `<div class="admin-row">
+    <strong>${escapeText(prospect.name)}</strong>
+    <span>${escapeText(meta)} · ${site}</span>
+    <small style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <a href="${mailto}" style="color:#04222a;background:linear-gradient(135deg,#3BD6C9,#33A7D8);border-radius:9px;padding:7px 13px;font-weight:700;text-decoration:none;font-family:Sora,sans-serif">Draft email</a>
+      <button type="button" data-prospect-copy="${escapeText(prospect.id)}" style="padding:7px 13px;font-size:12px;background:var(--surface);color:var(--txt);border:1px solid var(--border-strong);box-shadow:none">Copy pitch</button>
+      <select data-prospect-status="${escapeText(prospect.id)}" style="width:auto;padding:7px 10px;font-size:12px">
+        ${["new", "emailed", "replied", "skip"].map((option) => `<option value="${option}"${prospect.status === option ? " selected" : ""}>${option}</option>`).join("")}
+      </select>
+    </small>
+  </div>`;
+}
+
+let prospectCache = [];
+
+function renderSavedProspects(prospects) {
+  prospectCache = prospects || [];
+  if (!prospectEls.saved) return;
+  prospectEls.saved.innerHTML = prospectCache.length
+    ? prospectCache.map((prospect) => renderProspectRow(prospect, true)).join("")
+    : '<p class="launch-status">No saved prospects yet — search above and save the offices worth contacting.</p>';
+}
+
+async function loadProspects() {
+  if (!adminToken()) return;
+  try {
+    const result = await getJson("/api/admin/prospects");
+    renderSavedProspects(result.prospects || []);
+  } catch { /* token panel already reports auth problems */ }
+}
+
+prospectEls.form?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (!adminToken()) {
+    prospectEls.status.textContent = "Enter the admin token first.";
+    prospectEls.status.className = "launch-status launch-status-error";
+    return;
+  }
+  prospectEls.status.textContent = "Searching Google Places…";
+  prospectEls.status.className = "launch-status";
+  try {
+    const params = new URLSearchParams({
+      query: prospectEls.query.value.trim() || "real estate agency",
+      area: prospectEls.area.value.trim()
+    });
+    const result = await getJson(`/api/admin/prospect-search?${params}`);
+    const prospects = result.prospects || [];
+    prospectEls.results.innerHTML = prospects.length
+      ? prospects.map((prospect) => renderProspectRow(prospect, false)).join("")
+      : '<p class="launch-status">No offices found there — try a different area.</p>';
+    prospectEls.status.textContent = `${prospects.length} office${prospects.length === 1 ? "" : "s"} found.`;
+    prospectEls.status.className = "launch-status launch-status-ok";
+  } catch (error) {
+    prospectEls.status.textContent = error.message || "Search failed.";
+    prospectEls.status.className = "launch-status launch-status-error";
+  }
+});
+
+document.addEventListener("click", async (event) => {
+  const saveButton = event.target.closest("[data-prospect-save]");
+  if (saveButton) {
+    try {
+      const prospect = JSON.parse(saveButton.dataset.prospectSave);
+      saveButton.disabled = true;
+      saveButton.textContent = "Saved ✓";
+      const result = await postJson("/api/admin/prospects", { action: "save", prospect });
+      renderSavedProspects(result.prospects || []);
+    } catch {
+      saveButton.disabled = false;
+      saveButton.textContent = "Save prospect";
+    }
+    return;
+  }
+  const copyButton = event.target.closest("[data-prospect-copy]");
+  if (copyButton) {
+    const prospect = prospectCache.find((candidate) => candidate.id === copyButton.dataset.prospectCopy);
+    if (!prospect) return;
+    const pitch = prospectPitch(prospect);
+    try {
+      await navigator.clipboard.writeText(`Subject: ${pitch.subject}\n\n${pitch.body}`);
+      copyButton.textContent = "Copied ✓";
+      setTimeout(() => { copyButton.textContent = "Copy pitch"; }, 1500);
+    } catch { /* clipboard unavailable */ }
+  }
+});
+
+document.addEventListener("change", async (event) => {
+  const statusSelect = event.target.closest("[data-prospect-status]");
+  if (!statusSelect) return;
+  try {
+    const result = await postJson("/api/admin/prospects", {
+      action: "status",
+      id: statusSelect.dataset.prospectStatus,
+      status: statusSelect.value
+    });
+    renderSavedProspects(result.prospects || []);
+  } catch { /* keep current view */ }
+});

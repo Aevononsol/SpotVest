@@ -3636,6 +3636,95 @@ createServer(async (request, response) => {
       return;
     }
 
+    if (url.pathname === "/api/admin/prospect-search") {
+      if (!adminAuthorized(request)) {
+        sendJson(response, 401, { error: "Admin token required." });
+        return;
+      }
+      if (!process.env.GOOGLE_PLACES_API_KEY) {
+        sendJson(response, 503, { error: "Google Places key is not configured." });
+        return;
+      }
+      const query = safeText(url.searchParams.get("query"), 120) || "real estate agency";
+      const area = safeText(url.searchParams.get("area"), 120) || "New York";
+      const searchUrl = new URL("https://maps.googleapis.com/maps/api/place/textsearch/json");
+      searchUrl.searchParams.set("query", `${query} in ${area}, New York`);
+      searchUrl.searchParams.set("key", process.env.GOOGLE_PLACES_API_KEY);
+      try {
+        const placesResult = await cachedJsonFetch(searchUrl, { timeoutMs: 9000, ttlMs: 6 * 60 * 60 * 1000 });
+        if (!placesResult.ok) throw new Error(`Places returned ${placesResult.status}`);
+        const base = (placesResult.data.results || []).slice(0, 12).map((place) => ({
+          placeId: place.place_id,
+          name: place.name,
+          address: place.formatted_address || "",
+          rating: place.rating || null,
+          reviews: place.user_ratings_total || 0
+        }));
+        // Details lookups add phone + website — the contact info that makes
+        // a prospect actionable.
+        const prospects = await Promise.all(base.map(async (item) => {
+          try {
+            const detailsUrl = new URL("https://maps.googleapis.com/maps/api/place/details/json");
+            detailsUrl.searchParams.set("place_id", item.placeId);
+            detailsUrl.searchParams.set("fields", "website,formatted_phone_number");
+            detailsUrl.searchParams.set("key", process.env.GOOGLE_PLACES_API_KEY);
+            const details = await cachedJsonFetch(detailsUrl, { timeoutMs: 7000, ttlMs: 7 * 24 * 60 * 60 * 1000 });
+            return {
+              ...item,
+              website: details.data?.result?.website || "",
+              phone: details.data?.result?.formatted_phone_number || ""
+            };
+          } catch {
+            return { ...item, website: "", phone: "" };
+          }
+        }));
+        sendJson(response, 200, { ok: true, prospects });
+      } catch (error) {
+        console.error(`[SpotVest] prospect search error: ${error.message}`);
+        sendJson(response, 502, { error: "Prospect search failed. Try again." });
+      }
+      return;
+    }
+
+    if (url.pathname === "/api/admin/prospects") {
+      if (!adminAuthorized(request)) {
+        sendJson(response, 401, { error: "Admin token required." });
+        return;
+      }
+      if (request.method === "POST") {
+        const body = await readRequestJson(request);
+        const prospects = await readJsonStore("prospects", []);
+        if (body.action === "save" && body.prospect?.name) {
+          if (!prospects.some((candidate) => candidate.placeId && candidate.placeId === body.prospect.placeId)) {
+            prospects.unshift({
+              id: leadId("prospect"),
+              placeId: safeText(body.prospect.placeId, 200),
+              name: safeText(body.prospect.name, 200),
+              address: safeText(body.prospect.address, 300),
+              phone: safeText(body.prospect.phone, 60),
+              website: safeText(body.prospect.website, 300),
+              rating: Number(body.prospect.rating) || null,
+              reviews: Number(body.prospect.reviews) || 0,
+              status: "new",
+              savedAt: new Date().toISOString()
+            });
+            await writeJsonStore("prospects", prospects.slice(0, 2000));
+          }
+        } else if (body.action === "status" && body.id) {
+          const target = prospects.find((candidate) => candidate.id === body.id);
+          if (target) {
+            target.status = ["new", "emailed", "replied", "skip"].includes(body.status) ? body.status : target.status;
+            await writeJsonStore("prospects", prospects);
+          }
+        }
+        sendJson(response, 200, { ok: true, prospects });
+        return;
+      }
+      const prospects = await readJsonStore("prospects", []);
+      sendJson(response, 200, { ok: true, prospects });
+      return;
+    }
+
     if (url.pathname === "/api/admin/accounts") {
       if (!adminAuthorized(request)) {
         sendJson(response, 401, { error: "Admin token required." });
