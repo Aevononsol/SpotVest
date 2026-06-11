@@ -47,6 +47,7 @@ const envAliases = {
   STRIPE_SECRET_KEY: ["SPOTVEST_STRIPE_SECRET_KEY", "AREAINTEL_STRIPE_SECRET_KEY"],
   STRIPE_WEBHOOK_SECRET: ["SPOTVEST_STRIPE_WEBHOOK_SECRET", "AREAINTEL_STRIPE_WEBHOOK_SECRET"],
   RESEND_API_KEY: ["SPOTVEST_RESEND_API_KEY", "AREAINTEL_RESEND_API_KEY"],
+  GOOGLE_CLIENT_ID: ["SPOTVEST_GOOGLE_CLIENT_ID", "AREAINTEL_GOOGLE_CLIENT_ID"],
   ADMIN_TOKEN: ["SPOTVEST_ADMIN_TOKEN", "AREAINTEL_ADMIN_TOKEN"]
 };
 
@@ -389,11 +390,12 @@ const CSP_DIRECTIVES = [
   "object-src 'none'",
   "frame-ancestors 'none'",
   "form-action 'self'",
-  "script-src 'self' https://cdnjs.cloudflare.com https://unpkg.com",
+  "script-src 'self' https://cdnjs.cloudflare.com https://unpkg.com https://accounts.google.com",
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://unpkg.com",
   "font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net",
   "img-src 'self' data: blob: https:",
-  "connect-src 'self' https://tiles.openfreemap.org https://*.openfreemap.org",
+  "connect-src 'self' https://tiles.openfreemap.org https://*.openfreemap.org https://accounts.google.com",
+  "frame-src https://accounts.google.com",
   "worker-src 'self' blob:",
   ...(isHostedProduction ? ["upgrade-insecure-requests"] : [])
 ].join("; ");
@@ -403,7 +405,9 @@ function applySecurityHeaders(response) {
   response.setHeader("X-Content-Type-Options", "nosniff");
   response.setHeader("X-Frame-Options", "DENY");
   response.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
-  response.setHeader("Cross-Origin-Opener-Policy", "same-origin");
+  // allow-popups: Google Identity Services opens its consent flow in a popup;
+  // plain same-origin severs the opener link and breaks the sign-in.
+  response.setHeader("Cross-Origin-Opener-Policy", "same-origin-allow-popups");
   // geolocation=(self): the landing map centers on the visitor's own area
   // (geolocation=() blocked the API outright — the browser never even asked).
   response.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=(self), browsing-topics=()");
@@ -2877,9 +2881,11 @@ async function listingFinder({ zip, address, radiusMiles, business }) {
 async function sendFile(response, pathname) {
   const requested = pathname === "/" || pathname === "/verify-email" || pathname === "/reset-password"
     ? "index.html"
-    : pathname === "/admin"
-      ? "admin.html"
-      : pathname.slice(1);
+    : pathname === "/account" || pathname === "/login" || pathname === "/signup"
+      ? "account.html"
+      : pathname === "/admin"
+        ? "admin.html"
+        : pathname.slice(1);
   const normalized = normalize(requested);
 
   if (normalized.startsWith("..") || normalized.includes("/.env")) {
@@ -3028,6 +3034,76 @@ createServer(async (request, response) => {
         },
         { "Set-Cookie": sessionCookie(token) }
       );
+      return;
+    }
+
+    if (url.pathname === "/api/auth/config") {
+      sendJson(response, 200, { googleClientId: process.env.GOOGLE_CLIENT_ID || null });
+      return;
+    }
+
+    if (url.pathname === "/api/auth/google" && request.method === "POST") {
+      if (rateLimited(`google-auth:${clientIp(request)}`, 10, 60_000)) {
+        sendJson(response, 429, { error: "Too many attempts. Please wait a minute and try again." });
+        return;
+      }
+      if (!process.env.GOOGLE_CLIENT_ID) {
+        sendJson(response, 503, { error: "Google sign-in is not configured." });
+        return;
+      }
+      const body = await readRequestJson(request);
+      const credential = safeText(body.credential, 4000);
+      if (!credential) {
+        sendJson(response, 400, { error: "Missing Google credential." });
+        return;
+      }
+      try {
+        // Google validates its own ID token: tokeninfo only answers for
+        // genuine, unexpired tokens, and the aud check pins it to OUR client
+        // id so a token minted for another app can't sign in here.
+        const verifyResponse = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(credential)}`);
+        const payload = await verifyResponse.json().catch(() => ({}));
+        if (!verifyResponse.ok || payload.aud !== process.env.GOOGLE_CLIENT_ID || payload.email_verified !== "true" || !payload.email) {
+          sendJson(response, 401, { error: "Google sign-in could not be verified." });
+          return;
+        }
+        const email = normalizeEmail(payload.email);
+        const accounts = await readJsonStore("accounts", []);
+        let account = accounts.find((candidate) => candidate.email === email);
+        const nowIso = new Date().toISOString();
+        if (!account) {
+          account = {
+            id: accountId(),
+            name: safeText(payload.name || email.split("@")[0], 160),
+            email,
+            company: "",
+            role: "",
+            plan: "free",
+            passwordHash: null,
+            googleId: safeText(payload.sub, 64),
+            emailVerifiedAt: nowIso, // Google already verified the address
+            createdAt: nowIso,
+            updatedAt: nowIso
+          };
+          accounts.unshift(account);
+          await writeJsonStore("accounts", accounts.slice(0, 5000));
+        } else {
+          account.googleId = account.googleId || safeText(payload.sub, 64);
+          if (!account.emailVerifiedAt) account.emailVerifiedAt = nowIso;
+          account.updatedAt = nowIso;
+          await writeJsonStore("accounts", accounts);
+        }
+        const token = await createSession(account.id, request);
+        sendJson(
+          response,
+          200,
+          { ok: true, account: publicAccount(account), message: "Signed in with Google." },
+          { "Set-Cookie": sessionCookie(token) }
+        );
+      } catch (error) {
+        console.error(`[SpotVest] google auth error: ${error.message}`);
+        sendJson(response, 502, { error: "Google sign-in failed. Try again." });
+      }
       return;
     }
 

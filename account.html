@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#04060d" />
+    <title>Sign in — SpotVest</title>
+    <meta name="robots" content="noindex" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=Inter:wght@400;500;600;700&display=swap" />
+    <style>
+      :root{
+        --bg:#04060d;--surface:#0E1525;--surface-2:#121B30;
+        --border:rgba(255,255,255,.07);--border-strong:rgba(255,255,255,.14);
+        --teal:#39C2D6;--teal-bright:#4FE3D8;
+        --grad:linear-gradient(135deg,#3BD6C9 0%,#33A7D8 100%);
+        --txt:#F2F6FF;--txt-2:#AEB9D0;--txt-3:#6E7B96;--r:16px;
+      }
+      *{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+      body{min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg);color:var(--txt);font-family:'Inter',system-ui,sans-serif;-webkit-font-smoothing:antialiased;padding:24px 16px}
+      .auth-card{width:100%;max-width:420px;background:var(--surface);border:1px solid var(--border);border-radius:22px;padding:30px 26px;box-shadow:0 24px 70px rgba(0,0,0,.5)}
+      .brand{display:flex;align-items:center;gap:12px;margin-bottom:22px}
+      .brand .logo{width:44px;height:44px}
+      .brand .eyebrow{font-size:10px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--teal)}
+      .brand h1{font-family:'Sora';font-size:21px;font-weight:800}
+      h2{font-family:'Sora';font-size:18px;font-weight:700;margin-bottom:4px}
+      .sub{color:var(--txt-3);font-size:13px;line-height:1.5;margin-bottom:18px}
+      .tabs{display:flex;gap:8px;margin-bottom:18px}
+      .tab{flex:1;border:1px solid var(--border-strong);background:transparent;color:var(--txt-2);font-family:'Sora';font-weight:600;font-size:13px;padding:10px;border-radius:11px;cursor:pointer}
+      .tab.on{background:var(--grad);color:#04222a;border-color:transparent}
+      #google-slot{display:none;margin-bottom:6px}
+      #google-slot.show{display:flex;justify-content:center}
+      .divider{display:none;align-items:center;gap:12px;color:var(--txt-3);font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;margin:16px 0 14px}
+      .divider.show{display:flex}
+      .divider::before,.divider::after{content:"";flex:1;height:1px;background:var(--border)}
+      form{display:none;flex-direction:column;gap:11px}
+      form.show{display:flex}
+      .input{width:100%;background:var(--surface-2);border:1px solid var(--border-strong);border-radius:13px;padding:13px 14px;color:var(--txt);font-family:'Inter';font-size:15px;outline:none}
+      .input:focus{border-color:rgba(79,227,216,.5)}
+      .input::placeholder{color:var(--txt-3)}
+      .btn{width:100%;border:none;border-radius:13px;padding:14px;font-family:'Sora';font-weight:700;font-size:14.5px;background:var(--grad);color:#04222a;cursor:pointer;box-shadow:0 6px 20px rgba(57,194,214,.28)}
+      .btn:active{transform:scale(.985)}
+      .btn[disabled]{opacity:.6}
+      .aux{display:flex;justify-content:space-between;align-items:center;font-size:12.5px}
+      .aux button{border:0;background:none;color:var(--teal);cursor:pointer;font-size:12.5px;text-decoration:underline;text-underline-offset:3px}
+      .status{min-height:18px;font-size:12.5px;color:var(--txt-2);line-height:1.5;margin-top:10px}
+      .status.err{color:#FF8585}
+      .status.ok{color:#4ADE80}
+      .back{display:inline-block;margin-top:18px;color:var(--txt-3);font-size:12.5px;text-decoration:none}
+      .back:hover{color:var(--txt-2)}
+      .fine{margin-top:14px;color:var(--txt-3);font-size:11px;line-height:1.55}
+    </style>
+  </head>
+  <body>
+    <main class="auth-card">
+      <div class="brand">
+        <svg class="logo" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs><linearGradient id="sv-a" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4FE3D8"/><stop offset="1" stop-color="#33A7D8"/></linearGradient></defs><circle cx="32" cy="32" r="23" stroke="url(#sv-a)" stroke-width="3.5" fill="none"/><circle cx="32" cy="32" r="13" stroke="url(#sv-a)" stroke-width="3.5" fill="none" opacity=".5"/><circle cx="32" cy="32" r="5.5" fill="url(#sv-a)"/><path d="M32 3v9M32 52v9M3 32h9M52 32h9" stroke="url(#sv-a)" stroke-width="3.5" stroke-linecap="round"/></svg>
+        <div><div class="eyebrow">Business Decision Intelligence</div><h1>SpotVest</h1></div>
+      </div>
+
+      <h2 id="auth-title">Sign in</h2>
+      <p class="sub" id="auth-sub">Access your reports and run new location analyses.</p>
+
+      <div class="tabs">
+        <button class="tab on" type="button" data-auth-tab="login">Sign in</button>
+        <button class="tab" type="button" data-auth-tab="signup">Create account</button>
+      </div>
+
+      <div id="google-slot"></div>
+      <div class="divider" id="google-divider"><span>or continue with email</span></div>
+
+      <form id="auth-login" class="show" novalidate>
+        <input class="input" name="email" type="email" placeholder="Email" autocomplete="email" required />
+        <input class="input" name="password" type="password" placeholder="Password" autocomplete="current-password" required />
+        <button class="btn" type="submit">Sign in</button>
+        <div class="aux"><span></span><button type="button" id="forgot-link">Forgot password?</button></div>
+      </form>
+
+      <form id="auth-signup" novalidate>
+        <input class="input" name="name" placeholder="Your name" autocomplete="name" />
+        <input class="input" name="email" type="email" placeholder="Email" autocomplete="email" required />
+        <input class="input" name="password" type="password" placeholder="Password (10+ characters, letters and numbers)" autocomplete="new-password" required />
+        <button class="btn" type="submit">Create account</button>
+      </form>
+
+      <form id="auth-reset" novalidate>
+        <input class="input" name="email" type="email" placeholder="Email" autocomplete="email" required />
+        <button class="btn" type="submit">Email me a reset link</button>
+        <div class="aux"><button type="button" id="back-to-login">← Back to sign in</button><span></span></div>
+      </form>
+
+      <p class="status" id="auth-status" role="status"></p>
+      <a class="back" href="/">← Back to spotvest.ai</a>
+      <p class="fine">One free account unlocks the free analysis. Reports are $9 each, 5 for $35, or unlimited for 30 days with the $99 Pro Pass.</p>
+    </main>
+    <script src="./account.js?v=20260611-auth1" defer></script>
+  </body>
+</html>

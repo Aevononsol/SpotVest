@@ -7866,9 +7866,9 @@ function sv3RequireAccount(message) {
     sv3AuthBypassOnce = false;
     return true;
   }
-  sv3PendingStartAnalysis = true;
-  openPublicActionPanel("#account-access");
-  sv3PaywallToast(message || "Create a free account or sign in to run an analysis.");
+  // Auth lives on its own page; ?intent=analyze brings them straight back
+  // into the analysis after signing in.
+  window.location.href = "/account?intent=analyze";
   return false;
 }
 
@@ -7888,6 +7888,16 @@ function sv3ResumeAfterAuth() {
   sv3PendingStartAnalysis = false;
   sv3EnterAnalysisApp();
 }
+
+// Returning from /account with ?start=analysis (set after a successful
+// sign-in that was triggered by the analysis gate): open the app directly.
+(function resumeFromAuthPage() {
+  let params;
+  try { params = new URLSearchParams(window.location.search); } catch { return; }
+  if (params.get("start") !== "analysis") return;
+  try { window.history.replaceState(null, "", window.location.pathname); } catch { /* ignore */ }
+  if (storedAccount()) sv3EnterAnalysisApp();
+})();
 
 document.querySelectorAll("[data-start-analysis]").forEach((button) => {
   button.addEventListener("click", () => {
