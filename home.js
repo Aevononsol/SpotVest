@@ -385,25 +385,21 @@
     if (locLabelEl) locLabelEl.textContent = `${loc.label} · live`;
 
     try {
-      const base = state.liveProfiles[loc.zip] || (typeof zipProfiles !== "undefined" && zipProfiles[loc.zip]) || profileForZip(loc.zip);
-      let profile = base;
-      try {
-        const area = await fetchJson(`/api/area-report?zip=${encodeURIComponent(loc.zip)}`);
-        if (area && area.census) { profile = enrichProfileWithCensus(base, area.census); state.liveProfiles[loc.zip] = profile; }
-      } catch (err) { console.warn("[home] area-report unavailable, using modeled profile", err); }
-
-      let businessResult = null;
-      try {
-        const params = new URLSearchParams({ zip: loc.zip, business: biz.search });
-        if (mode === "block") { params.set("lat", String(loc.center[1])); params.set("lng", String(loc.center[0])); params.set("radius", "0.5"); params.set("address", value); }
-        businessResult = await fetchJson(`/api/business-count?${params.toString()}`);
-        state.lastBusinessResult = businessResult;
-      } catch (err) { console.warn("[home] business-count unavailable", err); }
-
-      state.zip = loc.zip; state.business = biz.cat;
-      const recommendations = buildRecommendations(profile);
-      const rec = recommendations.find((x) => x.business === biz.cat) || recommendations[0];
-      const score = clampScore(rec.score);
+      // Same engine as the in-app report: spotvestQuickAnalysis (app.js) runs
+      // the identical signal fetches and scoring, so the demo score matches
+      // what the same search shows inside the app.
+      const quick = await window.spotvestQuickAnalysis({
+        zip: loc.zip,
+        business: biz.cat,
+        lat: loc.center[1],
+        lng: loc.center[0],
+        address: loc.label || value || `${loc.zip}, New York, NY`,
+        radiusMiles: 0.5
+      });
+      const profile = quick.profile;
+      const recommendations = quick.recommendations;
+      const businessResult = quick.businessResult || state.lastBusinessResult;
+      const score = quick.score;
       const decision = decisionFor(profile, recommendations, businessResult);
       const confidence = confidenceFor(loc.zip, businessResult);
       const verdict = verdictFor(score);
@@ -428,7 +424,9 @@
         why,
         risk,
         action,
-        business: biz.search,
+        // The exact business key the score was computed with — the app must
+        // normalize to the same category or the handed-off report rescores.
+        business: biz.cat,
         zip: loc.zip,
         address: mode === "block" ? value : "",
         radius: "0.5"

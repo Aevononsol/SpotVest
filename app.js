@@ -3040,6 +3040,69 @@ function currentConceptFitResult() {
   return contextMatches(state.lastConceptFitResult) ? state.lastConceptFitResult : null;
 }
 
+// Shared with the landing demo (home.js) so the front-page score IS the
+// app's score: same state slots, same signal fetches, same
+// buildInstitutionalAnalysis. The demo previously showed the raw category
+// recommendation score, which diverged from the hero score the same search
+// produced inside the app.
+async function spotvestQuickAnalysis({ zip, business, lat, lng, address, radiusMiles = 0.5 }) {
+  state.zip = zip;
+  state.business = business;
+  state.location = lat != null && lng != null
+    ? { lat, lng, radiusMiles, address: address || `${zip}, New York, NY` }
+    : null;
+  state.actualRentMonthly = null;
+  const signalParams = () => {
+    const search = new URLSearchParams({ zip: state.zip });
+    if (state.location) {
+      search.set("lat", state.location.lat);
+      search.set("lng", state.location.lng);
+      search.set("radius", state.location.radiusMiles);
+      search.set("address", state.location.address);
+    }
+    return search;
+  };
+  const get = async (url) => {
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`${url} -> ${response.status}`);
+    return response.json();
+  };
+  let profile = profileForZip(state.zip);
+  try {
+    const area = await get(`/api/area-report?zip=${encodeURIComponent(state.zip)}`);
+    if (area?.census) {
+      profile = enrichProfileWithCensus(profile, area.census);
+      state.liveProfiles[state.zip] = profile;
+    }
+  } catch { /* modeled profile fallback, same as the app */ }
+  const businessParams = signalParams();
+  businessParams.set("business", state.business);
+  const conceptParams = signalParams();
+  conceptParams.set("business", state.business);
+  const [businessResult, civicResult, siteIntelResult, conceptResult] = await Promise.allSettled([
+    get(`/api/business-count?${businessParams}`),
+    get(`/api/civic-signals?${signalParams()}`),
+    get(`/api/site-intelligence?${signalParams()}`),
+    isFoodBusiness(state.business) ? get(`/api/restaurant-concepts?${conceptParams}`) : Promise.resolve(null)
+  ]);
+  if (businessResult.status === "fulfilled") state.lastBusinessResult = businessResult.value;
+  if (civicResult.status === "fulfilled") state.lastCivicResult = civicResult.value;
+  if (siteIntelResult.status === "fulfilled") state.lastSiteIntelResult = siteIntelResult.value;
+  if (conceptResult.status === "fulfilled" && conceptResult.value) state.lastConceptFitResult = conceptResult.value;
+  const recommendations = buildRecommendations(profile);
+  const analysis = buildInstitutionalAnalysis(profile, recommendations);
+  return {
+    profile,
+    recommendations,
+    analysis,
+    score: clampScore(analysis.successProbability),
+    confidence: clampScore(analysis.confidenceScore),
+    decision: analysis.decision,
+    businessResult: currentBusinessResult()
+  };
+}
+window.spotvestQuickAnalysis = spotvestQuickAnalysis;
+
 // ---- Deterministic scoring --------------------------------------------------
 // The score is a pure function of the resolved signal set. Do not persist this
 // signal bundle in browser localStorage: each device has its own storage, which
