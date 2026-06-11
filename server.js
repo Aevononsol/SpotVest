@@ -3309,7 +3309,15 @@ createServer(async (request, response) => {
       const tokenHash = hashToken(token);
       const index = accounts.findIndex((candidate) => candidate.emailVerificationTokenHash === tokenHash);
       if (!token || index === -1) {
-        sendJson(response, 400, { error: "Verification link is invalid." });
+        // Links are single-use: a re-clicked link looks "invalid" even
+        // though the user is verified. Recognize them via session, or at
+        // least say what actually happened.
+        const sessionAccount = await authAccount(request);
+        if (sessionAccount?.emailVerifiedAt) {
+          sendJson(response, 200, { ok: true, alreadyVerified: true, account: publicAccount(sessionAccount), message: "Email already verified." });
+          return;
+        }
+        sendJson(response, 400, { error: "This verification link was already used or is invalid. If you verified earlier, just sign in." });
         return;
       }
       const expires = Date.parse(accounts[index].emailVerificationExpiresAt || "");
