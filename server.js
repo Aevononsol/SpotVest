@@ -3645,7 +3645,7 @@ createServer(async (request, response) => {
         sendJson(response, 503, { error: "Google Places key is not configured." });
         return;
       }
-      const query = safeText(url.searchParams.get("query"), 120) || "real estate agency";
+      const query = safeText(url.searchParams.get("query"), 120) || "commercial real estate";
       const area = safeText(url.searchParams.get("area"), 120) || "New York";
       const searchUrl = new URL("https://maps.googleapis.com/maps/api/place/textsearch/json");
       searchUrl.searchParams.set("query", `${query} in ${area}, New York`);
