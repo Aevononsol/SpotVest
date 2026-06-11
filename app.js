@@ -8082,7 +8082,8 @@ if (accountUrl.pathname.endsWith("/verify-email") && resetToken) {
 
 refreshAccountStatus().then((account) => {
   // Signed in means inside the product: "/" skips the marketing page and
-  // opens the analysis app directly.
+  // opens the analysis app directly. Purchases re-attach from the account.
+  if (account) sv3RestorePurchases();
   if (account?.emailVerified && document.body.classList.contains("landing-mode")) {
     sv3EnterAnalysisApp();
   }
@@ -8549,6 +8550,44 @@ function sv3RerenderReport() {
   }
 }
 
+// Purchases follow the account: merge every server-side purchase for the
+// signed-in user into local storage. This is the self-healing path — a
+// cleared browser, a new device, or an interrupted post-payment handoff
+// all recover on the next page load.
+function sv3MergePurchases(purchases) {
+  if (!Array.isArray(purchases) || !purchases.length) return;
+  const existing = sv3Purchase();
+  const active = purchases.find((candidate) =>
+    (Number(candidate.creditsLeft) || 0) > 0 ||
+    (candidate.passExpiresAt && Date.parse(candidate.passExpiresAt) > Date.now())
+  ) || purchases[0];
+  const merged = {
+    code: active.code || existing?.code || "",
+    product: active.product || existing?.product || "",
+    credits: Number(active.credits) || 0,
+    creditsUsed: Number(active.creditsUsed) || 0,
+    passExpiresAt: [existing?.passExpiresAt, ...purchases.map((candidate) => candidate.passExpiresAt)]
+      .filter(Boolean).sort().pop() || null,
+    unlockedReports: Array.from(new Set([
+      ...(existing?.unlockedReports || []),
+      ...purchases.flatMap((candidate) => candidate.unlockedReports || [])
+    ]))
+  };
+  try { localStorage.setItem(purchaseStorageKey, JSON.stringify(merged)); } catch { /* ignore */ }
+}
+
+async function sv3RestorePurchases() {
+  if (!storedAccount()) return;
+  try {
+    const response = await fetch("/api/report-credits", { credentials: "same-origin" });
+    const result = await response.json().catch(() => ({}));
+    if (response.ok && Array.isArray(result.purchases) && result.purchases.length) {
+      sv3MergePurchases(result.purchases);
+      sv3RerenderReport();
+    }
+  } catch { /* offline — local copy still applies */ }
+}
+
 document.querySelector("#sv3-app")?.addEventListener("click", async (event) => {
   const button = event.target.closest("[data-paywall-action]");
   if (!button) return;
@@ -8613,21 +8652,41 @@ document.querySelectorAll("[data-checkout-product]").forEach((button) => {
   const checkoutStatus = params.get("checkout");
   if (!checkoutStatus) return;
   const sessionId = params.get("session_id");
-  try { window.history.replaceState(null, "", window.location.pathname); } catch { /* ignore */ }
+  const stripUrl = () => { try { window.history.replaceState(null, "", window.location.pathname); } catch { /* ignore */ } };
   if (checkoutStatus !== "success" || !sessionId) {
+    stripUrl();
     if (checkoutStatus === "cancelled") sv3PaywallToast("Checkout cancelled — nothing was charged.");
     return;
   }
   try {
-    const response = await fetch(`/api/checkout/confirm?session_id=${encodeURIComponent(sessionId)}`, { credentials: "same-origin" });
-    const result = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(result.error || "Could not confirm the payment.");
+    // Retry: Stripe can lag a beat marking the session paid, and a flaky
+    // connection right after the redirect must not lose the unlock. The
+    // session_id stays in the URL until we're done, so a mid-flight refresh
+    // simply tries again.
+    let result = null;
+    let lastError = "Could not confirm the payment.";
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        const response = await fetch(`/api/checkout/confirm?session_id=${encodeURIComponent(sessionId)}`, { credentials: "same-origin" });
+        const body = await response.json().catch(() => ({}));
+        if (response.ok) { result = body; break; }
+        lastError = body.error || lastError;
+      } catch (error) {
+        lastError = error.message || lastError;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+    }
+    stripUrl();
+    if (!result) throw new Error(lastError);
     sv3SavePurchase(result.purchase);
+    // Flip any report already on screen open immediately — don't depend on
+    // the search re-run below succeeding.
+    sv3RerenderReport();
     const creditsLeft = Math.max(0, (Number(result.purchase?.credits) || 0) - (Number(result.purchase?.creditsUsed) || 0));
     const passNote = result.purchase?.passExpiresAt
       ? ` Pro Pass active — unlimited reports until ${new Date(result.purchase.passExpiresAt).toLocaleDateString()}.`
       : creditsLeft ? ` Credits left: ${creditsLeft}.` : "";
-    sv3PaywallToast(`Payment confirmed ✓ Your code: ${result.purchase.code} — save it to open your reports on any device.${passNote}`);
+    sv3PaywallToast(`Payment confirmed ✓ Your code: ${result.purchase.code} — also emailed to you.${passNote}`);
     let pending = null;
     try {
       pending = JSON.parse(localStorage.getItem(pendingSearchStorageKey) || "null");
@@ -8649,6 +8708,7 @@ document.querySelectorAll("[data-checkout-product]").forEach((button) => {
       }
     }
   } catch (error) {
-    sv3PaywallToast(error.message || "Could not confirm the payment. Your purchase is safe — contact support.", true);
+    stripUrl();
+    sv3PaywallToast(`${error.message || "Could not confirm the payment."} If you were charged, your code is in the receipt email and your account restores it automatically — refresh and run your search.`, true);
   }
 })();
