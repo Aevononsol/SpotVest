@@ -5401,6 +5401,13 @@ function sv3BindActions() {
     btn.addEventListener("click", () => {
       const action = btn.dataset.sv3Action;
       if (action === "compare") {
+        // Comparing locations is multi-report value (the 5-pack's pitch) —
+        // a report joins the compare list only once it's unlocked.
+        if (!sv3ReportUnlocked()) {
+          sv3ShowTab("market");
+          sv3PaywallToast("Compare is part of the full report — unlock this report to add it.");
+          return;
+        }
         try { addToCompare(); } catch {}
         sv3RenderCompare();
         sv3ShowMain("compare");
@@ -5616,7 +5623,14 @@ function initSpotVestV3Controls() {
   });
   document.querySelector("#sv3-close")?.addEventListener("click", () => sv3ShowMain("input"));
   document.querySelector("#sv3-assistant-button")?.addEventListener("click", () => { try { openAssistant(); } catch {} });
-  document.querySelector("#sv3-compare-add")?.addEventListener("click", () => { try { addToCompare(); } catch {} sv3RenderCompare(); });
+  document.querySelector("#sv3-compare-add")?.addEventListener("click", () => {
+    if (!sv3ReportUnlocked()) {
+      sv3PaywallToast("Compare is part of the full report — unlock this report to add it.");
+      return;
+    }
+    try { addToCompare(); } catch {}
+    sv3RenderCompare();
+  });
   document.querySelector("#sv3-compare-back")?.addEventListener("click", () => sv3ShowMain("report"));
   document.querySelector("#sv3-portfolio-clear")?.addEventListener("click", () => { try { clearCompare(); } catch {} sv3RenderPortfolio(); });
   document.querySelector("#sv3-portfolio-search")?.addEventListener("click", () => sv3ShowMain("input"));
