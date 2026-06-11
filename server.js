@@ -3193,6 +3193,9 @@ createServer(async (request, response) => {
             plan: "free",
             passwordHash: null,
             googleId: safeText(payload.sub, 64),
+            // Real face for reviews: Google's profile photo travels with
+            // the account.
+            picture: safeText(payload.picture, 300),
             emailVerifiedAt: nowIso, // Google already verified the address
             createdAt: nowIso,
             updatedAt: nowIso
@@ -3201,6 +3204,7 @@ createServer(async (request, response) => {
           await writeJsonStore("accounts", accounts.slice(0, 5000));
         } else {
           account.googleId = account.googleId || safeText(payload.sub, 64);
+          account.picture = account.picture || safeText(payload.picture, 300);
           if (!account.emailVerifiedAt) account.emailVerifiedAt = nowIso;
           account.updatedAt = nowIso;
           await writeJsonStore("accounts", accounts);
@@ -3595,6 +3599,16 @@ createServer(async (request, response) => {
         sendJson(response, 401, { error: "Sign in with a verified account to leave a review." });
         return;
       }
+      // Reviews are customer-only: an account must carry a real purchase or
+      // subscription (which required a card) before it can review. That's
+      // what makes "create many emails, write fake reviews" expensive.
+      const purchaseLedger = await readJsonStore("purchases", []);
+      const isOwner = normalizeEmail(account.email) === normalizeEmail(ownerEmail());
+      const isCustomer = purchaseLedger.some((purchase) => purchase.accountId === account.id);
+      if (!isOwner && !isCustomer) {
+        sendJson(response, 403, { error: "Reviews are open to SpotVest customers — start your free trial first." });
+        return;
+      }
       const body = await readRequestJson(request);
       const rating = Math.max(1, Math.min(5, Math.round(Number(body.rating) || 0)));
       const text = safeText(body.text, 600);
@@ -3611,6 +3625,8 @@ createServer(async (request, response) => {
         accountId: account.id,
         name: safeText(body.name, 80) || account.name || account.email.split("@")[0],
         role: safeText(body.role, 120),
+        picture: safeText(account.picture, 300),
+        verifiedCustomer: true,
         rating,
         text,
         status: "pending",
@@ -3635,6 +3651,8 @@ createServer(async (request, response) => {
           id: review.id,
           name: review.name,
           role: review.role,
+          picture: review.picture || "",
+          verifiedCustomer: Boolean(review.verifiedCustomer),
           rating: review.rating,
           text: review.text,
           createdAt: review.createdAt

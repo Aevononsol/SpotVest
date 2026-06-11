@@ -528,10 +528,12 @@
         grid.innerHTML = data.reviews.map((review) => `
           <article class="review-card reveal in">
             <div class="review-head">
-              <div class="review-avatar">${esc(initials(review.name))}</div>
+              ${review.picture
+                ? `<img class="review-avatar review-avatar-img" src="${esc(review.picture)}" alt="" referrerpolicy="no-referrer" loading="lazy" onerror="this.outerHTML='<div class=&quot;review-avatar&quot;>${esc(initials(review.name))}</div>'" />`
+                : `<div class="review-avatar">${esc(initials(review.name))}</div>`}
               <div><strong>${esc(review.name)}</strong>${review.role ? `<small>${esc(review.role)}</small>` : ""}</div>
             </div>
-            <div class="review-stars">${stars(review.rating)}</div>
+            <div class="review-stars">${stars(review.rating)}${review.verifiedCustomer ? '<span class="rv-badge">✓ Verified customer</span>' : ""}</div>
             <p>${esc(review.text)}</p>
           </article>`).join("");
         const subh = document.getElementById("reviews-subh");
