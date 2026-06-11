@@ -8809,3 +8809,7 @@ body.landing-mode .ws-grid .ws-card:nth-child(4){transition-delay:.24s;}
   body.landing-mode .reveal{opacity:1;transform:none;transition:none;}
   body.landing-mode .ws-card{transition:none;}
 }
+body.landing-mode .ws-grid-label{margin:36px 0 0;}
+body.landing-mode .ws-grid{margin-top:16px;}
+body.landing-mode .ws-src{display:inline-flex;align-items:center;gap:5px;margin-top:12px;font-family:'IBM Plex Mono',monospace;font-size:9.5px;font-weight:500;letter-spacing:.4px;text-transform:uppercase;color:#46506A;}
+body.landing-mode .ws-src::before{content:"◉";color:#39C2D6;font-size:8px;}
