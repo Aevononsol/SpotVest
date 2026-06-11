@@ -8847,3 +8847,5 @@ body.landing-mode .review-form button[type="submit"]{background:linear-gradient(
 body.landing-mode .rev-pick{display:flex;gap:6px;}
 body.landing-mode .rev-pick button{background:none;border:none;font-size:26px;color:#2A3550;cursor:pointer;padding:2px;line-height:1;}
 body.landing-mode .rev-pick button.on{color:#F5B544;}
+body.landing-mode .pricing-grid-2{grid-template-columns:repeat(2,1fr);max-width:760px;}
+@media(max-width:860px){body.landing-mode .pricing-grid-2{grid-template-columns:1fr;}}
