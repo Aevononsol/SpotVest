@@ -8813,3 +8813,9 @@ body.landing-mode .ws-grid-label{margin:36px 0 0;}
 body.landing-mode .ws-grid{margin-top:16px;}
 body.landing-mode .ws-src{display:inline-flex;align-items:center;gap:5px;margin-top:12px;font-family:'IBM Plex Mono',monospace;font-size:9.5px;font-weight:500;letter-spacing:.4px;text-transform:uppercase;color:#46506A;}
 body.landing-mode .ws-src::before{content:"◉";color:#39C2D6;font-size:8px;}
+/* landing cards: snappy hover after the one-time reveal */
+body.landing-mode .reveal.in{transition:transform .25s ease,border-color .25s ease,box-shadow .25s ease;transition-delay:0s!important;}
+body.landing-mode #inside .aic:hover,
+body.landing-mode #how .aic:hover,
+body.landing-mode #solutions .aic:hover{transform:translateY(-4px);}
+body.landing-mode .pricing-card:hover{transform:translateY(-4px);border-color:rgba(79,227,216,.35);box-shadow:0 16px 40px rgba(57,194,214,.10);}

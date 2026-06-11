@@ -485,3 +485,27 @@
   }, { threshold: 0.2 });
   reveals.forEach((el) => observer.observe(el));
 })();
+
+// Extend the scroll-reveal to every landing card grid (Inside a report,
+// How it works, Solutions, Pricing). Classes are added here at runtime so
+// cards stay fully visible if JS or IntersectionObserver is unavailable.
+(function animateLandingCards() {
+  const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  if (reduced || !("IntersectionObserver" in window)) return;
+  const cards = document.querySelectorAll("#inside .aic, #how .aic, #solutions .aic, .pricing-grid .pricing-card");
+  if (!cards.length) return;
+  cards.forEach((card) => {
+    card.classList.add("reveal");
+    const siblings = Array.from(card.parentElement.children);
+    card.style.transitionDelay = `${(siblings.indexOf(card) % 6) * 0.08}s`;
+  });
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (!entry.isIntersecting) return;
+      entry.target.classList.add("in");
+      entry.target.style.transitionDelay = entry.target.style.transitionDelay; // keep stagger for the reveal only
+      observer.unobserve(entry.target);
+    });
+  }, { threshold: 0.15 });
+  cards.forEach((card) => observer.observe(card));
+})();
