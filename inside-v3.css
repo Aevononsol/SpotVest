@@ -586,3 +586,7 @@ body:not(.landing-mode) .sv3-app .sv3-review-stars button{background:none!import
 body:not(.landing-mode) .sv3-app .sv3-review-stars button.on{color:#F5B544!important}
 .sv3-app #sv3-review-text{resize:vertical;min-height:84px}
 .sv3-app #sv3-review-status{min-height:1em}
+/* full-section tap target: a real button (iOS fires taps on buttons, not div role=button) */
+body:not(.landing-mode) .sv3-app .pw-overlay .pw-tap,
+.sv3-app .pw-overlay .pw-tap{position:absolute;inset:0;width:100%;height:100%;min-height:0;padding:0;background:none!important;border:0;border-radius:0;box-shadow:none!important;cursor:pointer}
+.sv3-app .pw-overlay-inner{pointer-events:none}
