@@ -2943,9 +2943,9 @@ async function listingFinder({ zip, address, radiusMiles, business }) {
 }
 
 async function sendFile(response, pathname) {
-  const requested = pathname === "/" || pathname === "/verify-email" || pathname === "/reset-password"
+  const requested = pathname === "/"
     ? "index.html"
-    : pathname === "/account" || pathname === "/login" || pathname === "/signup"
+    : ["/account", "/login", "/signup", "/verify-email", "/reset-password"].includes(pathname)
       ? "account.html"
       : pathname === "/admin"
         ? "admin.html"

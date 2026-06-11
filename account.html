@@ -91,11 +91,16 @@
         <div class="aux"><button type="button" id="back-to-login">← Back to sign in</button><span></span></div>
       </form>
 
+      <form id="auth-reset-complete" novalidate>
+        <input class="input" name="password" type="password" placeholder="New password (10+ characters, letters and numbers)" autocomplete="new-password" required />
+        <button class="btn" type="submit">Set new password</button>
+      </form>
+
       <p class="status" id="auth-status" role="status"></p>
       <button class="resend" id="auth-resend-verification" type="button" hidden>Resend verification email</button>
       <a class="back" href="/">← Back to spotvest.ai</a>
       <p class="fine">One free account unlocks the free analysis. Reports are $9 each, 5 for $35, or unlimited for 30 days with the $99 Pro Pass.</p>
     </main>
-    <script src="./account.js?v=20260611-auth2" defer></script>
+    <script src="./account.js?v=20260611-auth3" defer></script>
   </body>
 </html>

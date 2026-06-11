@@ -6,7 +6,8 @@
   const forms = {
     login: document.querySelector("#auth-login"),
     signup: document.querySelector("#auth-signup"),
-    reset: document.querySelector("#auth-reset")
+    reset: document.querySelector("#auth-reset"),
+    resetComplete: document.querySelector("#auth-reset-complete")
   };
   const tabs = document.querySelectorAll("[data-auth-tab]");
   const statusEl = document.querySelector("#auth-status");
@@ -16,7 +17,8 @@
   const copy = {
     login: ["Sign in", "Access your reports and run new location analyses."],
     signup: ["Create your free account", "One free account unlocks the free analysis for any NYC location."],
-    reset: ["Reset your password", "We'll email you a secure reset link."]
+    reset: ["Reset your password", "We'll email you a secure reset link."],
+    resetComplete: ["Choose a new password", "Set the new password for your account."]
   };
 
   function setStatus(text, kind) {
@@ -133,6 +135,54 @@
       setStatus(error.message, "err");
     } finally {
       button.disabled = false;
+    }
+  });
+
+  // Email-link landings: /verify-email and /reset-password serve this page,
+  // so the links from our emails resolve on the dedicated auth screen
+  // instead of the marketing front page.
+  const linkToken = new URLSearchParams(window.location.search).get("token");
+  const pagePath = window.location.pathname;
+
+  if (pagePath.endsWith("/verify-email") && linkToken) {
+    show("login");
+    setStatus("Verifying your email…");
+    (async () => {
+      try {
+        const response = await fetch(`/api/verify-email?token=${encodeURIComponent(linkToken)}`, { credentials: "same-origin" });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(result.error || "Verification failed.");
+        try { localStorage.setItem("areaIntelAccount", JSON.stringify(result.account)); } catch { /* ignore */ }
+        // If the signup session is still alive in this browser, skip the
+        // extra sign-in and go straight into the app.
+        const me = await fetch("/api/me", { credentials: "same-origin" });
+        if (me.ok) {
+          setStatus("Email verified ✓ — taking you to SpotVest…", "ok");
+          window.location.href = "/?start=analysis";
+          return;
+        }
+        setStatus("Email verified ✓ — sign in to continue.", "ok");
+      } catch (error) {
+        setStatus(error.message, "err");
+        resendButton.hidden = false;
+      }
+    })();
+  } else if (pagePath.endsWith("/reset-password") && linkToken) {
+    show("resetComplete");
+  }
+
+  forms.resetComplete.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const button = forms.resetComplete.querySelector("button[type=submit]");
+    button.disabled = true;
+    setStatus("Updating your password…");
+    try {
+      const result = await postJson("/api/password-reset/complete", { token: linkToken, ...payloadOf(forms.resetComplete) });
+      show("login");
+      setStatus(result.message || "Password updated ✓ — sign in with your new password.", "ok");
+    } catch (error) {
+      button.disabled = false;
+      setStatus(error.message, "err");
     }
   });
 
