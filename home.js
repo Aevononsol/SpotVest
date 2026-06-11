@@ -503,7 +503,6 @@
     entries.forEach((entry) => {
       if (!entry.isIntersecting) return;
       entry.target.classList.add("in");
-      entry.target.style.transitionDelay = entry.target.style.transitionDelay; // keep stagger for the reveal only
       observer.unobserve(entry.target);
     });
   }, { threshold: 0.15 });
