@@ -5192,20 +5192,21 @@ function renderSpotVestV3(profile, recommendations, analysis) {
   // tearing down the live map / charts on every late async re-render. The
   // locked flag is part of the cache key so unlocking forces a clean rebuild
   // (same HTML, but without the blur wrappers).
-  const setIf = (el, html, locked = false) => {
+  const setIf = (el, html, locked = false, lockFn = sv3LockTabContent) => {
     const key = (locked ? "L::" : "U::") + html;
     if (!el || el.__sv3html === key) return false;
     el.__sv3html = key;
     el.innerHTML = html;
-    if (locked) sv3LockTabContent(el);
+    if (locked) lockFn(el);
     return true;
   };
-  // Overview (decision + score) is the free teaser; the four deep tabs are
-  // the $9 product. Locked tabs show the REAL report cards blurred under a
-  // lock overlay per section — section titles stay sharp.
+  // The free teaser ends at the "Bottom line for the owner" card: score,
+  // decision, gauge, and bottom line stay open; everything deeper — the rest
+  // of the Overview plus the four tabs — is the $9 product, shown as the
+  // REAL report cards blurred under a lock overlay per section.
   sv3LastRender = { profile, recommendations, analysis };
   const reportPaid = sv3ReportUnlocked();
-  setIf(refs.tabOverview, sv3OverviewHTML(ctx));
+  setIf(refs.tabOverview, sv3OverviewHTML(ctx), !reportPaid, sv3LockOverviewContent);
   const marketChanged = setIf(refs.tabMarket, sv3MarketHTML(ctx), !reportPaid);
   setIf(refs.tabRisk, sv3RiskHTML(ctx), !reportPaid);
   setIf(refs.tabMoney, sv3MoneyHTML(ctx), !reportPaid);
@@ -8290,20 +8291,7 @@ function sv3PaywallBannerHTML() {
 // frosted overlay, grouped by section so each numbered title stays sharp
 // with one lock per section. (The data is in the page under the blur — a
 // deliberate trade: it reads as the real report, not a mockup.)
-function sv3LockTabContent(el) {
-  const groups = [];
-  let current = null;
-  Array.from(el.children).forEach((child) => {
-    if (child.classList.contains("section-label")) {
-      current = null;
-      return;
-    }
-    if (!current) {
-      current = [];
-      groups.push(current);
-    }
-    current.push(child);
-  });
+function sv3WrapLockedGroups(groups) {
   groups.forEach((members) => {
     const wrap = document.createElement("div");
     wrap.className = "pw-wrap";
@@ -8322,7 +8310,52 @@ function sv3LockTabContent(el) {
       </div>`;
     wrap.appendChild(overlay);
   });
+}
+
+function sv3LockTabContent(el) {
+  const groups = [];
+  let current = null;
+  Array.from(el.children).forEach((child) => {
+    if (child.classList.contains("section-label")) {
+      current = null;
+      return;
+    }
+    if (!current) {
+      current = [];
+      groups.push(current);
+    }
+    current.push(child);
+  });
+  sv3WrapLockedGroups(groups);
   el.insertAdjacentHTML("afterbegin", sv3PaywallBannerHTML());
+}
+
+// Overview keeps its free head — hero score, gauge, and the "Bottom line for
+// the owner" card — and locks everything after it. The action buttons stay
+// outside the lock so New search / Add to compare keep working (Generate and
+// PDF export gate themselves on click).
+function sv3LockOverviewContent(el) {
+  const cutoff = el.querySelector(".bottomline");
+  if (!cutoff) return; // loading / no-score state: nothing below to sell yet
+  const groups = [];
+  let current = null;
+  let pastCutoff = false;
+  Array.from(el.children).forEach((child) => {
+    if (!pastCutoff) {
+      pastCutoff = child === cutoff;
+      return;
+    }
+    if (child.classList.contains("section-label") || child.classList.contains("actions")) {
+      current = null;
+      return;
+    }
+    if (!current) {
+      current = [];
+      groups.push(current);
+    }
+    current.push(child);
+  });
+  sv3WrapLockedGroups(groups);
 }
 
 function sv3PaywallToast(message, isError = false) {
