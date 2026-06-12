@@ -564,7 +564,7 @@ body:not(.landing-mode) .sv3-app .nav button svg { stroke: currentColor; }
 #sv3-paywall-toast.show{opacity:1;transform:translateX(-50%) translateY(0);pointer-events:auto}
 #sv3-paywall-toast.err{border-color:rgba(248,113,113,.55)}
 #sv3-account-foot:empty{display:none}
-#sv3-account-foot button{background:none;border:0;color:var(--teal);cursor:pointer;font:inherit;text-decoration:underline;text-underline-offset:3px;padding:0}
+#sv3-account-foot button{font:inherit;text-decoration:none}
 
 /* business type dropdown */
 .sv3-app .biz-field{position:relative}
@@ -590,3 +590,19 @@ body:not(.landing-mode) .sv3-app .sv3-review-stars button.on{color:#F5B544!impor
 body:not(.landing-mode) .sv3-app .pw-overlay .pw-tap,
 .sv3-app .pw-overlay .pw-tap{position:absolute;inset:0;width:100%;height:100%;min-height:0;padding:0;background:none!important;border:0;border-radius:0;box-shadow:none!important;cursor:pointer}
 .sv3-app .pw-overlay-inner{pointer-events:none}
+
+/* account card (input screen footer) */
+#sv3-account-foot{font-family:'Inter';letter-spacing:0;text-transform:none;font-size:inherit;opacity:1}
+.sv3-app .sv3-account-card{text-align:left;margin-top:20px}
+.sv3-app .sv3-account-card .acct-email{font-size:14.5px;font-weight:600;color:var(--txt-2);margin:2px 0 14px;word-break:break-all}
+.sv3-app .acct-actions{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.sv3-app .acct-actions.three{grid-template-columns:repeat(3,1fr)}
+body:not(.landing-mode) .sv3-app .acct-tile,
+.sv3-app .acct-tile{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;min-height:74px;padding:12px 6px;background:var(--surface-2)!important;border:1px solid var(--border-strong);border-radius:13px;color:var(--txt-2)!important;font-family:'Inter';font-size:12.5px;font-weight:600;cursor:pointer;box-shadow:none!important;transition:.15s}
+.sv3-app .acct-tile svg{width:21px;height:21px;color:var(--teal)}
+.sv3-app .acct-tile:active{transform:scale(.97)}
+.sv3-app .acct-tile:hover{border-color:rgba(57,194,214,.4);color:var(--txt)!important}
+body:not(.landing-mode) .sv3-app .acct-tile.danger,
+.sv3-app .acct-tile.danger{color:#FF8585!important;border-color:rgba(255,107,107,.28)}
+.sv3-app .acct-tile.danger svg{color:#FF8585}
+.sv3-app .acct-tile.danger:hover{border-color:rgba(255,107,107,.5)}

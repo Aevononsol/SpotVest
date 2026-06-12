@@ -7801,7 +7801,24 @@ function renderAccountStatus(account) {
   if (appFoot) {
     const isSubscriber = sv3Purchase()?.product === "pro-monthly";
     appFoot.innerHTML = account
-      ? `Signed in as ${escapeText(account.email)} · <button type="button" id="sv3-rate">★ Rate SpotVest</button>${isSubscriber ? ' · <button type="button" id="sv3-manage-sub">Manage subscription</button>' : ""} · <button type="button" id="sv3-signout">Sign out</button>`
+      ? `<div class="card sv3-account-card">
+          <div class="sub">Account</div>
+          <div class="acct-email">${escapeText(account.email)}</div>
+          <div class="acct-actions${isSubscriber ? " three" : ""}">
+            <button type="button" id="sv3-rate" class="acct-tile">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.9-5.2-2.8-5.2 2.8 1-5.9L3.5 9.7l5.9-.9L12 3.5z"/></svg>
+              <span>Rate SpotVest</span>
+            </button>
+            ${isSubscriber ? `<button type="button" id="sv3-manage-sub" class="acct-tile">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="6" width="18" height="13" rx="2.5"/><path d="M3 10.5h18"/><path d="M7 15.5h4"/></svg>
+              <span>Subscription</span>
+            </button>` : ""}
+            <button type="button" id="sv3-signout" class="acct-tile danger">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H6a2 2 0 01-2-2V5a2 2 0 012-2h3"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>
+              <span>Sign out</span>
+            </button>
+          </div>
+        </div>`
       : "";
     appFoot.querySelector("#sv3-rate")?.addEventListener("click", () => {
       const card = document.querySelector("#sv3-review-card");
