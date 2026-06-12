@@ -4698,21 +4698,28 @@ function sv3PnL(baseRev, rentDollars, bucket) {
   return { baseRev, cogs, labor, rent, util, mkt, net, marginPct, catLabel: cs.label,
     stack: { cogs: pct(cogs), labor: pct(labor), rent: pct(rent), util: pct(util), mkt: pct(mkt), profit: Math.max(0, pct(net)) } };
 }
-function sv3CashToOpen(bucket, rentDollars) {
+function sv3CashToOpen(bucket, rentDollars, areaRentScore = 50) {
   const food = bucket === "food" || bucket === "cafe" || bucket === "bar";
+  // Location cost factor: construction, fit-out, and stocking costs track the
+  // neighborhood's cost level (same modeled rent-pressure signal the score
+  // uses). Manhattan-core ≈ ×1.3, quiet outer-borough ≈ ×0.8 — without this,
+  // every borough printed the same flat category benchmark.
+  const factor = Math.round((0.8 + (Math.max(0, Math.min(100, areaRentScore)) / 100) * 0.5) * 100) / 100;
+  const scaled = (base) => Math.round((base * factor) / 500) * 500;
   // Operating reserve is anchored to fixed rent (≈4 months of rent + a floor),
-  // not full labor/COGS which scale with sales — keeps it realistic.
-  const reserve = Math.round(Math.max(40000, rentDollars * 4));
+  // not full labor/COGS which scale with sales — keeps it realistic. The
+  // floor is low enough that area rent differences stay visible.
+  const reserve = Math.round(Math.max(25000, rentDollars * 4));
   const items = [
-    ["Buildout & renovation", food ? 95000 : 55000],
-    ["Equipment & fit-out", food ? 70000 : 35000],
+    ["Buildout & renovation", scaled(food ? 95000 : 55000)],
+    ["Equipment & fit-out", scaled(food ? 70000 : 35000)],
     ["Security deposit (3 mo rent)", Math.round(rentDollars * 3)],
     ["Permits & licenses", food ? 18000 : 6000],
-    ["Initial inventory & supplies", bucket === "retail" ? 40000 : food ? 22000 : 12000],
+    ["Initial inventory & supplies", scaled(bucket === "retail" ? 40000 : food ? 22000 : 12000)],
     ["Operating reserve", reserve]
   ];
   const total = items.reduce((s, i) => s + i[1], 0);
-  return { items, low: total, high: Math.round(total * 1.18) };
+  return { items, low: total, high: Math.round(total * 1.18), factor };
 }
 function sv3PermitRoadmap(bucket) {
   const base = [["Business Certificate / EIN", "~$100", "1–2 wks"]];
@@ -4911,8 +4918,8 @@ function sv3PnLHTML(ctx) {
       <div class="cashbig">${sv3Money(c.low)}<span class="u"> – ${sv3Money(c.high)}</span></div>
       <div class="divider" style="margin:14px 0"></div>
       ${(c.items || []).map((i) => `<div class="cashitem"><span class="ci-l">${escapeText(i[0])}</span><span class="ci-v">${sv3Money(i[1])}</span></div>`).join("")}
-      <div class="desc" style="margin-top:12px">Modeled planning range only. This is not live contractor, landlord, bank, or vendor pricing. Verify real rent, buildout, equipment, permits, working capital, and operator costs before signing.</div>
-      <div class="src">Estimated planning model · category benchmarks, permit signals, and modeled rent pressure</div>
+      <div class="desc" style="margin-top:12px">Buildout, fit-out, and stocking are scaled ×${c.factor || "1.00"} to this area's modeled cost level; deposit and reserve follow this area's rent. Modeled planning range only — not live contractor, landlord, bank, or vendor pricing. Verify real rent, buildout, equipment, permits, working capital, and operator costs before signing.</div>
+      <div class="src">Estimated planning model · category benchmarks × area cost level · modeled rent</div>
     </div>
 
     <div class="section-label"><span class="n">21</span> Scenarios · how the year could go</div>
@@ -5156,9 +5163,11 @@ function renderSpotVestV3(profile, recommendations, analysis) {
   const rentPctNum = Number((String(revenueRentPercent).match(/\d+/) || [0])[0]);
   const baseRev = Math.round(((revLowNum + revHighNum) / 2) * 1000);
   const rentNoteMatch = String(revenueNote).match(/\$([\d,]+)\s*\/?\s*mo/i);
-  const rentDollars = rentNoteMatch ? Number(rentNoteMatch[1].replace(/,/g, "")) : Math.round((rentPctNum / 100) * baseRev) || Math.round(baseRev * 0.12);
+  // A user-quoted rent beats every model — it's their actual deal.
+  const rentDollars = state.actualRentMonthly ||
+    (rentNoteMatch ? Number(rentNoteMatch[1].replace(/,/g, "")) : Math.round((rentPctNum / 100) * baseRev) || Math.round(baseRev * 0.12));
   const pnl = sv3PnL(baseRev, rentDollars, bucket);
-  const cashOpen = sv3CashToOpen(bucket, rentDollars);
+  const cashOpen = sv3CashToOpen(bucket, rentDollars, safeNumber(profile.rent, 50));
   const scenarios = sv3ScenariosData(revLowNum, revHighNum, rentDollars, bucket);
   const wtbt = sv3WhatToBeTrue(rentDollars, bucket);
   const dining = sv3DiningDemand(currentBusinessResult(), footReal ? footReal.hourly : null);
