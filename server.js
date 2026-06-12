@@ -3574,6 +3574,39 @@ createServer(async (request, response) => {
       return;
     }
 
+    if (url.pathname === "/api/analysis-run" && request.method === "POST") {
+      // CoStar-style fair use: each account gets a daily analysis allowance
+      // no real person exceeds. A whole company funneling through one shared
+      // subscription hits the wall before lunch — that's the design.
+      const account = await authAccount(request);
+      if (!account) {
+        sendJson(response, 401, { error: "Sign in to run analyses." });
+        return;
+      }
+      const DAILY_ANALYSIS_LIMIT = 30;
+      const today = new Date().toISOString().slice(0, 10);
+      const isOwner = normalizeEmail(account.email) === normalizeEmail(ownerEmail());
+      const usage = await readJsonStore("usage", []);
+      let entry = usage.find((candidate) => candidate.accountId === account.id && candidate.date === today);
+      if (!entry) {
+        entry = { accountId: account.id, date: today, count: 0 };
+        usage.unshift(entry);
+      }
+      if (!isOwner && entry.count >= DAILY_ANALYSIS_LIMIT) {
+        sendJson(response, 429, {
+          error: `Daily fair-use limit reached (${DAILY_ANALYSIS_LIMIT} reports). It resets at midnight — if your team needs more, ask us about team seats.`,
+          used: entry.count,
+          limit: DAILY_ANALYSIS_LIMIT
+        });
+        return;
+      }
+      entry.count += 1;
+      // Keep only today's rows: yesterday's counts are dead weight.
+      await writeJsonStore("usage", usage.filter((candidate) => candidate.date === today).slice(0, 10000));
+      sendJson(response, 200, { ok: true, used: entry.count, limit: DAILY_ANALYSIS_LIMIT, left: Math.max(0, DAILY_ANALYSIS_LIMIT - entry.count) });
+      return;
+    }
+
     if (url.pathname === "/api/billing-portal" && request.method === "POST") {
       const account = await authAccount(request);
       if (!account) {

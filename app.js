@@ -5746,13 +5746,39 @@ function initSpotVestV3Controls() {
     sv3ShowMain("report");
     elements.addressForm?.requestSubmit();
   };
+  // Fair-use meter (CoStar-style): every analysis checks in server-side.
+  // Over the daily allowance → blocked with the reset/team-seats message.
+  // Network hiccups fail open — a metering outage must not kill analyses.
+  const meterAnalysis = async () => {
+    try {
+      const response = await fetch("/api/analysis-run", { method: "POST", credentials: "same-origin" });
+      const result = await response.json().catch(() => ({}));
+      if (response.status === 429) {
+        sv3PaywallToast(result.error || "Daily fair-use limit reached — resets at midnight.", true);
+        const refs = sv3Refs();
+        if (refs.stepnote) refs.stepnote.textContent = result.error || "Daily limit reached — resets at midnight.";
+        return false;
+      }
+      if (response.ok && result.left <= 5) {
+        sv3PaywallToast(`Heads up: ${result.left} of ${result.limit} daily reports left.`);
+      }
+      return true;
+    } catch {
+      return true;
+    }
+  };
   // One button: it reads what the user actually typed. A street address wins
   // (most specific); a bare 5-digit number anywhere is a ZIP; nothing typed
   // gets a prompt instead of a dead click.
-  const runSmart = () => {
+  const runSmart = async () => {
     const refs = sv3Refs();
     const addressValue = (refs.address?.value || "").trim();
     const zipValue = (refs.zip?.value || "").trim();
+    if (!addressValue && !zipValue) {
+      if (refs.stepnote) refs.stepnote.textContent = "Enter a NYC ZIP code or a street address, then run the analysis.";
+      return;
+    }
+    if (storedAccount() && !(await meterAnalysis())) return;
     if (/^\d{5}$/.test(addressValue)) {
       // They typed a ZIP into the address box — treat it as a ZIP search.
       if (refs.zip) refs.zip.value = addressValue;
