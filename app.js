@@ -5760,7 +5760,12 @@ function initSpotVestV3Controls() {
   // Network hiccups fail open — a metering outage must not kill analyses.
   const meterAnalysis = async () => {
     try {
-      const response = await fetch("/api/analysis-run", { method: "POST", credentials: "same-origin" });
+      const response = await fetch("/api/analysis-run", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ vip: sv3VipCode() })
+      });
       const result = await response.json().catch(() => ({}));
       if (response.status === 429) {
         sv3PaywallToast(result.error || "Daily fair-use limit reached — resets at midnight.", true);
@@ -7809,7 +7814,9 @@ function renderAccountStatus(account) {
   const appFoot = document.querySelector("#sv3-account-foot");
   if (appFoot) {
     const isSubscriber = sv3Purchase()?.product === "pro-monthly";
-    appFoot.innerHTML = account
+    appFoot.innerHTML = !account && sv3VipActive()
+      ? `<div class="card sv3-account-card"><div class="sub">VIP access</div><div class="acct-email">Invite link active — full access on this device, no account needed.</div></div>`
+      : account
       ? `<div class="card sv3-account-card">
           <div class="sub">Account</div>
           <div class="acct-email">${escapeText(account.email)}</div>
@@ -8061,6 +8068,8 @@ let sv3PendingStartAnalysis = false;
 let sv3AuthBypassOnce = false;
 
 function sv3RequireAccount(message) {
+  // VIP invite links skip accounts entirely.
+  if (sv3VipActive()) return true;
   // Verified accounts only: a signed-up-but-unverified visitor is sent back
   // to /account, which walks them through the emailed link.
   if (storedAccount()?.emailVerified) return true;
@@ -8536,6 +8545,7 @@ function sv3PassActive() {
 }
 
 function sv3ReportUnlocked() {
+  if (sv3VipActive()) return true;
   if (sv3PassActive()) return true;
   const purchase = sv3Purchase();
   return Boolean(purchase?.unlockedReports?.includes(sv3ReportKey()));
@@ -8982,4 +8992,46 @@ document.querySelectorAll("[data-checkout-product]").forEach((button) => {
       submit.disabled = false;
     }
   });
+})();
+
+
+/* ---------- VIP invite link ---------- */
+// spotvest.ai/?vip=CODE grants this device full access (no account, no
+// paywall, no daily cap) while the code matches SPOTVEST_VIP_CODE on the
+// server. Revoking the env value kills every shared link on next visit.
+function sv3VipCode() {
+  try { return localStorage.getItem("spotvestVip") || ""; } catch { return ""; }
+}
+
+function sv3VipActive() {
+  return Boolean(sv3VipCode());
+}
+
+(async function initVipAccess() {
+  let params;
+  try { params = new URLSearchParams(window.location.search); } catch { return; }
+  const incoming = (params.get("vip") || "").trim();
+  const code = incoming || sv3VipCode();
+  if (!code) return;
+  if (incoming) {
+    // Strip the secret from the URL so it doesn't leak via history/referrer.
+    try { window.history.replaceState(null, "", window.location.pathname); } catch { /* ignore */ }
+  }
+  try {
+    const response = await fetch(`/api/vip-check?code=${encodeURIComponent(code)}`);
+    const result = await response.json().catch(() => ({}));
+    if (result.ok) {
+      try { localStorage.setItem("spotvestVip", code); } catch { /* ignore */ }
+      if (incoming) {
+        sv3PaywallToast("VIP access active — everything is unlocked on this device.");
+        sv3EnterAnalysisApp();
+      }
+      renderAccountStatus(storedAccount());
+      sv3RerenderReport();
+    } else {
+      try { localStorage.removeItem("spotvestVip"); } catch { /* ignore */ }
+      if (incoming) sv3PaywallToast("That invite link is no longer valid.", true);
+      renderAccountStatus(storedAccount());
+    }
+  } catch { /* offline — keep the stored flag until the server can answer */ }
 })();

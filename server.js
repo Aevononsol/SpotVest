@@ -3420,6 +3420,19 @@ createServer(async (request, response) => {
       return;
     }
 
+    if (url.pathname === "/api/vip-check") {
+      // Validates an invite-link code. Rate limited so the code can't be
+      // brute-forced; revoking = changing SPOTVEST_VIP_CODE in the env.
+      if (rateLimited(`vip:${clientIp(request)}`, 10, 60_000)) {
+        sendJson(response, 429, { error: "Too many attempts." });
+        return;
+      }
+      const code = safeText(url.searchParams.get("code"), 120);
+      const configured = process.env.SPOTVEST_VIP_CODE || "";
+      sendJson(response, 200, { ok: Boolean(configured) && code === configured });
+      return;
+    }
+
     if (url.pathname === "/api/auth/config") {
       sendJson(response, 200, { googleClientId: process.env.GOOGLE_CLIENT_ID || null });
       return;
@@ -3836,12 +3849,20 @@ createServer(async (request, response) => {
       // CoStar-style fair use: each account gets a daily analysis allowance
       // no real person exceeds. A whole company funneling through one shared
       // subscription hits the wall before lunch — that's the design.
+      const DAILY_ANALYSIS_LIMIT = 5;
+      // VIP invite link (SPOTVEST_VIP_CODE): trusted people skip the account
+      // requirement and the meter entirely.
+      const meterBody = await readRequestJson(request).catch(() => ({}));
+      const vipConfigured = process.env.SPOTVEST_VIP_CODE || "";
+      if (vipConfigured && safeText(meterBody.vip, 120) === vipConfigured) {
+        sendJson(response, 200, { ok: true, vip: true, used: 0, limit: DAILY_ANALYSIS_LIMIT, left: DAILY_ANALYSIS_LIMIT });
+        return;
+      }
       const account = await authAccount(request);
       if (!account) {
         sendJson(response, 401, { error: "Sign in to run analyses." });
         return;
       }
-      const DAILY_ANALYSIS_LIMIT = 5;
       // "Day" means a New York calendar day — the counter resets at midnight
       // ET, matching what an NYC customer expects (UTC reset landed at 8 PM).
       const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });

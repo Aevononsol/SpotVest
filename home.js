@@ -305,7 +305,9 @@
     // verified-account rule as the in-app Analyze button.
     let account = null;
     try { account = JSON.parse(localStorage.getItem("areaIntelAccount") || "null"); } catch { /* treat as signed out */ }
-    if (!account?.emailVerified) {
+    let vip = "";
+    try { vip = localStorage.getItem("spotvestVip") || ""; } catch { /* none */ }
+    if (!vip && !account?.emailVerified) {
       window.location.href = "/account?intent=analyze";
       return;
     }
