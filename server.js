@@ -927,6 +927,16 @@ function passActive(purchase) {
   return Boolean(purchase?.passExpiresAt && Date.parse(purchase.passExpiresAt) > Date.now());
 }
 
+// Stripe's 2025 API moved current_period_end from the subscription to its
+// items; older accounts still have it top-level. Read every location, with
+// trial_end as the final fallback.
+function subscriptionPeriodEnd(subscription) {
+  return subscription.current_period_end ||
+    subscription.items?.data?.[0]?.current_period_end ||
+    subscription.trial_end ||
+    null;
+}
+
 // Idempotent by Stripe session id: the webhook and the success-page confirm
 // can both fire for the same payment and must not double-credit.
 async function recordPaidCheckout(session) {
@@ -943,8 +953,13 @@ async function recordPaidCheckout(session) {
     subscriptionId = String(session.subscription);
     try {
       const subscription = await stripeRequest("GET", `subscriptions/${encodeURIComponent(subscriptionId)}`);
-      if (["trialing", "active"].includes(subscription.status) && subscription.current_period_end) {
-        passExpiresAt = new Date(subscription.current_period_end * 1000).toISOString();
+      const periodEnd = subscriptionPeriodEnd(subscription);
+      if (["trialing", "active"].includes(subscription.status) && periodEnd) {
+        passExpiresAt = new Date(periodEnd * 1000).toISOString();
+      } else if (["trialing", "active"].includes(subscription.status)) {
+        // Active but no readable period end: grant trial length + a day of
+        // grace rather than storing nothing (a null pass = locked customer).
+        passExpiresAt = new Date(now.getTime() + ((item.trialDays || 0) + 1) * 24 * 60 * 60 * 1000).toISOString();
       }
     } catch (error) {
       // Stripe hiccup: grant trial length + a day of grace; the refresh on
@@ -990,7 +1005,7 @@ async function recordPaidCheckout(session) {
     : `$${((Number(purchase.amountTotal) || item.amount) / 100).toFixed(2)}`;
   if (purchase.email) {
     const accessLine = purchase.subscriptionId
-      ? `Your SpotVest Pro subscription is active — unlimited reports. ${purchase.amountTotal === 0 ? `Your free trial runs until ${new Date(purchase.passExpiresAt).toDateString()}; after that it's $29/month.` : "It renews at $29/month."} Manage or cancel anytime from inside the app (Manage subscription).`
+      ? `Your SpotVest Pro subscription is active — unlimited reports. ${purchase.amountTotal === 0 ? `Your free trial${purchase.passExpiresAt ? ` runs until ${new Date(purchase.passExpiresAt).toDateString()}` : " is active"}; after that it's $29/month.` : "It renews at $29/month."} Manage or cancel anytime from inside the app (Manage subscription).`
       : purchase.passExpiresAt
         ? `Your Pro Pass is active until ${new Date(purchase.passExpiresAt).toDateString()} — unlimited full reports until then. Reports you open while it's active stay unlocked forever.`
         : `This code holds ${item.credits} full report${item.credits === 1 ? "" : "s"}. Each report you unlock stays open forever.`;
@@ -3893,8 +3908,9 @@ createServer(async (request, response) => {
           if (Number.isFinite(expires) && expires > Date.now() + 24 * 60 * 60 * 1000) continue;
           try {
             const subscription = await stripeRequest("GET", `subscriptions/${encodeURIComponent(purchase.subscriptionId)}`);
-            if (["trialing", "active"].includes(subscription.status) && subscription.current_period_end) {
-              const next = new Date(subscription.current_period_end * 1000).toISOString();
+            const periodEnd = subscriptionPeriodEnd(subscription);
+            if (["trialing", "active"].includes(subscription.status) && periodEnd) {
+              const next = new Date(periodEnd * 1000).toISOString();
               if (next !== purchase.passExpiresAt) {
                 purchase.passExpiresAt = next;
                 dirty = true;
