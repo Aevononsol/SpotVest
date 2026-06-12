@@ -863,7 +863,7 @@ const checkoutProducts = {
   // records and codes keep rendering, but checkout sells the subscription.
   "pro-monthly": {
     name: "SpotVest Pro",
-    description: "Up to 10 location reports every day. 3-day free trial, then $29/month. Cancel anytime.",
+    description: "Up to 5 location reports every day. 3-day free trial, then $29/month. Cancel anytime.",
     amount: 2900,
     credits: 0,
     subscription: true,
@@ -1005,7 +1005,7 @@ async function recordPaidCheckout(session) {
     : `$${((Number(purchase.amountTotal) || item.amount) / 100).toFixed(2)}`;
   if (purchase.email) {
     const accessLine = purchase.subscriptionId
-      ? `Your SpotVest Pro subscription is active — up to 10 reports every day. ${purchase.amountTotal === 0 ? `Your free trial${purchase.passExpiresAt ? ` runs until ${new Date(purchase.passExpiresAt).toDateString()}` : " is active"}; after that it's $29/month.` : "It renews at $29/month."} Manage or cancel anytime from inside the app (Manage subscription).`
+      ? `Your SpotVest Pro subscription is active — up to 5 reports every day. ${purchase.amountTotal === 0 ? `Your free trial${purchase.passExpiresAt ? ` runs until ${new Date(purchase.passExpiresAt).toDateString()}` : " is active"}; after that it's $29/month.` : "It renews at $29/month."} Manage or cancel anytime from inside the app (Manage subscription).`
       : purchase.passExpiresAt
         ? `Your Pro Pass is active until ${new Date(purchase.passExpiresAt).toDateString()} — unlimited full reports until then. Reports you open while it's active stay unlocked forever.`
         : `This code holds ${item.credits} full report${item.credits === 1 ? "" : "s"}. Each report you unlock stays open forever.`;
@@ -3167,7 +3167,7 @@ createServer(async (request, response) => {
             id: "pro-monthly",
             name: "SpotVest Pro",
             price: "$29/mo",
-            description: "Up to 10 location reports every day. 3-day free trial, then $29/month. Cancel anytime.",
+            description: "Up to 5 location reports every day. 3-day free trial, then $29/month. Cancel anytime.",
             cta: "Start free trial"
           },
           {
@@ -3687,7 +3687,7 @@ createServer(async (request, response) => {
         sendJson(response, 401, { error: "Sign in to run analyses." });
         return;
       }
-      const DAILY_ANALYSIS_LIMIT = 10;
+      const DAILY_ANALYSIS_LIMIT = 5;
       const today = new Date().toISOString().slice(0, 10);
       const isOwner = normalizeEmail(account.email) === normalizeEmail(ownerEmail());
       const usage = await readJsonStore("usage", []);
