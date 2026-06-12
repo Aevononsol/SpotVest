@@ -8851,3 +8851,9 @@ body.landing-mode .pricing-grid-2{grid-template-columns:repeat(2,1fr);max-width:
 @media(max-width:860px){body.landing-mode .pricing-grid-2{grid-template-columns:1fr;}}
 body.landing-mode .review-avatar-img{object-fit:cover;background:#121B30;}
 body.landing-mode .rv-badge{margin-left:10px;letter-spacing:.02em;font-size:10.5px;font-weight:700;color:#4ADE80;background:rgba(74,222,128,.10);border:1px solid rgba(74,222,128,.3);border-radius:999px;padding:3px 9px;vertical-align:2px;}
+
+/* The floating chat launcher is an in-app tool: the landing page's job is
+   signup/demo, so the bubble stays hidden there (the app keeps its own
+   topbar chat button too). */
+body.landing-mode .assistant-toggle,
+body.landing-mode .assistant-panel{display:none!important;}
