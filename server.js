@@ -2568,8 +2568,10 @@ async function vacantStorefronts(zip) {
       takenReason: taken ? "active liquor license at this address" : null,
       ownerName: null,
       building: null,
-      // Always have a working "View" target; upgraded to a precise Street View
-      // pano below if PLUTO gives us coordinates for the lot.
+      // "View" opens Google Maps at the street ADDRESS (not the lot centroid):
+      // Google snaps an address to the street frontage and serves its current
+      // imagery. Linking to the lot's centre made Street View grab the nearest
+      // pano, which on a mid-block lot can be a stale side-street capture.
       viewUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${addr}, New York, NY`)}`
     });
   }
@@ -2584,7 +2586,7 @@ async function vacantStorefronts(zip) {
   let ownerLookup = "no BBLs derived from registry rows";
   if (bbls.length) {
     try {
-      const plutoSelect = "bbl,ownername,bldgarea,lotarea,numfloors,yearbuilt,assesstot,bldgclass,unitstotal,unitsres,comarea,resarea,latitude,longitude";
+      const plutoSelect = "bbl,ownername,bldgarea,lotarea,numfloors,yearbuilt,assesstot,bldgclass,unitstotal,unitsres,comarea,resarea";
       let ownerRows;
       try {
         ownerRows = await socrataJson("64uk-42ks", {
@@ -2623,12 +2625,6 @@ async function vacantStorefronts(zip) {
           commercialArea: com || null,
           residentialArea: res || null
         };
-        // Precise Street View pano at the lot's coordinates beats an address
-        // search — agents land looking straight at the storefront.
-        const la = Number(r.latitude), lo = Number(r.longitude);
-        if (Number.isFinite(la) && Number.isFinite(lo)) {
-          v.viewUrl = `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${la},${lo}`;
-        }
       });
       ownerLookup = `matched ${matched} of ${bbls.length} BBLs`;
     } catch (error) {
