@@ -275,20 +275,18 @@ const prospectEls = {
 };
 
 function prospectPitch(prospect) {
-  const subject = "Evidence for your listings — SpotVest location reports";
+  const subject = "Close retail leases faster — SpotVest";
   const body = [
     `Hi ${prospect.name} team,`,
     "",
-    "I'm Maher, founder of SpotVest (https://spotvest.ai). We turn any NYC address into a location viability report for a retail or restaurant tenant — live MTA foot traffic, competitor density, demographics, and a clear 0-100 score with a verdict.",
+    "I'm Maher, founder of SpotVest (https://spotvest.ai). When a tenant is deciding whether to sign for a storefront, the thing that stalls the deal is doubt — \"will my business actually work here?\"",
     "",
-    "Brokers use it to back a listing with evidence: \"this corner scores 78/100 for a coffee shop\" closes faster than a hunch. Reports are $9 each, with a 30-day unlimited pass for teams.",
+    "SpotVest answers that in seconds: type any NYC address and a business type and you get a 0-100 viability score with live MTA foot traffic, nearby competitors, and demographics — e.g. \"this corner scores 78/100 for a coffee shop.\" Hand that to a tenant and they sign with confidence.",
     "",
-    "I'd be glad to run a few free reports on your current listings so you can judge the quality yourself — just reply with an address or two.",
+    "It's $29/month with a 3-day free trial. I'd be glad to run a few free reports on spaces you're showing right now — just reply with an address or two.",
     "",
     "Best,",
-    "Maher",
-    "SpotVest — Know before you open",
-    "https://spotvest.ai"
+    "Maher — SpotVest, spotvest.ai"
   ].join("\n");
   return { subject, body };
 }
@@ -310,7 +308,7 @@ function renderProspectRow(prospect, saved) {
     </div>`;
   }
   const pitch = prospect.draftPitch
-    ? { subject: "Evidence for your listings — SpotVest", body: prospect.draftPitch }
+    ? { subject: "Close retail leases faster — SpotVest", body: prospect.draftPitch }
     : prospectPitch(prospect);
   const mailto = `mailto:?subject=${encodeURIComponent(pitch.subject)}&body=${encodeURIComponent(pitch.body)}`;
   return `<div class="admin-row">
@@ -391,7 +389,7 @@ document.addEventListener("click", async (event) => {
     const prospect = prospectCache.find((candidate) => candidate.id === copyButton.dataset.prospectCopy);
     if (!prospect) return;
     const pitch = prospect.draftPitch
-    ? { subject: "Evidence for your listings — SpotVest", body: prospect.draftPitch }
+    ? { subject: "Close retail leases faster — SpotVest", body: prospect.draftPitch }
     : prospectPitch(prospect);
     try {
       await navigator.clipboard.writeText(`Subject: ${pitch.subject}\n\n${pitch.body}`);

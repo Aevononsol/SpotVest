@@ -3505,9 +3505,9 @@ async function generateProspectPitches() {
   for (const prospect of targets) {
     try {
       prospect.draftPitch = await aiComplete([
-        "You are Maher, founder of SpotVest (spotvest.ai) — NYC location intelligence that scores any address 0-100 for a business concept, with live MTA foot traffic, mapped competitors, and cost modeling. $29/month, 3-day free trial.",
-        "Write a cold outreach email to this commercial real estate office. Hook: their listings close faster when backed by evidence ('this corner scores 78/100 for a coffee shop'). Reference their neighborhood naturally. Offer to run 2-3 free reports on their current listings. 90-130 words, plain text, no subject line, sign off 'Maher — SpotVest, spotvest.ai'.",
-        `THE OFFICE — name: ${prospect.name}; address: ${prospect.address || "-"}; website: ${prospect.website || "-"}; Google rating: ${prospect.rating || "-"} (${prospect.reviews || 0} reviews)`
+        "You are Maher, founder of SpotVest (spotvest.ai) — NYC location intelligence that scores any address 0-100 for a SPECIFIC business concept, with live MTA foot traffic, mapped competitors, and cost modeling. $29/month, 3-day free trial.",
+        "Write a cold outreach email to this commercial/retail leasing broker. The angle is that SpotVest is a CLOSING TOOL, not a way to market properties: when a tenant hesitates on a storefront ('will my coffee shop actually work here?'), a SpotVest report answers it in seconds ('this corner scores 78/100 for a coffee shop') so the tenant signs with confidence and the lease closes faster. Do NOT talk about 'your listings' or 'your properties' or marketing/selling property — it's about removing the tenant's doubt about whether their business will work in a space. Reference their neighborhood naturally. Offer to run 2-3 free reports on spaces they're currently showing. 90-130 words, plain text, no subject line, sign off 'Maher — SpotVest, spotvest.ai'.",
+        `THE BROKER — name: ${prospect.name}; address: ${prospect.address || "-"}; website: ${prospect.website || "-"}; Google rating: ${prospect.rating || "-"} (${prospect.reviews || 0} reviews)`
       ].join("\n\n"), 320);
       prospect.draftPitchAt = new Date().toISOString();
       drafted += 1;
@@ -4442,8 +4442,16 @@ createServer(async (request, response) => {
         sendJson(response, 503, { error: "Google Places key is not configured." });
         return;
       }
-      const query = safeText(url.searchParams.get("query"), 120) || "commercial real estate";
+      const rawQuery = safeText(url.searchParams.get("query"), 120) || "commercial real estate broker";
       const area = safeText(url.searchParams.get("area"), 120) || "New York";
+      // A bare "real estate" search returns mostly residential agencies. Bias
+      // the query toward commercial/retail leasing brokers — SpotVest's real
+      // audience (they advise tenants signing storefront leases).
+      let query = rawQuery;
+      if (/real estate|realty/i.test(query)) {
+        if (!/commercial|retail|leasing/i.test(query)) query = `commercial ${query}`;
+        if (!/broker|brokerage|leasing/i.test(query)) query = `${query} broker`;
+      }
       const searchUrl = new URL("https://maps.googleapis.com/maps/api/place/textsearch/json");
       searchUrl.searchParams.set("query", `${query} in ${area}, New York`);
       searchUrl.searchParams.set("key", process.env.GOOGLE_PLACES_API_KEY);
