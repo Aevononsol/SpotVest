@@ -2839,6 +2839,52 @@ async function businessPatterns(zip) {
   };
 }
 
+// CURRENT, active business landscape from live NYC sources — replaces the frozen
+// 2018 Census ZBP card. Counts what's actually operating now: DCWP-licensed
+// businesses (with the top categories), active food establishments (DOHMH), and
+// active liquor licenses. Display only — not used in the score.
+async function businessLandscape(zip) {
+  const dcwpWhere = `address_zip='${zip}' AND license_status='Active'`;
+  const [dcwpTotalRows, dcwpByCatRows, restaurantRows, liquorRows] = await Promise.all([
+    socrataJson("w7w3-xahh", {
+      $select: "count(DISTINCT license_nbr) AS n",
+      $where: dcwpWhere
+    }, { timeoutMs: 15000 }).catch(integrationFallback("DCWP active total", [])),
+    socrataJson("w7w3-xahh", {
+      $select: "business_category, count(DISTINCT license_nbr) AS n",
+      $where: dcwpWhere,
+      $group: "business_category",
+      $order: "n DESC",
+      $limit: "8"
+    }, { timeoutMs: 15000 }).catch(integrationFallback("DCWP categories", [])),
+    socrataJson("43nn-pn8j", {
+      $select: "count(DISTINCT camis) AS n",
+      $where: `zipcode='${zip}'`
+    }, { timeoutMs: 15000 }).catch(integrationFallback("active restaurants", [])),
+    dataNyJson("9s3h-dpkz", {
+      $select: "count(*) AS n",
+      $where: `zipcode='${zip}'`
+    }).catch(integrationFallback("active liquor licenses", []))
+  ]);
+  const num = (rows) => Math.round(typedNumber((Array.isArray(rows) && rows[0] && rows[0].n) || 0));
+  const dcwpActive = num(dcwpTotalRows);
+  const restaurants = num(restaurantRows);
+  const liquorLicenses = num(liquorRows);
+  const categories = (Array.isArray(dcwpByCatRows) ? dcwpByCatRows : [])
+    .map((row) => ({ category: safeText(row.business_category || "", 60), count: Math.round(typedNumber(row.n)) }))
+    .filter((entry) => entry.category && entry.count > 0)
+    .slice(0, 6);
+  return {
+    available: dcwpActive > 0 || restaurants > 0 || liquorLicenses > 0,
+    zip,
+    dcwpActive,
+    restaurants,
+    liquorLicenses,
+    categories,
+    source: "NYC DCWP active licenses + DOHMH food establishments + NY State liquor licenses"
+  };
+}
+
 async function siteIntelligence(zip, location = null) {
   const liquorWhere = location?.lat && location?.lng
     ? `within_circle(georeference, ${location.lat}, ${location.lng}, ${location.radiusMeters || 805})`
@@ -5195,6 +5241,20 @@ createServer(async (request, response) => {
       }
       try {
         sendJson(response, 200, await businessPatterns(zip));
+      } catch (error) {
+        sendJson(response, 200, { available: false, unavailable: true });
+      }
+      return;
+    }
+
+    if (url.pathname === "/api/business-landscape") {
+      const zip = String(url.searchParams.get("zip") || "").trim();
+      if (!/^\d{5}$/.test(zip)) {
+        sendJson(response, 400, { error: "Provide a five-digit ZIP." });
+        return;
+      }
+      try {
+        sendJson(response, 200, await businessLandscape(zip));
       } catch (error) {
         sendJson(response, 200, { available: false, unavailable: true });
       }

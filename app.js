@@ -4462,29 +4462,29 @@ function sv3WhatsAroundCard(ctx) {
   </div>`;
 }
 
-/* ---------- "Business landscape (official)" — US Census ZBP (display only) ---------- */
+/* ---------- "Business landscape (active)" — live NYC business records (display only) ---------- */
 function sv3BusinessLandscapeCard(ctx) {
   if (ctx.businessPatternsLoading) {
-    return `<div class="card"><div class="sub">Business landscape (official)</div><div class="desc" style="margin-top:6px">Loading official US Census business counts…</div></div>`;
+    return `<div class="card"><div class="sub">Business landscape (active)</div><div class="desc" style="margin-top:6px">Counting businesses currently operating here…</div></div>`;
   }
   const b = ctx.businessPatterns;
   if (!b || !b.available) {
-    return `<div class="card"><div class="sub">Business landscape (official)</div><div class="desc" style="margin-top:6px">Official business counts unavailable for this ZIP.</div><div class="src">US Census ZIP Business Patterns</div></div>`;
+    return `<div class="card"><div class="sub">Business landscape (active)</div><div class="desc" style="margin-top:6px">No active business records found for this ZIP right now.</div><div class="src">NYC DCWP active licenses · DOHMH food establishments · NY State liquor licenses</div></div>`;
   }
-  const fmt = (n) => (n == null ? "—" : formatInteger(n));
-  const grounding = (Number.isFinite(ctx.liveCompetitors) && b.foodServiceEstablishments)
-    ? `<div class="desc" style="margin-top:10px">Live Google Places scan found ~${formatInteger(ctx.liveCompetitors)} comparable operators nearby; Census recorded ${formatInteger(b.foodServiceEstablishments)} food-service establishments in this ZIP (${b.year}).</div>`
+  const fmt = (n) => (Number.isFinite(n) && n > 0 ? formatInteger(n) : "—");
+  const cats = (b.categories || []).length
+    ? `<div class="desc" style="margin-top:10px"><b>Top licensed categories:</b> ${(b.categories || [])
+        .map((c) => `${escapeText(c.category)} (${formatInteger(c.count)})`).join(" · ")}</div>`
     : "";
   return `<div class="card">
-    <div class="sub">Business landscape (official)</div>
+    <div class="sub">Business landscape (active)</div>
     <div class="space-grid" style="margin-top:8px">
-      <div class="metric"><div class="k">Food service</div><div class="v">${fmt(b.foodServiceEstablishments)}</div></div>
-      <div class="metric"><div class="k">Retail</div><div class="v">${fmt(b.retailEstablishments)}</div></div>
-      <div class="metric"><div class="k">Total businesses</div><div class="v">${fmt(b.totalEstablishments)}</div></div>
-      <div class="metric"><div class="k">Employees</div><div class="v">${fmt(b.totalEmployees)}</div></div>
+      <div class="metric"><div class="k">DCWP-licensed (active)</div><div class="v">${fmt(b.dcwpActive)}</div></div>
+      <div class="metric"><div class="k">Food establishments</div><div class="v">${fmt(b.restaurants)}</div></div>
+      <div class="metric"><div class="k">Liquor licenses</div><div class="v">${fmt(b.liquorLicenses)}</div></div>
     </div>
-    ${grounding}
-    <div class="src">US Census ZIP Business Patterns — <b>${b.year}</b> (latest available; Census discontinued ZBP after 2018). Establishment counts for ZIP ${escapeText(b.zip)}. Display only — not used in the score.</div>
+    ${cats}
+    <div class="src">Currently-active records for ZIP ${escapeText(b.zip)}: <b>NYC DCWP</b> business licenses (active only), <b>DOHMH</b> food establishments, and <b>NY State</b> liquor licenses. DCWP covers licensed trades (not every business type), so this reflects active <i>licensed</i> operators, not a total. Display only — not used in the score.</div>
   </div>`;
 }
 
@@ -4622,11 +4622,11 @@ async function sv3LoadWhatsAround(lat, lng, key) {
     try { safeUiUpdate("what's around (loaded)", () => renderInstitutionalAnalysis(profileForZip(state.zip), buildRecommendations(profileForZip(state.zip)))); } catch (e) { /* non-fatal */ }
   }
 }
-let sv3BusinessPatterns = null; // { zip, loading, data } — official ZBP counts (display only)
+let sv3BusinessPatterns = null; // { zip, loading, data } — live active business counts (display only)
 async function sv3LoadBusinessPatterns(zip) {
   sv3BusinessPatterns = { zip, loading: true, data: null };
   try {
-    const d = await (await fetch(`/api/business-patterns?zip=${encodeURIComponent(zip)}`)).json();
+    const d = await (await fetch(`/api/business-landscape?zip=${encodeURIComponent(zip)}`)).json();
     sv3BusinessPatterns = { zip, loading: false, data: d };
   } catch (e) {
     sv3BusinessPatterns = { zip, loading: false, data: { available: false } };
