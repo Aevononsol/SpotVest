@@ -8875,21 +8875,28 @@ function sv3MergePurchases(purchases) {
 }
 
 let sv3LastRestoreAt = 0;
-async function sv3RestorePurchases() {
+// Server says this account has no active entitlement → drop any local pass so a
+// stale "unlocked" flag can't keep the report open (e.g. after bouncing to
+// Stripe without paying, or after a cancellation).
+function sv3ClearLocalPass() {
+  try { localStorage.removeItem(purchaseStorageKey); } catch { /* ignore */ }
+}
+async function sv3RestorePurchases(force = false) {
   if (!storedAccount()) return;
   // Throttle: visibility changes fire often; one server pull per 15s is
-  // plenty and stays far under the endpoint's rate limit.
-  if (Date.now() - sv3LastRestoreAt < 15_000) return;
+  // plenty. `force` skips it for critical moments (returning from Stripe).
+  if (!force && Date.now() - sv3LastRestoreAt < 15_000) return;
   sv3LastRestoreAt = Date.now();
   try {
     const response = await fetch("/api/report-credits", { credentials: "same-origin" });
     const result = await response.json().catch(() => ({}));
-    if (response.ok && Array.isArray(result.purchases) && result.purchases.length) {
-      // Only repaint the whole report when entitlement actually changed (e.g. a
-      // payment just unlocked it). Re-rendering on every tab return caused a
-      // visible stutter for no reason when nothing had changed.
+    if (response.ok && Array.isArray(result.purchases)) {
+      // The server is authoritative. Only repaint when the unlock state actually
+      // changed (avoids needless stutter): a payment opens it; an empty response
+      // or a revocation re-locks it.
       const wasUnlocked = sv3ReportUnlocked();
-      sv3MergePurchases(result.purchases);
+      if (result.purchases.length) sv3MergePurchases(result.purchases);
+      else sv3ClearLocalPass();
       if (sv3ReportUnlocked() !== wasUnlocked) sv3RerenderReport();
     }
   } catch { /* offline — local copy still applies */ }
@@ -8898,7 +8905,10 @@ async function sv3RestorePurchases() {
 // Whenever the tab comes back into view — returning from Stripe, from the
 // receipt email, from anywhere — re-pull entitlements and refresh the lock
 // state. This catches every handoff race the load-time path can lose on iOS.
-window.addEventListener("pageshow", () => { sv3RestorePurchases(); });
+// Force a fresh check when the page is restored from the back/forward cache
+// (e.g. the user tapped "back" out of Stripe) — that's exactly when a stale
+// unlock must be re-verified, even inside the throttle window.
+window.addEventListener("pageshow", (event) => { sv3RestorePurchases(event.persisted === true); });
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") sv3RestorePurchases();
 });
