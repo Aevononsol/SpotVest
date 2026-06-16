@@ -4121,18 +4121,27 @@ createServer(async (request, response) => {
       const account = await authAccount(request);
       const origin = requestOrigin(request);
       const reportKey = normalizeReportKey(body.reportKey);
-      const email = account?.email || normalizeEmail(body.email);
       const isSubscription = Boolean(item.subscription);
-      // One free trial per customer: a returning subscriber re-subscribes
-      // without a fresh trial.
+      // A subscription requires a signed-in account so we always know WHO is
+      // subscribing. Without it, an anonymous checkout (email typed on Stripe's
+      // own page) reaches us with no email — the one-trial-per-customer check
+      // can't run, and the customer gets a fresh free trial every time.
+      if (isSubscription && !account) {
+        sendJson(response, 401, { error: "Please sign in to start your subscription." });
+        return;
+      }
+      const email = account?.email || normalizeEmail(body.email);
+      // One free trial per customer: a returning subscriber — matched by signed-in
+      // account OR by email, against ANY prior subscription — re-subscribes with no
+      // fresh trial. (They can still subscribe; they just pay from day one.)
       let trialDays = isSubscription ? (item.trialDays || 0) : 0;
       if (trialDays) {
         const purchases = await readJsonStore("purchases", []);
-        const hadSubscription = purchases.some((purchase) =>
-          purchase.product === productId &&
+        const hadTrial = purchases.some((purchase) =>
+          (purchase.subscriptionId || purchase.product === productId) &&
           ((account && purchase.accountId === account.id) || (email && purchase.email === email))
         );
-        if (hadSubscription) trialDays = 0;
+        if (hadTrial) trialDays = 0;
       }
       try {
         const session = await stripeRequest("POST", "checkout/sessions", {
