@@ -840,8 +840,9 @@ function checkoutUrlFor(plan) {
 
 /* ---------- Stripe Checkout + report credits ---------- */
 // Amounts are cents. "credits" is how many full reports the purchase unlocks;
-// a credit is burned when a specific report (business + location) is opened,
-// and that report stays unlocked forever on its purchase code.
+// a credit is burned when a specific report (business + location) is opened.
+// Access follows the active entitlement — a report does not stay unlocked
+// after the subscription/pass that opened it ends.
 const checkoutProducts = {
   "single-report": {
     name: "SpotVest Full Report",
@@ -940,6 +941,46 @@ function subscriptionPeriodEnd(subscription) {
     null;
 }
 
+// The new entitlement window for a purchase given the live subscription:
+// trialing/active keeps access through the current period end; anything else
+// (canceled, unpaid, past_due, incomplete_expired) revokes access now. This is
+// the single source of truth used by both the webhook and the lazy refresh.
+function entitlementEndFor(purchase, subscription) {
+  const active = ["trialing", "active"].includes(subscription.status);
+  const periodEnd = subscriptionPeriodEnd(subscription);
+  if (active && periodEnd) return new Date(periodEnd * 1000).toISOString();
+  if (active) return purchase.passExpiresAt; // active but no readable period end — leave as-is
+  return new Date().toISOString(); // canceled/unpaid/past_due → access ends now
+}
+
+// Reconcile every purchase tied to a subscription against its live Stripe state.
+// Accepts a subscription object (from a webhook) or an id (we fetch it). Used to
+// revoke access the moment a customer cancels or a renewal fails.
+async function reconcileSubscriptionAccess(subscriptionOrId) {
+  let subscription = subscriptionOrId;
+  try {
+    if (typeof subscriptionOrId === "string") {
+      subscription = await stripeRequest("GET", `subscriptions/${encodeURIComponent(subscriptionOrId)}`);
+    }
+  } catch (error) {
+    console.error(`[SpotVest] subscription reconcile fetch failed: ${error.message}`);
+    return;
+  }
+  const subId = String(subscription?.id || "");
+  if (!subId) return;
+  const purchases = await readJsonStore("purchases", []);
+  let dirty = false;
+  for (const purchase of purchases) {
+    if (purchase.subscriptionId !== subId) continue;
+    const next = entitlementEndFor(purchase, subscription);
+    if (next !== purchase.passExpiresAt) {
+      purchase.passExpiresAt = next;
+      dirty = true;
+    }
+  }
+  if (dirty) await writeJsonStore("purchases", purchases);
+}
+
 // Idempotent by Stripe session id: the webhook and the success-page confirm
 // can both fire for the same payment and must not double-credit.
 async function recordPaidCheckout(session) {
@@ -1010,8 +1051,8 @@ async function recordPaidCheckout(session) {
     const accessLine = purchase.subscriptionId
       ? `Your SpotVest Pro subscription is active — up to 5 reports every day. ${purchase.amountTotal === 0 ? `Your free trial${purchase.passExpiresAt ? ` runs until ${new Date(purchase.passExpiresAt).toDateString()}` : " is active"}; after that it's $29/month.` : "It renews at $29/month."} Manage or cancel anytime from inside the app (Manage subscription).`
       : purchase.passExpiresAt
-        ? `Your Pro Pass is active until ${new Date(purchase.passExpiresAt).toDateString()} — unlimited full reports until then. Reports you open while it's active stay unlocked forever.`
-        : `This code holds ${item.credits} full report${item.credits === 1 ? "" : "s"}. Each report you unlock stays open forever.`;
+        ? `Your Pro Pass is active until ${new Date(purchase.passExpiresAt).toDateString()} — unlimited full reports until then. Access ends when the pass expires.`
+        : `This code holds ${item.credits} full report${item.credits === 1 ? "" : "s"} to unlock.`;
     const firstReport = purchase.unlockedReports[0]?.label || purchase.unlockedReports[0]?.key;
     sendAppEmail(
       "purchase-receipt",
@@ -4170,6 +4211,15 @@ createServer(async (request, response) => {
       try { event = JSON.parse(payload); } catch { /* leave empty */ }
       if (event.type === "checkout.session.completed" && event.data?.object?.payment_status === "paid") {
         await recordPaidCheckout(event.data.object);
+      } else if (["customer.subscription.updated", "customer.subscription.deleted"].includes(event.type)) {
+        // Cancellation, trial-cancel (cancel_at_period_end), or status change:
+        // re-sync the stored entitlement so access ends when the subscription
+        // does — not whenever the original window happened to be set to.
+        if (event.data?.object) await reconcileSubscriptionAccess(event.data.object);
+      } else if (event.type === "invoice.payment_failed") {
+        // A failed renewal moves the subscription to past_due/unpaid → revoke.
+        const sub = event.data?.object?.subscription;
+        if (sub) await reconcileSubscriptionAccess(String(sub));
       }
       sendJson(response, 200, { received: true });
       return;
@@ -4404,25 +4454,20 @@ createServer(async (request, response) => {
       const matches = purchases.filter(
         (purchase) => (code && purchase.code === code) || (account && purchase.accountId === account.id)
       );
-      // Subscription renewals happen on Stripe's clock with no webhook here:
-      // when an entitlement is expired or within a day of it, re-read the
-      // subscription and extend to the new period end (or leave it lapsed if
-      // the customer cancelled).
+      // Backstop to the webhook: re-read the subscription and re-sync the
+      // stored entitlement. A renewal extends it, a cancellation/failed payment
+      // revokes it. We always re-check subscription purchases here (not just
+      // near expiry) so a cancel that missed the webhook can't keep access.
       if (stripeConfigured()) {
         let dirty = false;
         for (const purchase of matches) {
           if (!purchase.subscriptionId) continue;
-          const expires = Date.parse(purchase.passExpiresAt || 0);
-          if (Number.isFinite(expires) && expires > Date.now() + 24 * 60 * 60 * 1000) continue;
           try {
             const subscription = await stripeRequest("GET", `subscriptions/${encodeURIComponent(purchase.subscriptionId)}`);
-            const periodEnd = subscriptionPeriodEnd(subscription);
-            if (["trialing", "active"].includes(subscription.status) && periodEnd) {
-              const next = new Date(periodEnd * 1000).toISOString();
-              if (next !== purchase.passExpiresAt) {
-                purchase.passExpiresAt = next;
-                dirty = true;
-              }
+            const next = entitlementEndFor(purchase, subscription);
+            if (next !== purchase.passExpiresAt) {
+              purchase.passExpiresAt = next;
+              dirty = true;
             }
           } catch { /* transient Stripe error: keep the stored window */ }
         }
