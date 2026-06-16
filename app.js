@@ -8674,10 +8674,11 @@ function sv3PassActive() {
 }
 
 function sv3ReportUnlocked() {
+  // Access follows the live entitlement only: a VIP code or an active
+  // subscription/pass. Reports do NOT stay unlocked after the subscription
+  // ends or is cancelled — opening a report once no longer grants it forever.
   if (sv3VipActive()) return true;
-  if (sv3PassActive()) return true;
-  const purchase = sv3Purchase();
-  return Boolean(purchase?.unlockedReports?.includes(sv3ReportKey()));
+  return sv3PassActive();
 }
 
 // Crisp stroked padlock (matches the app's icon style) — the emoji lock
