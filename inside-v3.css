@@ -1,6 +1,6 @@
 /* ================================================================
-   SpotVest inside-app design — lifted from spotvest-redesign-v3.html
-   (the approved source of truth). Every rule is scoped under
+   SpotVest inside-app design — lifted from the approved v3 redesign
+   prototype (the source of truth). Every rule is scoped under
    `.sv3-app` so the homepage / landing / live map are unaffected.
    The :root tokens from v3 are preserved EXACTLY, placed on
    `.sv3-app` instead of :root so they do not leak to the homepage.
@@ -452,8 +452,8 @@ body:not(.landing-mode) .sv3-app .nav button svg { stroke: currentColor; }
 
 /* ================================================================
    v4 NEW SECTIONS — P&L, cash-to-open, scenarios, survival, permit,
-   area-dining, accuracy badge, portfolio. Ported from
-   spotvest-redesign-v4.html, scoped under .sv3-app.
+   area-dining, accuracy badge, portfolio. Ported from the v4
+   redesign prototype, scoped under .sv3-app.
    ================================================================ */
 /* Monthly P&L */
 .sv3-app .pnl{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:var(--pad);margin-bottom:14px}
