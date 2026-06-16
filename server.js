@@ -1,9 +1,10 @@
 import { createServer } from "node:http";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile, stat } from "node:fs/promises";
 import { existsSync, readFileSync } from "node:fs";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createHmac, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+import { createHmac, createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+import { brotliCompressSync, gzipSync, constants as zlibConstants } from "node:zlib";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { fetchDemandMomentum } from "./services/googleTrends.js";
 
@@ -3286,7 +3287,38 @@ async function listingFinder({ zip, address, radiusMiles, business }) {
   return result;
 }
 
-async function sendFile(response, pathname) {
+// Static assets are read, hashed, and compressed exactly once, then kept in
+// memory keyed by path + mtime. Repeat requests serve a ready-made brotli/gzip
+// buffer (no recompressing) and an ETag for cheap revalidation. A file edited
+// or redeployed (new mtime/size) refreshes its entry automatically.
+const staticAssetCache = new Map();
+const compressibleExt = new Set([".html", ".css", ".js", ".json", ".txt", ".xml", ".svg", ".webmanifest"]);
+
+async function loadStaticAsset(filePath, extension) {
+  const info = await stat(filePath); // throws ENOENT for missing files (handled by caller → 404)
+  const cached = staticAssetCache.get(filePath);
+  if (cached && cached.mtimeMs === info.mtimeMs && cached.size === info.size) return cached;
+
+  const data = await readFile(filePath);
+  const entry = {
+    mtimeMs: info.mtimeMs,
+    size: info.size,
+    data,
+    etag: `"${createHash("sha1").update(data).digest("base64").slice(0, 27)}"`,
+    contentType: contentTypes[extension] || "application/octet-stream",
+    brotli: null,
+    gzip: null
+  };
+  // Only text-type assets compress usefully; tiny files aren't worth it.
+  if (compressibleExt.has(extension) && data.length >= 512) {
+    try { entry.brotli = brotliCompressSync(data, { params: { [zlibConstants.BROTLI_PARAM_QUALITY]: 6 } }); } catch { entry.brotli = null; }
+    try { entry.gzip = gzipSync(data, { level: 6 }); } catch { entry.gzip = null; }
+  }
+  staticAssetCache.set(filePath, entry);
+  return entry;
+}
+
+async function sendFile(response, pathname, request) {
   const requested = pathname === "/"
     ? "index.html"
     : ["/account", "/login", "/signup", "/verify-email", "/reset-password"].includes(pathname)
@@ -3305,16 +3337,47 @@ async function sendFile(response, pathname) {
   }
 
   const filePath = join(root, normalized);
-  const data = await readFile(filePath);
   const extension = extname(filePath);
-  const cacheControl = [".html", ".js", ".css"].includes(extension)
+  const asset = await loadStaticAsset(filePath, extension);
+
+  // HTML always revalidates — it carries the versioned (?v=) links to JS/CSS,
+  // so it must never go stale. Those versioned assets can be held longer and
+  // revalidated; a new ?v= fetches a fresh URL immediately on the next deploy.
+  const cacheControl = extension === ".html"
     ? "no-cache"
-    : "public, max-age=300";
-  response.writeHead(200, {
-    "Content-Type": contentTypes[extension] || "application/octet-stream",
-    "Cache-Control": cacheControl
-  });
-  response.end(data);
+    : [".js", ".css"].includes(extension)
+      ? "public, max-age=3600, must-revalidate"
+      : "public, max-age=300";
+
+  // Unchanged since the browser's copy? Send 304 — no body re-download.
+  const ifNoneMatch = request?.headers?.["if-none-match"];
+  if (ifNoneMatch && ifNoneMatch === asset.etag) {
+    response.writeHead(304, {
+      "ETag": asset.etag,
+      "Cache-Control": cacheControl,
+      "Vary": "Accept-Encoding"
+    });
+    response.end();
+    return;
+  }
+
+  // Serve the best encoding the client accepts: brotli > gzip > identity.
+  const accept = String(request?.headers?.["accept-encoding"] || "");
+  let body = asset.data;
+  let encoding = null;
+  if (asset.brotli && /\bbr\b/.test(accept)) { body = asset.brotli; encoding = "br"; }
+  else if (asset.gzip && /\bgzip\b/.test(accept)) { body = asset.gzip; encoding = "gzip"; }
+
+  const headers = {
+    "Content-Type": asset.contentType,
+    "Cache-Control": cacheControl,
+    "ETag": asset.etag,
+    "Vary": "Accept-Encoding",
+    "Content-Length": Buffer.byteLength(body)
+  };
+  if (encoding) headers["Content-Encoding"] = encoding;
+  response.writeHead(200, headers);
+  response.end(body);
 }
 
 /* ---------- Security sentinel ----------
@@ -5086,7 +5149,7 @@ createServer(async (request, response) => {
       return;
     }
 
-    await sendFile(response, url.pathname);
+    await sendFile(response, url.pathname, request);
   } catch (error) {
     console.error(`[AreaIntel] ${request.method} ${url.pathname}: ${error.message}`);
     const statusCode = error.code === "ENOENT" ? 404 : 500;
