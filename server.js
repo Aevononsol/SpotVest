@@ -4757,21 +4757,38 @@ createServer(async (request, response) => {
       const targets = purchases.filter((p) =>
         (p.email && normalizeEmail(p.email) === email) || (p.accountId && accountIds.has(p.accountId))
       );
-      // Cancel every Stripe subscription we have on file for this email — they
-      // can be spread across several Stripe customers (one per old checkout),
-      // which is why cancelling one in the dashboard doesn't lock the account.
-      const subIds = [...new Set(targets.map((p) => p.subscriptionId).filter(Boolean))];
+      // Ask STRIPE directly for every subscription on this email, not just the
+      // ones in our records. Trial-stacking created a new Stripe customer per
+      // checkout, so a still-active sub can live on a customer our purchase
+      // store never recorded — that's the one that kept re-granting access.
+      const subIds = new Set(targets.map((p) => p.subscriptionId).filter(Boolean));
       let cancelled = 0;
       const cancelErrors = [];
       if (stripeConfigured()) {
+        try {
+          const customers = await stripeRequest("GET", `customers?email=${encodeURIComponent(email)}&limit=100`);
+          for (const customer of (customers.data || [])) {
+            try {
+              const subs = await stripeRequest("GET", `subscriptions?customer=${encodeURIComponent(customer.id)}&status=all&limit=100`);
+              for (const sub of (subs.data || [])) subIds.add(sub.id);
+            } catch (error) {
+              cancelErrors.push(`list ${customer.id}: ${String(error.message || "").slice(0, 60)}`);
+            }
+          }
+        } catch (error) {
+          cancelErrors.push(`customer lookup: ${String(error.message || "").slice(0, 80)}`);
+        }
         for (const subId of subIds) {
           try {
-            await stripeRequest("DELETE", `subscriptions/${encodeURIComponent(subId)}`);
+            const sub = await stripeRequest("GET", `subscriptions/${encodeURIComponent(subId)}`);
+            if (sub.status !== "canceled") {
+              await stripeRequest("DELETE", `subscriptions/${encodeURIComponent(subId)}`);
+            }
             cancelled += 1;
           } catch (error) {
-            // "No such subscription" = already gone; that's fine, still revoke locally.
+            // "No such subscription" = already gone; still revoke locally.
             if (!/no such|resource_missing|\(404\)/i.test(String(error.message || ""))) {
-              cancelErrors.push(`${subId}: ${String(error.message || "").slice(0, 80)}`);
+              cancelErrors.push(`${subId}: ${String(error.message || "").slice(0, 60)}`);
             }
           }
         }
@@ -4793,7 +4810,7 @@ createServer(async (request, response) => {
         email,
         purchasesRevoked: revoked,
         subscriptionsCancelled: cancelled,
-        subscriptionsFound: subIds.length,
+        subscriptionsFound: subIds.size,
         errors: cancelErrors
       });
       return;
