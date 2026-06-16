@@ -4478,7 +4478,15 @@ createServer(async (request, response) => {
               purchase.passExpiresAt = next;
               dirty = true;
             }
-          } catch { /* transient Stripe error: keep the stored window */ }
+          } catch (error) {
+            // A deleted subscription (404 "no such subscription") means the
+            // access is gone — revoke it. Only a transient/network error keeps
+            // the stored window.
+            if (/no such|resource_missing|\(404\)/i.test(String(error.message || ""))) {
+              const nowIso = new Date().toISOString();
+              if (purchase.passExpiresAt !== nowIso) { purchase.passExpiresAt = nowIso; dirty = true; }
+            }
+          }
         }
         if (dirty) await writeJsonStore("purchases", purchases);
       }
@@ -4726,6 +4734,67 @@ createServer(async (request, response) => {
           amountTotal: purchase.amountTotal,
           sessionId: purchase.sessionId
         }))
+      });
+      return;
+    }
+
+    if (url.pathname === "/api/admin/revoke-access" && request.method === "POST") {
+      if (!adminAuthorized(request)) {
+        sendJson(response, 401, { error: "Admin token required." });
+        return;
+      }
+      const body = await readRequestJson(request);
+      const email = normalizeEmail(body.email);
+      if (!email) {
+        sendJson(response, 400, { error: "Provide an email to revoke." });
+        return;
+      }
+      const accounts = await readJsonStore("accounts", []);
+      const accountIds = new Set(
+        accounts.filter((a) => normalizeEmail(a.email) === email).map((a) => a.id)
+      );
+      const purchases = await readJsonStore("purchases", []);
+      const targets = purchases.filter((p) =>
+        (p.email && normalizeEmail(p.email) === email) || (p.accountId && accountIds.has(p.accountId))
+      );
+      // Cancel every Stripe subscription we have on file for this email — they
+      // can be spread across several Stripe customers (one per old checkout),
+      // which is why cancelling one in the dashboard doesn't lock the account.
+      const subIds = [...new Set(targets.map((p) => p.subscriptionId).filter(Boolean))];
+      let cancelled = 0;
+      const cancelErrors = [];
+      if (stripeConfigured()) {
+        for (const subId of subIds) {
+          try {
+            await stripeRequest("DELETE", `subscriptions/${encodeURIComponent(subId)}`);
+            cancelled += 1;
+          } catch (error) {
+            // "No such subscription" = already gone; that's fine, still revoke locally.
+            if (!/no such|resource_missing|\(404\)/i.test(String(error.message || ""))) {
+              cancelErrors.push(`${subId}: ${String(error.message || "").slice(0, 80)}`);
+            }
+          }
+        }
+      }
+      // Lock access now regardless of Stripe outcome: zero the entitlement on
+      // every matching purchase so the next report-credits read keeps it locked.
+      const nowIso = new Date().toISOString();
+      let revoked = 0;
+      for (const p of targets) {
+        p.passExpiresAt = nowIso;
+        p.credits = 0;
+        p.creditsUsed = Number(p.credits) || 0;
+        p.unlockedReports = [];
+        revoked += 1;
+      }
+      if (revoked) await writeJsonStore("purchases", purchases);
+      sendJson(response, 200, {
+        ok: true,
+        email,
+        purchasesRevoked: revoked,
+        subscriptionsCancelled: cancelled,
+        subscriptionsFound: subIds.length,
+        errors: cancelErrors
       });
       return;
     }

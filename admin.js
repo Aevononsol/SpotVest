@@ -369,6 +369,34 @@ prospectEls.form?.addEventListener("submit", async (event) => {
   }
 });
 
+const revokeEls = {
+  form: document.querySelector("#admin-revoke-form"),
+  email: document.querySelector("#revoke-email"),
+  status: document.querySelector("#revoke-status")
+};
+revokeEls.form?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (!adminToken()) {
+    revokeEls.status.textContent = "Enter the admin token first.";
+    revokeEls.status.className = "launch-status launch-status-error";
+    return;
+  }
+  const email = revokeEls.email.value.trim();
+  if (!email || !confirm(`Cancel all subscriptions and lock access for ${email}?`)) return;
+  revokeEls.status.textContent = "Revoking…";
+  revokeEls.status.className = "launch-status";
+  try {
+    const result = await postJson("/api/admin/revoke-access", { email });
+    revokeEls.status.textContent =
+      `Done — ${result.subscriptionsCancelled}/${result.subscriptionsFound} subscription(s) cancelled, ${result.purchasesRevoked} purchase record(s) locked.`
+      + (result.errors && result.errors.length ? ` Issues: ${result.errors.join("; ")}` : "");
+    revokeEls.status.className = "launch-status launch-status-ok";
+  } catch (error) {
+    revokeEls.status.textContent = error.message || "Revoke failed.";
+    revokeEls.status.className = "launch-status launch-status-error";
+  }
+});
+
 document.addEventListener("click", async (event) => {
   const saveButton = event.target.closest("[data-prospect-save]");
   if (saveButton) {

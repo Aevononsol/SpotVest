@@ -102,6 +102,15 @@
         <div id="admin-purchases" class="admin-list">
           <p class="launch-status">Enter admin token to load purchases.</p>
         </div>
+        <div class="launch-section-header" style="margin-top:18px">
+          <h3>Revoke access</h3>
+          <p>Cancel every Stripe subscription tied to an email (even across separate Stripe customers) and lock the account immediately. Use it to clean up trial-stacked accounts.</p>
+        </div>
+        <form id="admin-revoke-form" class="admin-token-row">
+          <input id="revoke-email" type="email" placeholder="customer@email.com" autocomplete="off" required />
+          <button type="submit">Revoke access</button>
+        </form>
+        <p id="revoke-status" class="launch-status" role="status"></p>
       </section>
 
       <section class="launch-section">
@@ -192,6 +201,6 @@
         </div>
       </section>
     </main>
-    <script type="module" src="/admin.js?v=20260615-pitch1"></script>
+    <script type="module" src="/admin.js?v=20260616-revoke1"></script>
   </body>
 </html>
