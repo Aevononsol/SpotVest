@@ -8881,8 +8881,12 @@ async function sv3RestorePurchases() {
     const response = await fetch("/api/report-credits", { credentials: "same-origin" });
     const result = await response.json().catch(() => ({}));
     if (response.ok && Array.isArray(result.purchases) && result.purchases.length) {
+      // Only repaint the whole report when entitlement actually changed (e.g. a
+      // payment just unlocked it). Re-rendering on every tab return caused a
+      // visible stutter for no reason when nothing had changed.
+      const wasUnlocked = sv3ReportUnlocked();
       sv3MergePurchases(result.purchases);
-      sv3RerenderReport();
+      if (sv3ReportUnlocked() !== wasUnlocked) sv3RerenderReport();
     }
   } catch { /* offline — local copy still applies */ }
 }
