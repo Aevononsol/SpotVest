@@ -8861,7 +8861,10 @@ function sv3MergePurchases(purchases) {
     product: active.product || existing?.product || "",
     credits: Number(active.credits) || 0,
     creditsUsed: Number(active.creditsUsed) || 0,
-    passExpiresAt: [existing?.passExpiresAt, ...purchases.map((candidate) => candidate.passExpiresAt)]
+    // The server is authoritative here: take the furthest pass window across the
+    // SERVER's purchases only — never carry a stale future local date forward,
+    // or a cancellation/revocation could never reach the browser.
+    passExpiresAt: purchases.map((candidate) => candidate.passExpiresAt)
       .filter(Boolean).sort().pop() || null,
     unlockedReports: Array.from(new Set([
       ...(existing?.unlockedReports || []),
