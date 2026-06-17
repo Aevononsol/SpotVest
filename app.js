@@ -3542,10 +3542,25 @@ function rentQuoteAssessment(rentMonthly, business, profile) {
   else if (rentMonthly <= 6000) rentScore = Math.min(rentScore, 40);
   return {
     monthly: Math.round(rentMonthly),
+    ratio,
+    healthyHigh: hi,
     ratioPct: Math.round(ratio * 100),
     healthyPct: `${Math.round(lo * 100)}-${Math.round(hi * 100)}%`,
     rentScore: clampScore(rentScore)
   };
+}
+
+// A rent far above the healthy share is a hard economic problem that strong
+// area demand cannot fix — at ~2x the healthy ceiling, rent alone leaves too
+// little for labor and COGS to ever profit. Returns points to subtract from the
+// viability score, scaled by how far over the healthy ceiling the rent runs.
+function rentBurdenPenalty(rentQuote) {
+  if (!rentQuote || !(rentQuote.ratio > 0) || !(rentQuote.healthyHigh > 0)) return 0;
+  const over = rentQuote.ratio / rentQuote.healthyHigh; // 1.0 = exactly at healthy ceiling
+  if (over <= 1.0) return 0;
+  if (over <= 1.5) return Math.round((over - 1.0) * 24);       // up to ~12 pts by 1.5x
+  if (over <= 2.5) return Math.round(12 + (over - 1.5) * 30);  // 12 → 42 pts (1.5x → 2.5x)
+  return 52;                                                    // > 2.5x healthy = unaffordable
 }
 
 function buildBusinessSuccessModel(profile, recommendations) {
@@ -3617,15 +3632,21 @@ function buildBusinessSuccessModel(profile, recommendations) {
   const growthScore = clampScore(45 + permitBoost + propertyBoost + effectiveOffice(profile) * 0.12 + profile.density * 0.1 + profile.transit * 0.08);
   const riskRaw = clampScore(effectiveRent * 0.34 + competitionPressure * 0.32 + (100 - profile.income) * 0.1 + (100 - profile.transit) * 0.08 + (!state.location ? 6 : 0));
   const riskScore = clampScore(100 - riskRaw);
+  // A quoted rent far above the healthy share is a deal-level economic problem
+  // demand can't offset. Penalize the money-side scores AND the headline so an
+  // unaffordable rent (e.g. 29% of sales vs ~10% healthy) can never read "Open".
+  const rentPenalty = rentBurdenPenalty(rentQuote);
+  const financialScoreAdj = clampScore(financialScore - rentPenalty);
+  const riskScoreAdj = clampScore(riskScore - Math.round(rentPenalty * 0.6));
   const successProbability = clampScore(weightedBusinessScore((name) => ({
     Demand: demandScore,
     "Customer fit": customerFitScore,
     Competition: competitionScore,
-    "Financial viability": financialScore,
+    "Financial viability": financialScoreAdj,
     "Location quality": locationScore,
     "Area momentum": growthScore,
-    Risk: riskScore
-  }[name] ?? 50)));
+    Risk: riskScoreAdj
+  }[name] ?? 50)) - Math.round(rentPenalty * 0.5));
 
   return {
     business,
@@ -3659,8 +3680,8 @@ function buildBusinessSuccessModel(profile, recommendations) {
     },
     {
       name: "Financial viability",
-      value: financialScore,
-      why: `Estimated Factors from cost pressure, income support, category sensitivity, margin potential, budget support (${state.budget ? formatCurrency(state.budget) : "not provided"}), and likely operating difficulty.${rentQuote ? ` Your quoted rent ($${formatInteger(rentQuote.monthly)}/mo ≈ ${rentQuote.ratioPct}% of modeled sales; healthy is ${rentQuote.healthyPct}) replaces the area's average rent pressure in this score.` : ""}`
+      value: financialScoreAdj,
+      why: `Estimated Factors from cost pressure, income support, category sensitivity, margin potential, budget support (${state.budget ? formatCurrency(state.budget) : "not provided"}), and likely operating difficulty.${rentQuote ? ` Your quoted rent ($${formatInteger(rentQuote.monthly)}/mo ≈ ${rentQuote.ratioPct}% of modeled sales; healthy is ${rentQuote.healthyPct}).${rentPenalty >= 12 ? ` That rent is far above a workable share, so it heavily caps this score — at this ratio the unit economics don't close regardless of demand.` : " This replaces the area's average rent pressure."}` : ""}`
     },
     {
       name: "Area momentum",
@@ -3669,7 +3690,7 @@ function buildBusinessSuccessModel(profile, recommendations) {
     },
     {
       name: "Risk",
-      value: riskScore,
+      value: riskScoreAdj,
       why: "Estimated Factors where higher means safer risk-adjusted conditions after cost pressure, saturation, local friction, mobility weakness, and area-level uncertainty."
     }
   ]};
@@ -4174,11 +4195,17 @@ function sv3CostMarketSplit(ctx) {
   const tier = (v) => v >= 65 ? { word: "STRONG", cls: "good" } : v >= 45 ? { word: "OK", cls: "mid" } : { word: "WEAK", cls: "bad" };
   const q = ctx.rentQuote;
   const lowQuote = q && q.monthly < 2000;
-  const costTier = lowQuote && cost >= 65 ? { word: "MAXED", cls: "good" } : tier(cost);
+  // How far the quoted rent runs over the healthy ceiling (1.0 = exactly at it).
+  const rentOver = q && q.healthyHigh > 0 ? q.ratio / q.healthyHigh : 0;
+  const costTier = lowQuote && cost >= 65
+    ? { word: "MAXED", cls: "good" }
+    : (rentOver > 1.5 ? { word: "WEAK", cls: "bad" } : tier(cost));
   const costText = q
     ? (lowQuote
       ? `At $${formatInteger(q.monthly)}/mo cost pressure is eliminated — a lower rent can't add more points. Rent this far below NYC market usually has a catch: verify lease term, legal use, and condition.`
-      : `Your $${formatInteger(q.monthly)}/mo rent ≈ ${q.ratioPct}% of modeled sales (healthy: ${q.healthyPct})${cost >= 65 ? " — a real advantage here." : cost >= 45 ? " — workable for this area." : " — heavy for what this spot can sell."}`)
+      : rentOver > 1.5
+        ? `Your $${formatInteger(q.monthly)}/mo rent ≈ ${q.ratioPct}% of modeled sales — far above the healthy ${q.healthyPct}. Rent alone eats too much of revenue to profit here; renegotiate hard or walk.`
+        : `Your $${formatInteger(q.monthly)}/mo rent ≈ ${q.ratioPct}% of modeled sales (healthy: ${q.healthyPct})${cost >= 65 ? " — a real advantage here." : cost >= 45 ? " — workable for this area." : " — heavy for what this spot can sell."}`)
     : (cost >= 65 ? "Area economics (rent vs income) support opening here." : cost >= 45 ? "Area cost pressure is manageable but real." : "Area cost pressure (rent vs local income) is dragging this score.");
   const marketText = market >= 65
     ? "Demand, customer fit, and competition support this business here."
