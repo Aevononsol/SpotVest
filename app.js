@@ -3646,7 +3646,7 @@ function buildBusinessSuccessModel(profile, recommendations) {
     "Location quality": locationScore,
     "Area momentum": growthScore,
     Risk: riskScoreAdj
-  }[name] ?? 50)) - Math.round(rentPenalty * 0.5));
+  }[name] ?? 50)));
 
   return {
     business,
@@ -3755,7 +3755,16 @@ function buildInstitutionalAnalysis(profile, recommendations) {
   }
   const scoreValue = (name) => safeNumber(scores.find((item) => item.name === name)?.value, 50);
   const weightedScore = weightedBusinessScore(scoreValue);
-  const opportunityScore = calibratedDecisionScore({ weightedScore, scoreValue, confidenceScore, successModel });
+  // The headline/decision score is opportunityScore. A quoted rent far above the
+  // healthy share is a deal-level economic problem that no amount of demand can
+  // offset, so cap the score directly here — not just via one factor's weight.
+  // calibratedDecisionScore already reacts to the penalized financial/risk
+  // scores; add a partial direct rent penalty on top so an unaffordable rent
+  // firmly caps the headline without flattening every case to zero.
+  const opportunityScore = clampScore(
+    calibratedDecisionScore({ weightedScore, scoreValue, confidenceScore, successModel })
+    - Math.round(rentBurdenPenalty(successModel.rentQuote) * 0.4)
+  );
   const riskScore = scoreValue("Risk");
   const financialScore = scoreValue("Financial viability");
   const severeRisk =
