@@ -4539,6 +4539,67 @@ function sv3LiveBusynessCard(ctx) {
   </div>`;
 }
 
+/* ---------- "Best days & hours to open" — owner playbook from BestTime 7-day data ---------- */
+function sv3HourTxt(h) { return h == null ? "—" : `${((h + 11) % 12) + 1}${h < 12 ? "AM" : "PM"}`; }
+function sv3DayHourPlaybook(b) {
+  if (!b || !b.available) return null;
+  const hourly = Array.isArray(b.hourly) ? b.hourly : null;
+  const daily = Array.isArray(b.daily) ? b.daily.filter((d) => d && Number.isFinite(d.busyness)) : null;
+  let peakStart = null, peakEnd = null, slowHour = null;
+  if (hourly && hourly.length === 24) {
+    const max = Math.max(...hourly);
+    if (max > 0) {
+      const th = max * 0.7, pk = hourly.indexOf(max);
+      peakStart = pk; peakEnd = pk;
+      while (peakStart - 1 >= 0 && hourly[peakStart - 1] >= th) peakStart--;
+      while (peakEnd + 1 < 24 && hourly[peakEnd + 1] >= th) peakEnd++;
+      const active = hourly.map((v, h) => ({ v, h })).filter((o) => o.v >= max * 0.15);
+      if (active.length >= 5) {
+        // Skip the opening ramp and closing wind-down — the useful "slow" is the
+        // interior lull (e.g. the mid-afternoon dip between lunch and dinner).
+        const lo = active[0].h + 2, hi = active[active.length - 1].h - 1;
+        for (let h = lo; h <= hi; h++) if (slowHour === null || hourly[h] < hourly[slowHour]) slowHour = h;
+      }
+    }
+  }
+  let busiestDays = null, weekdayAvg = null, weekendAvg = null, weekendLift = null;
+  if (daily && daily.length >= 5) {
+    const sorted = [...daily].sort((a, c) => c.busyness - a.busyness);
+    busiestDays = sorted.slice(0, 2).map((d) => d.day);
+    const wd = daily.filter((d) => ["Mon", "Tue", "Wed", "Thu", "Fri"].includes(d.day));
+    const we = daily.filter((d) => ["Sat", "Sun"].includes(d.day));
+    weekdayAvg = wd.length ? Math.round(wd.reduce((s, d) => s + d.busyness, 0) / wd.length) : null;
+    weekendAvg = we.length ? Math.round(we.reduce((s, d) => s + d.busyness, 0) / we.length) : null;
+    if (weekdayAvg && weekendAvg) weekendLift = Math.round((weekendAvg / weekdayAvg - 1) * 100);
+  }
+  if (peakStart == null && !busiestDays) return null;
+  return { peakStart, peakEnd, slowHour, busiestDays, weekdayAvg, weekendAvg, weekendLift, daily };
+}
+function sv3BestDaysHoursCard(ctx) {
+  const p = sv3DayHourPlaybook(ctx.areaBusyness);
+  if (!p) return "";
+  const rows = [];
+  if (p.peakStart != null) {
+    const win = p.peakStart === p.peakEnd ? sv3HourTxt(p.peakStart) : `${sv3HourTxt(p.peakStart)}–${sv3HourTxt(p.peakEnd + 1)}`;
+    rows.push(`<div class="metric"><div class="k">Peak window</div><div class="v">${escapeText(win)}</div></div>`);
+  }
+  if (p.slowHour != null) rows.push(`<div class="metric"><div class="k">Slowest</div><div class="v">around ${escapeText(sv3HourTxt(p.slowHour))}</div></div>`);
+  if (p.busiestDays) rows.push(`<div class="metric"><div class="k">Busiest days</div><div class="v">${escapeText(p.busiestDays.join(" & "))}</div></div>`);
+  if (p.weekendLift != null) {
+    const txt = p.weekendLift >= 15 ? `Weekends +${p.weekendLift}%` : p.weekendLift <= -15 ? `Weekdays +${Math.abs(p.weekendLift)}%` : "Steady all week";
+    rows.push(`<div class="metric"><div class="k">Weekend vs weekday</div><div class="v">${escapeText(txt)}</div></div>`);
+  }
+  const tip = p.peakStart != null
+    ? `Staff up for the ${sv3HourTxt(p.peakStart)}–${sv3HourTxt((p.peakEnd + 1) % 24)} rush${p.slowHour != null ? `, trim hours around the ${sv3HourTxt(p.slowHour)} lull` : ""}.`
+    : "";
+  return `<div class="card">
+    <div class="sub">Best days &amp; hours to open</div>
+    <div class="space-grid" style="margin-top:8px">${rows.join("")}</div>
+    ${tip ? `<div class="desc" style="margin-top:10px">${escapeText(tip)}</div>` : ""}
+    <div class="src" style="margin-top:8px">From real venue busyness near here (Google Popular Times via BestTime) — when this block actually fills up. Plan hours and staffing around it. Display only — not used in the score.</div>
+  </div>`;
+}
+
 /* ---------- "Business landscape (active)" — live NYC business records (display only) ---------- */
 function sv3BusinessLandscapeCard(ctx) {
   if (ctx.businessPatternsLoading) {
@@ -4838,10 +4899,16 @@ function sv3FootHourSVG(rawBusiness, score, seed, realHourly) {
   const dots = [order[0][1], order[1][1]].map((i) => `<circle cx="${pts[i][0]}" cy="${pts[i][1]}" r="3.5" fill="#4FE3D8"/>`).join("");
   return `<path d="${line}" fill="none" stroke="#3BD6C9" stroke-width="2.5" stroke-linejoin="round"/><path d="${area}" fill="rgba(57,194,214,.12)"/>${dots}`;
 }
-function sv3WeekSVG(weekdayPct) {
-  const wd = Math.max(0, Math.min(100, weekdayPct || 60)), we = 100 - wd;
-  const rel = [wd, wd * 1.06, wd * 1.1, wd * 1.04, wd * 1.2, we * 1.08, we * 0.92];
-  const max = Math.max(...rel);
+function sv3WeekSVG(weekdayPct, realDaily) {
+  // Real Mon→Sun busyness from BestTime when available; else a modeled shape.
+  let rel;
+  if (Array.isArray(realDaily) && realDaily.length === 7 && realDaily.some((d) => d && Number.isFinite(d.busyness))) {
+    rel = realDaily.map((d) => (d && Number.isFinite(d.busyness) ? d.busyness : 0));
+  } else {
+    const wd = Math.max(0, Math.min(100, weekdayPct || 60)), we = 100 - wd;
+    rel = [wd, wd * 1.06, wd * 1.1, wd * 1.04, wd * 1.2, we * 1.08, we * 0.92];
+  }
+  const max = Math.max(...rel, 1);
   return rel.map((d, i) => {
     const hgt = Math.round(22 + (d / max) * 76), y = 120 - hgt, x = 6 + i * 45;
     const fill = i < 5 ? (i === 4 ? "#33A7D8" : "#3BD6C9") : "#5B8CFF";
@@ -5016,6 +5083,7 @@ function sv3MarketHTML(ctx) {
     <div class="src" style="margin:-4px 2px 8px">Google Places · Yelp Fusion API</div>
     <div class="section-label"><span class="n">09</span> Foot traffic intelligence</div>
     ${sv3LiveBusynessCard(ctx)}
+    ${sv3BestDaysHoursCard(ctx)}
     ${sv3NearestTransitCard(ctx)}
     ${sv3ConstructionCard(ctx)}
     ${sv3WhatsAroundCard(ctx)}
@@ -5023,7 +5091,7 @@ function sv3MarketHTML(ctx) {
     <div class="duo"><div class="metric"><div class="k">${escapeText(ctx.ftVisitorsLabel || "Est. daily foot traffic")}</div><div class="v" style="font-size:16px">${escapeText(ctx.ftVisitors)}</div><div class="src" style="margin-top:4px">${escapeText(ctx.ftVisitorsTag || "ESTIMATED RANGE")}</div></div><div class="metric"><div class="k">Walkability</div><div class="v">${ctx.ftWalk}<span class="u">/100</span> <span class="src" style="display:inline">PROJECTED</span></div></div></div>
     <div class="card"><div class="statline"><span class="sl">Peak hours</span><span class="sv">${escapeText(ctx.ftPeak)}</span></div><div class="statline"><span class="sl">Weekday / weekend split</span><span class="sv">${escapeText(ctx.ftSplit)}</span></div><div class="src">Projected · SpotVest mobility model (peak hours &amp; split)</div></div>
     <div class="card"><div class="sub">Foot traffic by hour</div><div class="chart" style="position:relative">${ctx.hourlyReal ? "" : `<span class="peaktag" style="left:34%;top:-2px">Lunch peak</span><span class="peaktag" style="left:72%;top:-2px">Dinner peak</span>`}<svg viewBox="0 0 320 130" style="margin-top:14px"><line class="gl" x1="0" y1="30" x2="320" y2="30"/><line class="gl" x1="0" y1="65" x2="320" y2="65"/><line class="gl" x1="0" y1="100" x2="320" y2="100"/>${ctx.footHourSVG}</svg><div style="display:flex;justify-content:space-between" class="axlab"><span>6a</span><span>9a</span><span>12p</span><span>3p</span><span>6p</span><span>9p</span><span>12a</span></div></div><div class="src">${ctx.hourlySource === "besttime" ? "Live · real venue busyness by hour near this location (Google Popular Times via BestTime)" : ctx.hourlySource === "mta" ? "Live · MTA subway ridership by hour near this location (Dec 2024)" : "Projected · category day-pattern scaled by area foot-traffic"}</div></div>
-    <div class="card"><div class="sub">Weekday vs weekend demand</div><div class="chart"><svg viewBox="0 0 320 120"><g>${ctx.weekSVG}</g></svg><div style="display:flex;justify-content:space-between" class="axlab"><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span></div></div><div class="legend-row"><span class="li"><span class="sw" style="background:#3BD6C9"></span>Weekday</span><span class="li"><span class="sw" style="background:#5B8CFF"></span>Weekend</span></div></div>
+    <div class="card"><div class="sub">Weekday vs weekend demand</div><div class="chart"><svg viewBox="0 0 320 120"><g>${ctx.weekSVG}</g></svg><div style="display:flex;justify-content:space-between" class="axlab"><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span></div></div><div class="legend-row"><span class="li"><span class="sw" style="background:#3BD6C9"></span>Weekday</span><span class="li"><span class="sw" style="background:#5B8CFF"></span>Weekend</span></div><div class="src">${ctx.weekReal ? "Live · real venue busyness by day (Google Popular Times via BestTime)" : "Projected · SpotVest mobility model"}</div></div>
     <div class="card"><div class="sub">Category saturation nearby</div>${cuisine}<div class="src">Google Places density · ${escapeText(ctx.radiusLabel)}</div></div>
     ${sv3DiningHTML(ctx)}`;
 }
@@ -5462,7 +5530,8 @@ function renderSpotVestV3(profile, recommendations, analysis) {
     footHourSVG: sv3FootHourSVG(state.business, ftScoreNum, seed, unifiedHourly),
     hourlySource,
     hourlyReal: Boolean(hourlySource),
-    weekSVG: sv3WeekSVG(weekdayPct),
+    weekSVG: sv3WeekSVG(weekdayPct, areaBz ? areaBz.daily : null),
+    weekReal: Boolean(areaBz && Array.isArray(areaBz.daily)),
     revCost: sv3RevCostSVG(beMonth, costFrac),
     seasonSVG: sv3SeasonSVG(state.business, ftScoreNum),
     mapCenterLabel: state.location ? "Address" : "ZIP center",

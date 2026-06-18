@@ -2964,17 +2964,41 @@ async function besttimeAreaForecast({ q, lat, lng, radius, num = 20, fast = true
       } catch { /* keep polling within budget */ }
     }
   }
-  // Pull every plausible 24-length hourly busyness array out of a venue object.
+  // Per-day parse: BestTime returns 7 day-objects per venue (day_raw[24] +
+  // day_info.day_int, where 0=Mon … 6=Sun). Aggregate across venues into both
+  // an overall hourly curve AND a 7-day busyness profile so we can show busiest
+  // days and a weekday/weekend split — all from the data we already pulled.
+  const dayTotals = Array.from({ length: 7 }, () => new Array(24).fill(0));
+  const dayCounts = new Array(7).fill(0);
+  const isHourArray = (a) => Array.isArray(a) && a.length === 24 && a.every((n) => typeof n === "number" && n >= 0 && n <= 100);
+  for (const venue of venues) {
+    const forecast = Array.isArray(venue?.venue_foot_traffic_forecast) ? venue.venue_foot_traffic_forecast
+      : Array.isArray(venue?.analysis) ? venue.analysis : [];
+    for (const day of forecast) {
+      const raw = day?.day_raw || day?.dayRaw;
+      let di = day?.day_info?.day_int;
+      if (di == null) di = day?.day_int;
+      if (!isHourArray(raw) || di == null) continue;
+      di = ((Number(di) % 7) + 7) % 7;
+      for (let h = 0; h < 24; h++) dayTotals[di][h] += raw[h] || 0;
+      dayCounts[di] += 1;
+    }
+  }
+  const haveDays = dayCounts.some((c) => c > 0);
+  const dayCurves = dayTotals.map((tot, di) => dayCounts[di] ? tot.map((v) => v / dayCounts[di]) : null);
+  const dayMean = (c) => c ? c.reduce((s, v) => s + v, 0) / 24 : null;
+  const dayName = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  const daily = haveDays ? dayCurves.map((c, di) => ({ day: dayName[di], busyness: c ? Math.round(dayMean(c)) : null })) : null;
+
+  // Overall hourly: prefer the structured per-day average; fall back to a generic
+  // 24-length scan if the structure wasn't what we expected.
   const hourArraysOf = (venue) => {
     const found = [];
     const visit = (node, depth) => {
       if (!node || depth > 4) return;
       if (Array.isArray(node)) {
-        if (node.length === 24 && node.every((n) => typeof n === "number" && n >= 0 && n <= 100)) {
-          found.push(node);
-        } else {
-          node.forEach((child) => visit(child, depth + 1));
-        }
+        if (isHourArray(node)) found.push(node);
+        else node.forEach((child) => visit(child, depth + 1));
         return;
       }
       if (typeof node === "object") for (const v of Object.values(node)) visit(v, depth + 1);
@@ -2984,17 +3008,22 @@ async function besttimeAreaForecast({ q, lat, lng, radius, num = 20, fast = true
   };
   const area = new Array(24).fill(0);
   let counted = 0;
-  for (const venue of venues) {
-    const arrays = hourArraysOf(venue);
-    if (!arrays.length) continue;
-    // average this venue's days into one curve, then add to the area total
-    const venueCurve = new Array(24).fill(0);
-    arrays.forEach((arr) => arr.forEach((v, h) => { venueCurve[h] += v; }));
-    for (let h = 0; h < 24; h++) venueCurve[h] /= arrays.length;
-    for (let h = 0; h < 24; h++) area[h] += venueCurve[h];
-    counted += 1;
+  if (haveDays) {
+    const liveDays = dayCurves.filter(Boolean);
+    for (let h = 0; h < 24; h++) area[h] = Math.round(liveDays.reduce((s, c) => s + c[h], 0) / liveDays.length);
+    counted = Math.max(...dayCounts);
+  } else {
+    for (const venue of venues) {
+      const arrays = hourArraysOf(venue);
+      if (!arrays.length) continue;
+      const venueCurve = new Array(24).fill(0);
+      arrays.forEach((arr) => arr.forEach((v, h) => { venueCurve[h] += v; }));
+      for (let h = 0; h < 24; h++) venueCurve[h] /= arrays.length;
+      for (let h = 0; h < 24; h++) area[h] += venueCurve[h];
+      counted += 1;
+    }
+    if (counted) for (let h = 0; h < 24; h++) area[h] = Math.round(area[h] / counted);
   }
-  if (counted) for (let h = 0; h < 24; h++) area[h] = Math.round(area[h] / counted);
   const peakHour = counted ? area.indexOf(Math.max(...area)) : null;
   const hourLabel = (h) => h == null ? null : `${((h + 11) % 12) + 1} ${h < 12 ? "AM" : "PM"}`;
   return {
@@ -3002,6 +3031,7 @@ async function besttimeAreaForecast({ q, lat, lng, radius, num = 20, fast = true
     available: counted > 0,
     venuesReturned: venues.length,
     venuesWithData: counted,
+    daily,
     hourly: counted ? area : null,
     peakHour,
     peakLabel: hourLabel(peakHour),
@@ -5427,6 +5457,7 @@ createServer(async (request, response) => {
         configured: true,
         available: Boolean(r.available),
         hourly: r.hourly || null,
+        daily: r.daily || null,
         peakHour: r.peakHour ?? null,
         peakLabel: r.peakLabel || null,
         peakBusyness: r.peakBusyness ?? null,
