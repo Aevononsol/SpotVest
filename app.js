@@ -4702,6 +4702,11 @@ function sv3OverviewHTML(ctx) {
     </div>
     <div class="section-label">Signals in this report</div>
     <div class="signals">${ctx.signalPills}</div>
+    <div class="section-label"><span class="n">◎</span> Market map · ${escapeText(ctx.radiusLabel)}</div>
+    <div class="map sv3-livemap"><div id="sv3-market-map" class="sv3-mapcanvas"></div>
+      <div class="legend"><span class="lg"><span class="d" style="background:#5B8CFF"></span>${escapeText(ctx.mapCenterLabel)}</span><span class="lg"><span class="d" style="background:#FF6B6B"></span>Competitors (in radius)</span><span class="lg"><span class="d" style="background:#64748B"></span>Nearby</span><span class="lg"><span class="d" style="background:#39C2D6"></span>Analysis radius</span></div>
+    </div>
+    <div class="src" style="margin:-4px 2px 8px">MapLibre · OpenFreeMap · ${ctx.mapCount} live Google Places + NYC competitor pins</div>
     <div class="section-label"><span class="n">01</span> Investment thesis</div>
     <div class="card">${thesis.slice(0, 3).map(sv3MiniCard).join("")}<div class="src">NYC Open Data · Census ACS · Google Places</div></div>
     <div class="section-label"><span class="n">02</span> Why this works</div>
@@ -5069,22 +5074,17 @@ function sv3MarketHTML(ctx) {
   return `
     <div class="section-label" style="margin-top:20px"><span class="n">04</span> Area read</div>
     <div class="card">${areaBars}<div class="src">NYC Open Data · Census ACS · MTA transit feeds</div></div>
-    <div class="section-label"><span class="n">05</span> Market map · ${escapeText(ctx.radiusLabel)}</div>
-    <div class="map sv3-livemap"><div id="sv3-market-map" class="sv3-mapcanvas"></div>
-      <div class="legend"><span class="lg"><span class="d" style="background:#5B8CFF"></span>${escapeText(ctx.mapCenterLabel)}</span><span class="lg"><span class="d" style="background:#FF6B6B"></span>Competitors (in radius)</span><span class="lg"><span class="d" style="background:#64748B"></span>Nearby</span><span class="lg"><span class="d" style="background:#39C2D6"></span>Analysis radius</span></div>
-    </div>
-    <div class="src" style="margin:-4px 2px 8px">MapLibre · OpenFreeMap · ${ctx.mapCount} live Google Places + NYC competitor pins</div>
-    <div class="section-label"><span class="n">06</span> Business fit in this area</div>
+    <div class="section-label"><span class="n">05</span> Business fit in this area</div>
     <div class="card accent"><div class="sub">Market pressure · higher = more crowded</div><div class="big">${ctx.pressureScore}<span class="u" style="font-size:16px;color:var(--txt-3)">/100 — ${escapeText(ctx.pressureLabel)}</span></div><div class="desc">${escapeText(ctx.business)} market saturation — built from local market activity, competitive signals &amp; demand momentum. A higher number means a more crowded, competitive market (a headwind), not a better score.</div><div class="bar-row" style="margin-top:14px"><div class="bl"><span class="bn">Saturation</span><span class="bv">${escapeText(ctx.pressureLabel)}</span></div><div class="track"><div class="fill a" style="width:${ctx.pressureScore}%"></div></div></div></div>
     ${sv3BusinessLandscapeCard(ctx)}
     <div class="card"><div class="sub">Local vs chain</div><h3>${escapeText(ctx.localChainTitle)}</h3><div class="desc">${escapeText(ctx.localChainCopy)}</div></div>
     <div class="card"><div class="sub">Recommendation</div><h3>${escapeText(ctx.recommendationTitle)}</h3><div class="desc">${escapeText(ctx.recommendationCopy)}</div></div>
-    <div class="section-label"><span class="n">07</span> Concept intelligence</div>
+    <div class="section-label"><span class="n">06</span> Concept intelligence</div>
     ${concepts}
-    <div class="section-label"><span class="n">08</span> Best nearby competitive examples</div>
+    <div class="section-label"><span class="n">07</span> Best nearby competitive examples</div>
     ${competitors}
     <div class="src" style="margin:-4px 2px 8px">Google Places · Yelp Fusion API</div>
-    <div class="section-label"><span class="n">09</span> Foot traffic intelligence</div>
+    <div class="section-label"><span class="n">08</span> Foot traffic intelligence</div>
     ${sv3LiveBusynessCard(ctx)}
     ${sv3BestDaysHoursCard(ctx)}
     ${sv3NearestTransitCard(ctx)}
@@ -5108,7 +5108,7 @@ function sv3DiningHTML(ctx) {
     ? `<div class="card"><div class="sub">Busiest nearby restaurants</div>${d.hardest.map((h) => `<div class="demo-row"><span class="dl" style="min-width:110px">${escapeText(h.name)}</span><div class="dtrack"><div class="dfill" style="width:${h.pct}%"></div></div><span class="dv" style="color:${h.pct >= 80 ? "var(--green)" : "var(--amber)"}">${h.pct}%</span></div>`).join("")}<div class="desc">Ranked by Google review volume — a popularity proxy, not live table availability. Higher = stronger established demand, but also stronger competition.</div><div class="src">Google Places · review volume (popularity proxy)</div></div>`
     : "";
   return `
-    <div class="section-label"><span class="n">10</span> Area dining demand</div>
+    <div class="section-label"><span class="n">09</span> Area dining demand</div>
     <div class="card accent">
       <div class="sub">How busy nearby restaurants are at peak</div>
       <div class="big" style="color:var(--teal-bright)">${escapeText(d.label || "Limited data")}<span style="font-size:15px;color:var(--txt-3)"> · ${safeNumber(d.score, 0)}/100</span></div>
@@ -5566,7 +5566,9 @@ function renderSpotVestV3(profile, recommendations, analysis) {
   // REAL report cards blurred under a lock overlay per section.
   sv3LastRender = { profile, recommendations, analysis };
   const reportPaid = sv3ReportUnlocked();
-  setIf(refs.tabOverview, sv3OverviewHTML(ctx), !reportPaid, sv3LockOverviewContent);
+  // The market map now lives in the Overview tab, so re-render it whenever the
+  // overview HTML is rewritten (which replaces the map's container element).
+  const overviewChanged = setIf(refs.tabOverview, sv3OverviewHTML(ctx), !reportPaid, sv3LockOverviewContent);
   const marketChanged = setIf(refs.tabMarket, sv3MarketHTML(ctx), !reportPaid);
   setIf(refs.tabRisk, sv3RiskHTML(ctx), !reportPaid);
   setIf(refs.tabMoney, sv3MoneyHTML(ctx), !reportPaid);
@@ -5579,7 +5581,7 @@ function renderSpotVestV3(profile, recommendations, analysis) {
 
   sv3BindActions();
   if (reportPaid) sv3InitWhatIf();
-  if (reportPaid && (marketChanged || !sv3MarketMap)) sv3RenderMarketMap();
+  if (reportPaid && (overviewChanged || marketChanged || !sv3MarketMap)) sv3RenderMarketMap();
   if (showingPortfolio) {
     sv3RenderPortfolio();
   } else if (!showingReport && !showingCompare) {
@@ -5960,7 +5962,7 @@ function sv3ShowTab(name) {
     if (el) el.classList.toggle("hide", t !== name);
   });
   refs.app.querySelectorAll("[data-sv3-tab]").forEach((b) => b.classList.toggle("on", b.dataset.sv3Tab === name));
-  if (name === "market" && sv3MarketMap) { setTimeout(() => { try { sv3MarketMap.resize(); } catch (e) { /* ignore */ } }, 70); }
+  if (name === "overview" && sv3MarketMap) { setTimeout(() => { try { sv3MarketMap.resize(); } catch (e) { /* ignore */ } }, 70); }
   try { window.scrollTo({ top: 0, behavior: "instant" }); } catch {}
 }
 
