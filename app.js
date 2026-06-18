@@ -4537,6 +4537,7 @@ function sv3LiveBusynessCard(ctx) {
     <div style="display:flex;gap:1px;align-items:flex-end;margin-top:10px">${bars}</div>
     <div style="display:flex;justify-content:space-between;font-size:9.5px;color:var(--txt-3);margin-top:4px"><span>12a</span><span>6a</span><span>12p</span><span>6p</span><span>11p</span></div>
     ${insight && n >= 5 ? `<div class="desc" style="margin-top:10px"><b>${escapeText(insight.verdict)}</b></div>` : ""}
+    <div id="sv3-live-now" style="margin-top:10px"><button class="btn ghost sm" type="button" data-sv3-live-now>⚡ Is it busy right now?</button></div>
     <div class="src" style="margin-top:8px">Real venue busyness from <b>${formatInteger(n)}</b> places near here — Google Popular Times via BestTime. Hourly average, relative to each venue's weekly peak. ${n < 10 ? "Few venues here, so read the timing as directional. " : ""}Display only — not used in the score.</div>
   </div>`;
 }
@@ -6003,6 +6004,30 @@ function initSpotVestV3Controls() {
     const open = panel.classList.toggle("hide") === false;
     button.setAttribute("aria-expanded", String(open));
     button.textContent = open ? "Building ▴" : "Building ▾";
+  });
+  // "Is it busy right now?" — on-demand live check (spends a few credits only
+  // when a customer actually taps it, never on every report view).
+  app.addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-sv3-live-now]");
+    if (!button) return;
+    event.preventDefault();
+    const host = document.getElementById("sv3-live-now");
+    if (!host || !state.zip) return;
+    button.disabled = true;
+    host.innerHTML = `<div class="desc">Checking live busyness right now…</div>`;
+    try {
+      const p = new URLSearchParams({ zip: state.zip });
+      if (state.location?.lat && state.location?.lng) { p.set("lat", state.location.lat); p.set("lng", state.location.lng); }
+      if (state.location?.address) p.set("address", state.location.address);
+      const r = await (await fetch(`/api/area-live?${p}`)).json();
+      if (r && r.available) {
+        host.innerHTML = `<div class="statline"><span class="sl">Right now</span><span class="sv" style="color:var(--teal-bright)">${escapeText(r.label)}</span></div><div class="src" style="margin-top:2px">Live across ${formatInteger(r.venues)} open venue${r.venues === 1 ? "" : "s"} near here · Google Popular Times via BestTime${r.cached ? " · cached a few min" : ""}</div>`;
+      } else {
+        host.innerHTML = `<div class="desc">No live signal right now — nearby venues may be closed, or Google has no live data for them at the moment. Try during open hours.</div>`;
+      }
+    } catch {
+      host.innerHTML = `<div class="desc">Couldn't fetch live data right now — try again in a moment.</div>`;
+    }
   });
   document.querySelector("#sv3-assistant-button")?.addEventListener("click", () => { try { openAssistant(); } catch {} });
   document.querySelector("#sv3-compare-add")?.addEventListener("click", () => {

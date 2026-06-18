@@ -2892,6 +2892,10 @@ function besttimeConfigured() {
 // free for a week so customer reports stay instant and cheap.
 const besttimeAreaCache = new Map();
 const BESTTIME_AREA_TTL = 7 * 24 * 60 * 60 * 1000;
+// Live ("busy right now") changes by the minute, so it can only be cached for a
+// short window — long enough to stop repeat taps from re-spending credits.
+const besttimeLiveCache = new Map();
+const BESTTIME_LIVE_TTL = 12 * 60 * 1000;
 
 // Pull real venue busyness near a point from BestTime (built on Google Popular
 // Times — aggregated, anonymized phone-location data). Defensive parser: the
@@ -3026,11 +3030,20 @@ async function besttimeAreaForecast({ q, lat, lng, radius, num = 20, fast = true
   }
   const peakHour = counted ? area.indexOf(Math.max(...area)) : null;
   const hourLabel = (h) => h == null ? null : `${((h + 11) % 12) + 1} ${h < 12 ? "AM" : "PM"}`;
+  // Keep a few venue IDs so the "busy right now" (live) lookup can reuse them.
+  const venueRefs = [];
+  for (const v of venues) {
+    const id = v?.venue_id;
+    if (!id) continue;
+    venueRefs.push({ id: String(id), name: safeText(v.venue_name || "", 80), address: safeText(v.venue_address || "", 120) });
+    if (venueRefs.length >= 6) break;
+  }
   return {
     configured: true,
     available: counted > 0,
     venuesReturned: venues.length,
     venuesWithData: counted,
+    venueRefs,
     daily,
     hourly: counted ? area : null,
     peakHour,
@@ -3045,6 +3058,39 @@ async function besttimeAreaForecast({ q, lat, lng, radius, num = 20, fast = true
     // Trimmed first-venue shape so we can confirm parsing without dumping the key.
     sample: venues[0] ? { keys: Object.keys(venues[0]), first: JSON.parse(JSON.stringify(venues[0])) } : null
   };
+}
+
+// "Busy right now" — live foot traffic for a few representative venues, averaged
+// into an area read. Live data is per-venue and uncacheable long-term, so we
+// only ever query a handful (cost control) and only on demand.
+async function besttimeLive(venueRefs) {
+  if (!besttimeConfigured() || !Array.isArray(venueRefs) || !venueRefs.length) return { available: false };
+  const key = process.env.BESTTIME_API_KEY;
+  const picks = venueRefs.slice(0, 3);
+  const results = [];
+  for (const ref of picks) {
+    if (!ref?.id) continue;
+    try {
+      const url = new URL("https://besttime.app/api/v1/forecasts/live");
+      url.searchParams.set("api_key_private", key);
+      url.searchParams.set("venue_id", ref.id);
+      const res = await besttimeJson(url, { method: "POST", timeoutMs: 9000 });
+      const a = (res.data && (res.data.analysis || res.data)) || {};
+      if (a.venue_live_busyness_available) {
+        results.push({
+          live: Number(a.venue_live_busyness) || 0,
+          delta: Number(a.venue_live_forecasted_delta) || 0
+        });
+      }
+    } catch { /* skip this venue */ }
+  }
+  if (!results.length) return { available: false };
+  const avg = (k) => Math.round(results.reduce((s, x) => s + (x[k] || 0), 0) / results.length);
+  const delta = avg("delta"), live = avg("live");
+  const label = delta >= 12 ? `Busier than usual right now (+${delta}%)`
+    : delta <= -12 ? `Quieter than usual right now (${delta}%)`
+    : "About as busy as usual right now";
+  return { available: true, venues: results.length, liveBusyness: live, deltaPct: delta, label };
 }
 
 async function siteIntelligence(zip, location = null) {
@@ -5486,6 +5532,43 @@ createServer(async (request, response) => {
         }
         if (result.available) besttimeAreaCache.set(areaKey, { at: Date.now(), data: result });
         sendJson(response, 200, clean(result));
+      } catch (error) {
+        sendJson(response, 200, { configured: true, available: false });
+      }
+      return;
+    }
+
+    if (url.pathname === "/api/area-live") {
+      const zip = String(url.searchParams.get("zip") || "").trim();
+      const lat = Number(url.searchParams.get("lat"));
+      const lng = Number(url.searchParams.get("lng"));
+      const address = safeText(url.searchParams.get("address"), 120);
+      if (!besttimeConfigured()) { sendJson(response, 200, { configured: false, available: false }); return; }
+      const areaKey = /^\d{5}$/.test(zip) ? zip
+        : (Number.isFinite(lat) && Number.isFinite(lng) ? `${lat.toFixed(3)},${lng.toFixed(3)}` : "");
+      if (!areaKey) { sendJson(response, 400, { error: "Provide a ZIP or lat/lng." }); return; }
+      if (rateLimited(`arealive:${clientIp(request)}`, 10, 60_000)) {
+        sendJson(response, 429, { error: "Too many live checks — try again in a minute." });
+        return;
+      }
+      const lhit = besttimeLiveCache.get(areaKey);
+      if (lhit && Date.now() - lhit.at < BESTTIME_LIVE_TTL) {
+        sendJson(response, 200, { ...lhit.data, cached: true });
+        return;
+      }
+      try {
+        // Reuse the area's venue IDs; build the forecast first only if we have none.
+        let refs = besttimeAreaCache.get(areaKey)?.data?.venueRefs;
+        if (!Array.isArray(refs) || !refs.length) {
+          const hasLoc = Number.isFinite(lat) && Number.isFinite(lng);
+          const q = address ? `restaurants near ${address}` : `restaurants in ${zip} New York`;
+          const fc = await besttimeAreaForecast({ q, lat: hasLoc ? lat : undefined, lng: hasLoc ? lng : undefined, radius: 1200, num: 50, fast: true });
+          if (fc.available) besttimeAreaCache.set(areaKey, { at: Date.now(), data: fc });
+          refs = fc.venueRefs;
+        }
+        const live = await besttimeLive(refs);
+        besttimeLiveCache.set(areaKey, { at: Date.now(), data: live });
+        sendJson(response, 200, live);
       } catch (error) {
         sendJson(response, 200, { configured: true, available: false });
       }
