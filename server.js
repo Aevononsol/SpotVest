@@ -2885,6 +2885,93 @@ async function businessLandscape(zip) {
   };
 }
 
+function besttimeConfigured() {
+  return Boolean(process.env.BESTTIME_API_KEY);
+}
+
+// Pull real venue busyness near a point from BestTime (built on Google Popular
+// Times — aggregated, anonymized phone-location data). Defensive parser: the
+// venue object shape can vary, so we scan each venue for any 24-length hourly
+// busyness array (0-100%, 100 = the venue's weekly peak) and average across
+// venues to get an AREA busyness curve. Returns a `sample` for diagnostics.
+async function besttimeAreaForecast(lat, lng, { radius = 400, query = "restaurants", num = 20, fast = true } = {}) {
+  if (!besttimeConfigured()) return { configured: false, available: false };
+  const url = new URL("https://besttime.app/api/v1/venues/search");
+  url.searchParams.set("api_key_private", process.env.BESTTIME_API_KEY);
+  url.searchParams.set("q", query);
+  url.searchParams.set("lat", String(lat));
+  url.searchParams.set("lng", String(lng));
+  url.searchParams.set("radius", String(radius));
+  url.searchParams.set("num", String(num));
+  url.searchParams.set("fast", fast ? "true" : "false");
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 15000);
+  let data;
+  try {
+    const response = await fetch(url, { method: "POST", signal: controller.signal });
+    data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      return { configured: true, available: false, error: data?.message || data?.error || `BestTime ${response.status}` };
+    }
+  } catch (error) {
+    return { configured: true, available: false, error: String(error.message || error).slice(0, 120) };
+  } finally {
+    clearTimeout(timer);
+  }
+
+  // Find the venues array wherever BestTime puts it.
+  const venues = Array.isArray(data?.venues) ? data.venues
+    : Array.isArray(data?.results) ? data.results
+    : Array.isArray(data) ? data : [];
+  // Pull every plausible 24-length hourly busyness array out of a venue object.
+  const hourArraysOf = (venue) => {
+    const found = [];
+    const visit = (node, depth) => {
+      if (!node || depth > 4) return;
+      if (Array.isArray(node)) {
+        if (node.length === 24 && node.every((n) => typeof n === "number" && n >= 0 && n <= 100)) {
+          found.push(node);
+        } else {
+          node.forEach((child) => visit(child, depth + 1));
+        }
+        return;
+      }
+      if (typeof node === "object") for (const v of Object.values(node)) visit(v, depth + 1);
+    };
+    visit(venue, 0);
+    return found;
+  };
+  const area = new Array(24).fill(0);
+  let counted = 0;
+  for (const venue of venues) {
+    const arrays = hourArraysOf(venue);
+    if (!arrays.length) continue;
+    // average this venue's days into one curve, then add to the area total
+    const venueCurve = new Array(24).fill(0);
+    arrays.forEach((arr) => arr.forEach((v, h) => { venueCurve[h] += v; }));
+    for (let h = 0; h < 24; h++) venueCurve[h] /= arrays.length;
+    for (let h = 0; h < 24; h++) area[h] += venueCurve[h];
+    counted += 1;
+  }
+  if (counted) for (let h = 0; h < 24; h++) area[h] = Math.round(area[h] / counted);
+  const peakHour = counted ? area.indexOf(Math.max(...area)) : null;
+  const hourLabel = (h) => h == null ? null : `${((h + 11) % 12) + 1} ${h < 12 ? "AM" : "PM"}`;
+  return {
+    configured: true,
+    available: counted > 0,
+    venuesReturned: venues.length,
+    venuesWithData: counted,
+    hourly: counted ? area : null,
+    peakHour,
+    peakLabel: hourLabel(peakHour),
+    peakBusyness: counted ? Math.max(...area) : null,
+    source: "BestTime venue busyness (Google Popular Times, aggregated phone-location data)",
+    // Trimmed first-venue shape so we can confirm parsing without dumping the key.
+    sample: venues[0] ? { keys: Object.keys(venues[0]), first: JSON.parse(JSON.stringify(venues[0])) } : null
+  };
+}
+
 async function siteIntelligence(zip, location = null) {
   const liquorWhere = location?.lat && location?.lng
     ? `within_circle(georeference, ${location.lat}, ${location.lng}, ${location.radiusMeters || 805})`
@@ -4743,6 +4830,23 @@ createServer(async (request, response) => {
       }
       const history = await readJsonStore("security-sweeps", []);
       sendJson(response, 200, { ok: true, sweeps: history.slice(0, 10) });
+      return;
+    }
+
+    if (url.pathname === "/api/admin/besttime-test") {
+      if (!adminAuthorized(request)) {
+        sendJson(response, 401, { error: "Admin token required." });
+        return;
+      }
+      if (!besttimeConfigured()) {
+        sendJson(response, 200, { configured: false, available: false, note: "Set BESTTIME_API_KEY in Render first." });
+        return;
+      }
+      const lat = Number(url.searchParams.get("lat") || 40.7295);
+      const lng = Number(url.searchParams.get("lng") || -73.9853);
+      const query = safeText(url.searchParams.get("q"), 80) || "restaurants";
+      const result = await besttimeAreaForecast(lat, lng, { query });
+      sendJson(response, 200, result);
       return;
     }
 

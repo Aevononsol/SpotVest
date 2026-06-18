@@ -114,6 +114,20 @@
       </section>
 
       <section class="launch-section">
+        <p class="section-label">Integrations</p>
+        <div class="launch-section-header">
+          <h3>BestTime foot-traffic test</h3>
+          <p>After adding <b>BESTTIME_API_KEY</b> in Render, run this to confirm the key works and see the real venue busyness pulled near an address. Each run uses ~5 BestTime credits. Default point is the East Village; paste any "lat,lng" to test elsewhere.</p>
+        </div>
+        <form id="admin-besttime-form" class="admin-token-row">
+          <input id="besttime-latlng" placeholder="lat,lng (blank = East Village)" autocomplete="off" />
+          <button type="submit">Run BestTime test</button>
+        </form>
+        <p id="besttime-status" class="launch-status" role="status"></p>
+        <pre id="besttime-result" style="white-space:pre-wrap;word-break:break-word;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--txt-2);background:var(--surface-2);border:1px solid var(--border);border-radius:12px;padding:12px;margin-top:10px;display:none"></pre>
+      </section>
+
+      <section class="launch-section">
         <p class="section-label">Email</p>
         <div class="launch-section-header">
           <h3>Email log</h3>
@@ -201,6 +215,6 @@
         </div>
       </section>
     </main>
-    <script type="module" src="/admin.js?v=20260616-revoke1"></script>
+    <script type="module" src="/admin.js?v=20260616-besttime1"></script>
   </body>
 </html>
