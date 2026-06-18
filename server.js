@@ -2894,13 +2894,25 @@ function besttimeConfigured() {
 // venue object shape can vary, so we scan each venue for any 24-length hourly
 // busyness array (0-100%, 100 = the venue's weekly peak) and average across
 // venues to get an AREA busyness curve. Returns a `sample` for diagnostics.
-async function besttimeAreaForecast({ q, lat, lng, radius, num = 20, fast = true } = {}) {
+async function besttimeJson(url, { method = "GET", timeoutMs = 15000 } = {}) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { method, signal: controller.signal });
+    const data = await response.json().catch(() => ({}));
+    return { ok: response.ok, status: response.status, data };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function besttimeAreaForecast({ q, lat, lng, radius, num = 20, fast = false } = {}) {
   if (!besttimeConfigured()) return { configured: false, available: false };
+  const key = process.env.BESTTIME_API_KEY;
   // BestTime geocodes the q TEXT, so it must include a location ("restaurants
-  // in New York City") — a bare "restaurants" returns nothing. lat/lng/radius
-  // are optional extra filters layered on top of the text search.
+  // in New York City") — a bare "restaurants" returns nothing.
   const url = new URL("https://besttime.app/api/v1/venues/search");
-  url.searchParams.set("api_key_private", process.env.BESTTIME_API_KEY);
+  url.searchParams.set("api_key_private", key);
   url.searchParams.set("q", q || "restaurants in New York City");
   if (Number.isFinite(lat) && Number.isFinite(lng)) {
     url.searchParams.set("lat", String(lat));
@@ -2910,27 +2922,42 @@ async function besttimeAreaForecast({ q, lat, lng, radius, num = 20, fast = true
   url.searchParams.set("num", String(num));
   url.searchParams.set("fast", fast ? "true" : "false");
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 15000);
   let data;
   try {
-    const response = await fetch(url, { method: "POST", signal: controller.signal });
-    data = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      return { configured: true, available: false, error: data?.message || data?.error || `BestTime ${response.status}` };
+    const res = await besttimeJson(url, { method: "POST" });
+    data = res.data || {};
+    if (!res.ok) {
+      return { configured: true, available: false, error: data?.message || data?.error || `BestTime ${res.status}` };
     }
   } catch (error) {
     return { configured: true, available: false, error: String(error.message || error).slice(0, 120) };
-  } finally {
-    clearTimeout(timer);
   }
 
-  // Find the venues array wherever BestTime puts it (defensive across shapes).
-  const venues = Array.isArray(data?.venues) ? data.venues
-    : Array.isArray(data?.results) ? data.results
-    : Array.isArray(data?.venues_n) ? data.venues_n
-    : Array.isArray(data?.analysis) ? data.analysis
-    : Array.isArray(data) ? data : [];
+  // Venue search is ASYNC: it returns a job_id + collection_id, and the venues
+  // arrive by polling the progress endpoint. Poll until the job finishes (or we
+  // run out of budget), collecting venues as they're forecast.
+  const grabVenues = (d) => Array.isArray(d?.venues) ? d.venues
+    : Array.isArray(d?.results) ? d.results
+    : Array.isArray(d?.analysis) ? d.analysis
+    : Array.isArray(d) ? d : [];
+  let venues = grabVenues(data);
+  let polls = 0;
+  const jobId = data?.job_id || data?.jobId || null;
+  const collectionId = data?.collection_id || data?.collectionId || null;
+  if (!venues.length && jobId) {
+    const progressUrl = data?._links?.venue_search_progress
+      || `https://besttime.app/api/v1/venues/progress?job_id=${encodeURIComponent(jobId)}&collection_id=${encodeURIComponent(collectionId || "")}&format=raw&api_key_private=${encodeURIComponent(key)}`;
+    for (polls = 1; polls <= 8; polls++) {
+      await new Promise((r) => setTimeout(r, 2500));
+      try {
+        const prog = await besttimeJson(progressUrl, { method: "GET" });
+        const pd = prog.data || {};
+        const got = grabVenues(pd);
+        if (got.length) venues = got;
+        if (pd?.job_finished === true || (got.length && got.length >= num)) break;
+      } catch { /* keep polling within budget */ }
+    }
+  }
   // Pull every plausible 24-length hourly busyness array out of a venue object.
   const hourArraysOf = (venue) => {
     const found = [];
@@ -2973,10 +3000,10 @@ async function besttimeAreaForecast({ q, lat, lng, radius, num = 20, fast = true
     peakHour,
     peakLabel: hourLabel(peakHour),
     peakBusyness: counted ? Math.max(...area) : null,
-    // Diagnostics: top-level response keys + async hints so we can see the real
-    // shape even when venues come back empty.
+    // Diagnostics: response shape + async hints so we can see what BestTime sent.
     responseKeys: data && typeof data === "object" ? Object.keys(data) : [],
-    jobId: data?.job_id || data?.jobId || null,
+    jobId,
+    polls,
     status: data?.status || null,
     source: "BestTime venue busyness (Google Popular Times, aggregated phone-location data)",
     // Trimmed first-venue shape so we can confirm parsing without dumping the key.
