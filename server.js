@@ -2953,7 +2953,7 @@ async function besttimeAreaForecast({ q, lat, lng, radius, num = 20, fast = true
   if (!venues.length && jobId) {
     const progressUrl = data?._links?.venue_search_progress
       || `https://besttime.app/api/v1/venues/progress?job_id=${encodeURIComponent(jobId)}&collection_id=${encodeURIComponent(collectionId || "")}&format=raw&api_key_private=${encodeURIComponent(key)}`;
-    for (polls = 1; polls <= 8; polls++) {
+    for (polls = 1; polls <= 12; polls++) {
       await new Promise((r) => setTimeout(r, 2500));
       try {
         const prog = await besttimeJson(progressUrl, { method: "GET" });
@@ -5472,12 +5472,17 @@ createServer(async (request, response) => {
       }
       const hasLoc = Number.isFinite(lat) && Number.isFinite(lng);
       const q = address ? `restaurants near ${address}` : `restaurants in ${zip} New York`;
+      const NUM = 50;            // pull a wider sample of venues
+      const TARGET = 25;         // build more if the cheap read returns a thin sample
+      const args = { q, lat: hasLoc ? lat : undefined, lng: hasLoc ? lng : undefined, radius: 1200, num: NUM };
       try {
-        // Cheap read first (cached venues, no new credits). If the area was
-        // never built, forecast it once (spends credits, slower) and cache it.
-        let result = await besttimeAreaForecast({ q, lat: hasLoc ? lat : undefined, lng: hasLoc ? lng : undefined, radius: 1000, fast: true });
-        if (!result.available) {
-          result = await besttimeAreaForecast({ q, lat: hasLoc ? lat : undefined, lng: hasLoc ? lng : undefined, radius: 1000, fast: false });
+        // Cheap read first (cached venues, no new credits). If the area is new or
+        // the sample is thin, forecast it once (spends credits, slower) to widen
+        // it, then cache so later reports are instant and free.
+        let result = await besttimeAreaForecast({ ...args, fast: true });
+        if (!result.available || (result.venuesWithData || 0) < TARGET) {
+          const built = await besttimeAreaForecast({ ...args, fast: false });
+          if (built.available && (built.venuesWithData || 0) >= (result.venuesWithData || 0)) result = built;
         }
         if (result.available) besttimeAreaCache.set(areaKey, { at: Date.now(), data: result });
         sendJson(response, 200, clean(result));

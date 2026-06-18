@@ -4529,13 +4529,15 @@ function sv3LiveBusynessCard(ctx) {
     return `<div title="${hr}: ${v}%" style="flex:1;display:flex;align-items:flex-end;height:48px"><div style="width:100%;border-radius:2px 2px 0 0;height:${pct}%;background:${peak ? "var(--teal-bright)" : "rgba(79,227,216,.32)"}"></div></div>`;
   }).join("");
   const insight = sv3BusynessInsight(b);
+  const n = safeNumber(b.venuesWithData, 0);
+  const conf = n >= 25 ? { t: "Strong sample", c: "var(--green)" } : n >= 10 ? { t: "Good sample", c: "var(--teal-bright)" } : { t: "Limited sample — directional", c: "var(--amber)" };
   return `<div class="card">
-    <div class="sub">Nearby busyness · live</div>
+    <div class="sub">Nearby busyness · live <span style="color:${conf.c};font-weight:700">· ${escapeText(conf.t)}</span></div>
     <div class="big" style="font-size:18px;margin-top:2px">Busiest around <b style="color:var(--teal-bright)">${escapeText(b.peakLabel || "—")}</b></div>
     <div style="display:flex;gap:1px;align-items:flex-end;margin-top:10px">${bars}</div>
     <div style="display:flex;justify-content:space-between;font-size:9.5px;color:var(--txt-3);margin-top:4px"><span>12a</span><span>6a</span><span>12p</span><span>6p</span><span>11p</span></div>
-    ${insight ? `<div class="desc" style="margin-top:10px"><b>${escapeText(insight.verdict)}</b></div>` : ""}
-    <div class="src" style="margin-top:8px">Real venue busyness from ${formatInteger(b.venuesWithData)} places near here — Google Popular Times via BestTime. Hourly average, relative to each venue's weekly peak. Display only — not used in the score.</div>
+    ${insight && n >= 5 ? `<div class="desc" style="margin-top:10px"><b>${escapeText(insight.verdict)}</b></div>` : ""}
+    <div class="src" style="margin-top:8px">Real venue busyness from <b>${formatInteger(n)}</b> places near here — Google Popular Times via BestTime. Hourly average, relative to each venue's weekly peak. ${n < 10 ? "Few venues here, so read the timing as directional. " : ""}Display only — not used in the score.</div>
   </div>`;
 }
 
