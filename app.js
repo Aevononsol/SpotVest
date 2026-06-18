@@ -1044,8 +1044,8 @@ function updatePanelTimestamp(panelSelector) {
 
 // Maps a status label to one of the 5 design-system states (see
 // DESIGN_SYSTEM.md). Tone keys map to CSS: connected=Verified(green),
-// modeled=Modeled(amber), estimated=Estimated(blue), refreshing=Research(gray),
-// risk=Risk(red). Modeled/estimated output must never read as verified.
+// modeled=Projected(amber), estimated=Estimated(blue), refreshing=Research(gray),
+// risk=Risk(red). Projected/estimated output must never read as verified.
 function statusTone(status) {
   const n = String(status || "").toLowerCase();
   if (n.includes("risk")) return "risk";
@@ -1063,7 +1063,7 @@ function setStatusPill(element, text, status = text) {
 }
 
 // Drives the "Signals in this report" strip from real per-request state so it
-// never claims a signal is verified when only a modeled estimate is available.
+// never claims a signal is verified when only a estimate is available.
 function renderSignalsStrip() {
   if (!elements.signalsStripList) return;
   const businessResult = currentBusinessResult();
@@ -1077,7 +1077,7 @@ function renderSignalsStrip() {
 
   // 5-state mapping (see DESIGN_SYSTEM.md): live demographics = Verified;
   // borough-default demographics & broad demand = Estimated (proxy); foot
-  // traffic = Modeled (our model); pending fetch = Research In Progress.
+  // traffic = Projected (our model); pending fetch = Research In Progress.
   const chips = [
     { label: "Demographics", state: liveProfile ? "verified" : "estimated" },
     { label: "Competition", state: hasCompetitive ? "verified" : businessResult ? "modeled" : "research" },
@@ -1089,7 +1089,7 @@ function renderSignalsStrip() {
 
   const meta = {
     verified:  { text: "Verified",  tone: "connected" },
-    modeled:   { text: "Modeled",   tone: "modeled" },
+    modeled:   { text: "Estimated",   tone: "modeled" },
     estimated: { text: "Estimated", tone: "estimated" },
     research:  { text: "Checking",  tone: "refreshing" }
   };
@@ -1317,7 +1317,7 @@ function _finishRenderMap() {
       fillOpacity: 0.045,
       weight: 2,
       dashArray: "6 6"
-    }).bindPopup(`<strong>${titleCase(business)} saturation</strong><br>${saturation} market pressure<br><small>Modeled competition density layer</small>`);
+    }).bindPopup(`<strong>${titleCase(business)} saturation</strong><br>${saturation} market pressure<br><small>Projected competition density layer</small>`);
     aggregateCircle.addTo(map);
     mapLayers.push(aggregateCircle);
   }
@@ -1460,7 +1460,7 @@ function opportunityCompetition(zip, business, profile, options = {}) {
   if (!Number.isFinite(Number(count))) {
     return {
       count: null,
-      source: "modeled area signals",
+      source: "estimated area signals",
       adjustment: 0,
       label: "Directional"
     };
@@ -1479,7 +1479,7 @@ function opportunityCompetition(zip, business, profile, options = {}) {
 
   return {
     count: Number(count),
-    source: liveMatchesBusiness ? "verified market signals" : "modeled competitor baseline",
+    source: liveMatchesBusiness ? "verified market signals" : "estimated competitor baseline",
     adjustment,
     label: saturationLabel(saturation)
   };
@@ -1722,7 +1722,7 @@ function modeledBusinessConfig(business) {
       localBias: 62,
       chainBias: 50,
       rentSensitivity: 60,
-      notes: "This is a modeled category until competitive signals are connected for live market research."
+      notes: "This is an estimated category until competitive signals are connected for live market research."
     }
   );
 }
@@ -1766,7 +1766,7 @@ function estimateMonthlyProfit(item, profile) {
 }
 
 function sourceTagsForResult(result, isLive) {
-  if (!isLive) return ["Modeled market signal"];
+  if (!isLive) return ["Estimated market signal"];
 
   const tags = [];
   if (result?.openDataCount > 0) tags.push("Local Market Activity");
@@ -1804,7 +1804,7 @@ function scoreDrivers(profile, item) {
     .toLowerCase();
 
   const competitionCopy = competition.count === null
-    ? `${saturationLabel(safeNumber(profile.competition, 50)).toLowerCase()} (modeled for this category)`
+    ? `${saturationLabel(safeNumber(profile.competition, 50)).toLowerCase()} (estimated for this category)`
     : `${competition.label.toLowerCase()} market pressure`;
 
   return `Driven by ${positiveDrivers.join(" and ")}${drag ? `; watch ${drag}` : ""}. Competition: ${competitionCopy}.`;
@@ -2009,11 +2009,11 @@ function peakHoursFor(profile) {
 function weekdayWeekendSplit(profile) {
   const weekday = clampScore(50 + safeNumber(effectiveOffice(profile), 50) * 0.18 + safeNumber(profile.transit, 50) * 0.1 - safeNumber(effectiveNightlife(profile), 50) * 0.08 - safeNumber(effectiveTourist(profile), 50) * 0.05);
   const weekend = 100 - weekday;
-  return `Weekday ${weekday}% / weekend ${weekend}% modeled split.`;
+  return `Weekday ${weekday}% / weekend ${weekend}% estimated split.`;
 }
 
 function footTrafficConfidenceLabel(score) {
-  // Describes how much real data backs the modeled estimate, not how
+  // Describes how much real data backs the estimate, not how
   // confident we are that the foot-traffic number is correct.
   if (score >= 78) return "stronger data backing";
   if (score >= 58) return "moderate data backing";
@@ -2079,8 +2079,8 @@ function renderFootTrafficIntelligence(profile) {
   elements.footTrafficTransit.textContent = transitText;
   setStatusPill(
     elements.footTrafficConfidence,
-    `Modeled estimate · ${footTrafficConfidenceLabel(confidenceScore)}`,
-    "Modeled"
+    `SpotVest estimate · ${footTrafficConfidenceLabel(confidenceScore)}`,
+    "Estimated"
   );
   elements.footTrafficWhy.textContent =
     `Score reflects density ${formatBadgeScore(profile.density)}, transit ${formatBadgeScore(profile.transit)}, office activity ${formatBadgeScore(effectiveOffice(profile))}, nightlife ${formatBadgeScore(effectiveNightlife(profile))}, tourism ${formatBadgeScore(effectiveTourist(profile))}, commercial mix, mobility, and restaurant concentration. Estimated using mobility, transit, density, and commercial activity signals — SpotVest's Foot Traffic Model, not a direct pedestrian counter.`;
@@ -2167,8 +2167,8 @@ function renderRevenueEstimator(profile) {
   elements.revenueRentPercent.textContent =
     num(rentPercent) !== null ? `${Math.round(rentPercent)}%` : "Needs inputs";
   elements.revenueNote.textContent = usingBaseline
-    ? `Neighborhood baseline: ≈1,200 sq ft at a modeled local rent of ${formatCurrency(effectiveRent)}/mo. Enter your own rent and size above to tailor this. Modeled ranges, Due Diligence Required on operator financials.`
-    : `Modeled target sales to support this rent: ${moneyRange(targetRevenueLow, targetRevenueHigh)}/mo. Category, demand, rent pressure, and area income are included; verify margins and operator costs.`;
+    ? `Neighborhood baseline: ≈1,200 sq ft at a estimated local rent of ${formatCurrency(effectiveRent)}/mo. Enter your own rent and size above to tailor this. Projected ranges, Due Diligence Required on operator financials.`
+    : `Estimated target sales to support this rent: ${moneyRange(targetRevenueLow, targetRevenueHigh)}/mo. Category, demand, rent pressure, and area income are included; verify margins and operator costs.`;
   refreshSpotVestV3Money();
 }
 
@@ -3374,7 +3374,7 @@ function confidenceFor(zip, businessResult) {
   if (sourceCount === 2) {
     return {
       label: "Good",
-      copy: "Confidence = live-data coverage, not the odds of success. Two market signal groups are connected; treat remaining modeled scores as directional."
+      copy: "Confidence = live-data coverage, not the odds of success. Two market signal groups are connected; treat remaining estimated scores as directional."
     };
   }
 
@@ -3386,7 +3386,7 @@ function confidenceFor(zip, businessResult) {
   }
 
   return {
-    label: "Modeled",
+    label: "Estimated",
     copy: "Confidence = live-data coverage, not the odds of success. Signals are still loading or unavailable; do not present this as verified research yet."
   };
 }
@@ -3512,7 +3512,7 @@ function budgetSupportScore(config) {
 }
 
 // Convert a quoted monthly rent into the 0-100 rent-pressure scale the score
-// uses, by comparing it to this business's modeled sales here (same revenue
+// uses, by comparing it to this business's projected sales here (same revenue
 // model as the Money tab, default 1,200 sq ft venue) against the category's
 // healthy rent-to-sales band. Anchors: at/below the healthy low end → ~22
 // (great deal) · top of healthy band → 58 · double the band → 92 (heavy).
@@ -3671,7 +3671,7 @@ function buildBusinessSuccessModel(profile, recommendations) {
     {
       name: "Competition",
       value: competitionScore,
-      why: `${competitionSource === "registry" ? `Verified NYC city-registry records (${businessResult.count} nearby)` : competitionSource === "google" ? `Live Google Places nearby count (${googleVisible} comparable operators)` : "Modeled area competition (no live count for this category)"}; market appears ${competitionCondition(competitionScore)}.`
+      why: `${competitionSource === "registry" ? `Verified NYC city-registry records (${businessResult.count} nearby)` : competitionSource === "google" ? `Live Google Places nearby count (${googleVisible} comparable operators)` : "Estimated area competition (no live count for this category)"}; market appears ${competitionCondition(competitionScore)}.`
     },
     {
       name: "Location quality",
@@ -3681,7 +3681,7 @@ function buildBusinessSuccessModel(profile, recommendations) {
     {
       name: "Financial viability",
       value: financialScoreAdj,
-      why: `Estimated Factors from cost pressure, income support, category sensitivity, margin potential, budget support (${state.budget ? formatCurrency(state.budget) : "not provided"}), and likely operating difficulty.${rentQuote ? ` Your quoted rent ($${formatInteger(rentQuote.monthly)}/mo ≈ ${rentQuote.ratioPct}% of modeled sales; healthy is ${rentQuote.healthyPct}).${rentPenalty >= 12 ? ` That rent is far above a workable share, so it heavily caps this score — at this ratio the unit economics don't close regardless of demand.` : " This replaces the area's average rent pressure."}` : ""}`
+      why: `Estimated Factors from cost pressure, income support, category sensitivity, margin potential, budget support (${state.budget ? formatCurrency(state.budget) : "not provided"}), and likely operating difficulty.${rentQuote ? ` Your quoted rent ($${formatInteger(rentQuote.monthly)}/mo ≈ ${rentQuote.ratioPct}% of projected sales; healthy is ${rentQuote.healthyPct}).${rentPenalty >= 12 ? ` That rent is far above a workable share, so it heavily caps this score — at this ratio the unit economics don't close regardless of demand.` : " This replaces the area's average rent pressure."}` : ""}`
     },
     {
       name: "Area momentum",
@@ -3817,7 +3817,7 @@ function buildInstitutionalAnalysis(profile, recommendations) {
     successModel.rentQuote && successModel.rentQuote.monthly < 2000 && `Quoted rent ($${formatInteger(successModel.rentQuote.monthly)}/mo) is far below NYC market — verify the lease term, legal use, and space condition before treating it as real`,
     successModel.sameBlockCount >= 2 && `${successModel.sameBlockCount} direct competitors within ~0.1 mi — same-block saturation is the biggest threat here`,
     safeNumber(successModel.effectiveRent, profile.rent) >= 78 && (successModel.rentQuote
-      ? `Quoted rent is heavy for modeled sales here (≈${successModel.rentQuote.ratioPct}% vs healthy ${successModel.rentQuote.healthyPct})`
+      ? `Quoted rent is heavy for projected sales here (≈${successModel.rentQuote.ratioPct}% vs healthy ${successModel.rentQuote.healthyPct})`
       : "High cost pressure can erase demand advantage"),
     successModel.competitionPressure >= 78 && `Direct competition is ${successModel.condition}; saturation is elevated`,
     !address && "ZIP-level view may hide weak side-street conditions",
@@ -3871,7 +3871,7 @@ function buildInstitutionalAnalysis(profile, recommendations) {
       `Location: ${state.location ? `${state.location.address} within ${state.location.radiusMiles} mi` : `ZIP ${state.zip} - ${profile.name}`}`,
       `Demographics: density ${formatScore(profile.density)}, income ${formatScore(profile.income)}, families ${formatScore(profile.families)}, student ${formatScore(profile.student)}`,
       `Mobility/demand: transit ${formatScore(profile.transit)}, office ${formatScore(effectiveOffice(profile))}, nightlife ${formatScore(effectiveNightlife(profile))}, tourist ${formatScore(effectiveTourist(profile))}`,
-      `Competition: ${businessResult?.registryExact ? `observed ${businessResult.business} market activity connected` : `modeled area competition ${formatScore(profile.competition)}`}`,
+      `Competition: ${businessResult?.registryExact ? `observed ${businessResult.business} market activity connected` : `estimated area competition ${formatScore(profile.competition)}`}`,
       `Cost pressure: ${formatScore(profile.rent)}`,
       `Consumer signal: ${google ? "competitive visibility connected" : "competitive visibility confirmation needed"}`,
       `Demand momentum: ${demandMomentumLabel(businessResult)}`,
@@ -3954,7 +3954,7 @@ function spotvestScoreBreakdown(analysis, profile) {
   ].filter(Boolean);
   const fallbackDataUsed = [
     !(br && br.registryExact) && "competition (no live registry/Places match → category model fallback)",
-    !(site && !site.fallback) && "mobility / site-intelligence (modeled fallback)",
+    !(site && !site.fallback) && "mobility / site-intelligence (estimated fallback)",
     !(civic && !civic.fallback) && "risk / civic signals (neutral fallback)",
     !(br && br.demandMomentum && br.demandMomentum.available) && "demand momentum (unavailable)"
   ].filter(Boolean);
@@ -4137,7 +4137,7 @@ function sv3SplitLabel(text) {
 
 /* ---------- repeated component builders (v3 markup) ---------- */
 function sv3Pill(label, status) {
-  const warn = ["Modeled", "Light", "Partial", "Estimated"].includes(status);
+  const warn = ["Estimated", "Light", "Partial", "Estimated"].includes(status);
   return `<span class="pill${warn ? " warn" : ""}"><span class="d"></span>${escapeText(label)} <span class="tag">${escapeText(status)}</span></span>`;
 }
 function sv3MiniCard(item) {
@@ -4213,8 +4213,8 @@ function sv3CostMarketSplit(ctx) {
     ? (lowQuote
       ? `At $${formatInteger(q.monthly)}/mo cost pressure is eliminated — a lower rent can't add more points. Rent this far below NYC market usually has a catch: verify lease term, legal use, and condition.`
       : rentOver > 1.5
-        ? `Your $${formatInteger(q.monthly)}/mo rent ≈ ${q.ratioPct}% of modeled sales — far above the healthy ${q.healthyPct}. Rent alone eats too much of revenue to profit here; renegotiate hard or walk.`
-        : `Your $${formatInteger(q.monthly)}/mo rent ≈ ${q.ratioPct}% of modeled sales (healthy: ${q.healthyPct})${cost >= 65 ? " — a real advantage here." : cost >= 45 ? " — workable for this area." : " — heavy for what this spot can sell."}`)
+        ? `Your $${formatInteger(q.monthly)}/mo rent ≈ ${q.ratioPct}% of projected sales — far above the healthy ${q.healthyPct}. Rent alone eats too much of revenue to profit here; renegotiate hard or walk.`
+        : `Your $${formatInteger(q.monthly)}/mo rent ≈ ${q.ratioPct}% of projected sales (healthy: ${q.healthyPct})${cost >= 65 ? " — a real advantage here." : cost >= 45 ? " — workable for this area." : " — heavy for what this spot can sell."}`)
     : (cost >= 65 ? "Area economics (rent vs income) support opening here." : cost >= 45 ? "Area cost pressure is manageable but real." : "Area cost pressure (rent vs local income) is dragging this score.");
   const marketText = market >= 65
     ? "Demand, customer fit, and competition support this business here."
@@ -4883,7 +4883,7 @@ function sv3SeasonSVG(rawBusiness, score) {
   }).join("");
 }
 
-/* ---------- v4 section data (modeled from real signals; honest labels) ---------- */
+/* ---------- v4 section data (estimated from real signals; honest labels) ---------- */
 function sv3Money(n) { return "$" + Math.round(n).toLocaleString(); }
 function sv3CostStructure(bucket) {
   return {
@@ -4953,7 +4953,7 @@ function sv3ScenariosData(revLowNum, revHighNum, rentDollars, bucket) {
   const profitAt = (revK) => Math.round(revK * 1000 * (1 - varRatio) - rentDollars);
   return {
     worst: { profit: profitAt(revLowNum * 0.9), prob: 25, note: "Slow ramp; competition wins out." },
-    base: { profit: profitAt((revLowNum + revHighNum) / 2), prob: 50, note: "Hits modeled revenue & cost targets." },
+    base: { profit: profitAt((revLowNum + revHighNum) / 2), prob: 50, note: "Hits projected revenue & cost targets." },
     best: { profit: profitAt(revHighNum), prob: 25, note: "Strong concept; beats the foot-traffic model." }
   };
 }
@@ -5019,10 +5019,10 @@ function sv3MarketHTML(ctx) {
     ${sv3NearestTransitCard(ctx)}
     ${sv3ConstructionCard(ctx)}
     ${sv3WhatsAroundCard(ctx)}
-    <div class="card accent"><div class="sub">${ctx.ftReal ? "Live signal · MTA ridership near this point" : "Modeled estimate · SpotVest location model"}</div><div class="k" style="margin-top:4px">Foot traffic score</div><div class="big" style="color:var(--teal-bright)">${ctx.ftScore}<span style="font-size:16px;color:var(--txt-3)">/100</span></div><div class="desc">Estimated activity: ${escapeText(ctx.ftActivity)}. ${ctx.ftReal ? "Derived from MTA subway ridership near this location." : "Modeled from area density, transit, and commercial activity."}${ctx.areaBusyness?.available ? ` <b style="color:var(--teal-bright)">Real-world check:</b> nearby venues are busiest around ${escapeText(ctx.areaBusyness.peakLabel || "—")} (live data, below).` : ""}</div></div>
-    <div class="duo"><div class="metric"><div class="k">${escapeText(ctx.ftVisitorsLabel || "Est. daily foot traffic")}</div><div class="v" style="font-size:16px">${escapeText(ctx.ftVisitors)}</div><div class="src" style="margin-top:4px">${escapeText(ctx.ftVisitorsTag || "MODELED RANGE")}</div></div><div class="metric"><div class="k">Walkability</div><div class="v">${ctx.ftWalk}<span class="u">/100</span> <span class="src" style="display:inline">MODELED</span></div></div></div>
-    <div class="card"><div class="statline"><span class="sl">Peak hours</span><span class="sv">${escapeText(ctx.ftPeak)}</span></div><div class="statline"><span class="sl">Weekday / weekend split</span><span class="sv">${escapeText(ctx.ftSplit)}</span></div><div class="src">Modeled · SpotVest mobility model (peak hours &amp; split)</div></div>
-    <div class="card"><div class="sub">Foot traffic by hour</div><div class="chart" style="position:relative">${ctx.hourlyReal ? "" : `<span class="peaktag" style="left:34%;top:-2px">Lunch peak</span><span class="peaktag" style="left:72%;top:-2px">Dinner peak</span>`}<svg viewBox="0 0 320 130" style="margin-top:14px"><line class="gl" x1="0" y1="30" x2="320" y2="30"/><line class="gl" x1="0" y1="65" x2="320" y2="65"/><line class="gl" x1="0" y1="100" x2="320" y2="100"/>${ctx.footHourSVG}</svg><div style="display:flex;justify-content:space-between" class="axlab"><span>6a</span><span>9a</span><span>12p</span><span>3p</span><span>6p</span><span>9p</span><span>12a</span></div></div><div class="src">${ctx.hourlySource === "besttime" ? "Live · real venue busyness by hour near this location (Google Popular Times via BestTime)" : ctx.hourlySource === "mta" ? "Live · MTA subway ridership by hour near this location (Dec 2024)" : "Modeled · category day-pattern scaled by area foot-traffic"}</div></div>
+    <div class="card accent"><div class="sub">${ctx.ftReal ? "Live signal · MTA ridership near this point" : "SpotVest estimate · SpotVest location model"}</div><div class="k" style="margin-top:4px">Foot traffic score</div><div class="big" style="color:var(--teal-bright)">${ctx.ftScore}<span style="font-size:16px;color:var(--txt-3)">/100</span></div><div class="desc">Estimated activity: ${escapeText(ctx.ftActivity)}. ${ctx.ftReal ? "Derived from MTA subway ridership near this location." : "Estimated from area density, transit, and commercial activity."}${ctx.areaBusyness?.available ? ` <b style="color:var(--teal-bright)">Real-world check:</b> nearby venues are busiest around ${escapeText(ctx.areaBusyness.peakLabel || "—")} (live data, below).` : ""}</div></div>
+    <div class="duo"><div class="metric"><div class="k">${escapeText(ctx.ftVisitorsLabel || "Est. daily foot traffic")}</div><div class="v" style="font-size:16px">${escapeText(ctx.ftVisitors)}</div><div class="src" style="margin-top:4px">${escapeText(ctx.ftVisitorsTag || "ESTIMATED RANGE")}</div></div><div class="metric"><div class="k">Walkability</div><div class="v">${ctx.ftWalk}<span class="u">/100</span> <span class="src" style="display:inline">PROJECTED</span></div></div></div>
+    <div class="card"><div class="statline"><span class="sl">Peak hours</span><span class="sv">${escapeText(ctx.ftPeak)}</span></div><div class="statline"><span class="sl">Weekday / weekend split</span><span class="sv">${escapeText(ctx.ftSplit)}</span></div><div class="src">Projected · SpotVest mobility model (peak hours &amp; split)</div></div>
+    <div class="card"><div class="sub">Foot traffic by hour</div><div class="chart" style="position:relative">${ctx.hourlyReal ? "" : `<span class="peaktag" style="left:34%;top:-2px">Lunch peak</span><span class="peaktag" style="left:72%;top:-2px">Dinner peak</span>`}<svg viewBox="0 0 320 130" style="margin-top:14px"><line class="gl" x1="0" y1="30" x2="320" y2="30"/><line class="gl" x1="0" y1="65" x2="320" y2="65"/><line class="gl" x1="0" y1="100" x2="320" y2="100"/>${ctx.footHourSVG}</svg><div style="display:flex;justify-content:space-between" class="axlab"><span>6a</span><span>9a</span><span>12p</span><span>3p</span><span>6p</span><span>9p</span><span>12a</span></div></div><div class="src">${ctx.hourlySource === "besttime" ? "Live · real venue busyness by hour near this location (Google Popular Times via BestTime)" : ctx.hourlySource === "mta" ? "Live · MTA subway ridership by hour near this location (Dec 2024)" : "Projected · category day-pattern scaled by area foot-traffic"}</div></div>
     <div class="card"><div class="sub">Weekday vs weekend demand</div><div class="chart"><svg viewBox="0 0 320 120"><g>${ctx.weekSVG}</g></svg><div style="display:flex;justify-content:space-between" class="axlab"><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span></div></div><div class="legend-row"><span class="li"><span class="sw" style="background:#3BD6C9"></span>Weekday</span><span class="li"><span class="sw" style="background:#5B8CFF"></span>Weekend</span></div></div>
     <div class="card"><div class="sub">Category saturation nearby</div>${cuisine}<div class="src">Google Places density · ${escapeText(ctx.radiusLabel)}</div></div>
     ${sv3DiningHTML(ctx)}`;
@@ -5041,7 +5041,7 @@ function sv3DiningHTML(ctx) {
     <div class="card accent">
       <div class="sub">How busy nearby restaurants are at peak</div>
       <div class="big" style="color:var(--teal-bright)">${escapeText(d.label || "Limited data")}<span style="font-size:15px;color:var(--txt-3)"> · ${safeNumber(d.score, 0)}/100</span></div>
-      <div class="desc">Strength from nearby restaurant density and Google review volume. The dinner/lunch/brunch split below is ${d.hourlySource === "besttime" ? "from <b>real venue busyness</b> by hour (Google Popular Times)" : d.hourlySource === "mta" ? "from real MTA ridership by hour" : "modeled from the area's day pattern"}. Strong nearby demand means diners already come here — a positive signal for a new food concept.</div>
+      <div class="desc">Strength from nearby restaurant density and Google review volume. The dinner/lunch/brunch split below is ${d.hourlySource === "besttime" ? "from <b>real venue busyness</b> by hour (Google Popular Times)" : d.hourlySource === "mta" ? "from real MTA ridership by hour" : "estimated from the area's day pattern"}. Strong nearby demand means diners already come here — a positive signal for a new food concept.</div>
       ${bar("Dinner (6–9pm)", safeNumber(d.dinnerV, 0))}
       ${bar("Lunch (12–2pm)", safeNumber(d.lunchV, 0))}
       ${bar("Late morning / brunch", safeNumber(d.brunchV, 0))}
@@ -5079,15 +5079,15 @@ function sv3RiskHTML(ctx) {
     ${alts}
     <div class="section-label"><span class="n">16</span> Viability benchmark</div>
     <div class="survival">
-      <div class="k" style="font-size:11px;letter-spacing:1.5px;font-weight:700;text-transform:uppercase;color:var(--txt-3);margin-bottom:6px">Modeled viability benchmark · ${escapeText(ctx.business.toLowerCase())} · ${escapeText(ctx.profile.name || "this area")}</div>
+      <div class="k" style="font-size:11px;letter-spacing:1.5px;font-weight:700;text-transform:uppercase;color:var(--txt-3);margin-bottom:6px">Projected viability benchmark · ${escapeText(ctx.business.toLowerCase())} · ${escapeText(ctx.profile.name || "this area")}</div>
       <div class="surv-big ${s.ok ? "ok" : "warn"}">${safeNumber(s.pct, 55)}%</div>
       <div class="survbar">
         <span class="live" style="width:${safeNumber(s.pct, 55)}%">${safeNumber(s.pct, 55)}% lower risk</span>
         <span class="closed" style="width:${100 - safeNumber(s.pct, 55)}%">${100 - safeNumber(s.pct, 55)}% pressure</span>
       </div>
       <div class="surv-vs"><span>More viable</span><span>More pressure</span></div>
-      <div class="desc" style="margin-top:12px"><b>Modeled benchmark — not a measured survival rate.</b> This is a directional screen from category sensitivity and local market pressure. SpotVest does not currently have a validated survival outcome model for this ZIP; treat this as diligence guidance, not proof of survival.</div>
-      <div class="src">Modeled · category sensitivity × local saturation</div>
+      <div class="desc" style="margin-top:12px"><b>Projected benchmark — not a measured survival rate.</b> This is a directional screen from category sensitivity and local market pressure. SpotVest does not currently have a validated survival outcome model for this ZIP; treat this as diligence guidance, not proof of survival.</div>
+      <div class="src">Projected · category sensitivity × local saturation</div>
     </div>
     <div class="section-label"><span class="n">17</span> Permit &amp; licensing roadmap</div>
     ${permitRows}
@@ -5120,12 +5120,12 @@ function sv3PnLHTML(ctx) {
 
     <div class="section-label"><span class="n">20</span> Cash needed to open</div>
     <div class="card accent">
-      <div class="k">Modeled cash to open + reserve</div>
+      <div class="k">Projected cash to open + reserve</div>
       <div class="cashbig">${sv3Money(c.low)}<span class="u"> – ${sv3Money(c.high)}</span></div>
       <div class="divider" style="margin:14px 0"></div>
       ${(c.items || []).map((i) => `<div class="cashitem"><span class="ci-l">${escapeText(i[0])}</span><span class="ci-v">${sv3Money(i[1])}</span></div>`).join("")}
-      <div class="desc" style="margin-top:12px">Buildout, fit-out, and stocking are scaled ×${c.factor || "1.00"} to this area's modeled cost level; deposit and reserve follow this area's rent. Modeled planning range only — not live contractor, landlord, bank, or vendor pricing. Verify real rent, buildout, equipment, permits, working capital, and operator costs before signing.</div>
-      <div class="src">Estimated planning model · category benchmarks × area cost level · modeled rent</div>
+      <div class="desc" style="margin-top:12px">Buildout, fit-out, and stocking are scaled ×${c.factor || "1.00"} to this area's estimated cost level; deposit and reserve follow this area's rent. Projected planning range only — not live contractor, landlord, bank, or vendor pricing. Verify real rent, buildout, equipment, permits, working capital, and operator costs before signing.</div>
+      <div class="src">Estimated planning model · category benchmarks × area cost level · estimated rent</div>
     </div>
 
     <div class="section-label"><span class="n">21</span> Scenarios · how the year could go</div>
@@ -5134,7 +5134,7 @@ function sv3PnLHTML(ctx) {
       ${scen("base", "var(--teal-bright)", "Base case", s.base || {})}
       ${scen("good", "var(--green)", "Best case", s.best || {})}
     </div>
-    <div class="card" style="margin-top:4px"><div class="desc" style="margin-top:0">Modeled monthly profit by scenario, from the revenue range and cost sensitivity. ${(s.worst && s.worst.profit < 0) ? "The worst case loses money — keep the reserve and a rent-to-sales ceiling." : "Even the base case can be thin, so keep the reserve."}</div><div class="src">Modeled · revenue range × cost sensitivity</div></div>
+    <div class="card" style="margin-top:4px"><div class="desc" style="margin-top:0">Projected monthly profit by scenario, from the revenue range and cost sensitivity. ${(s.worst && s.worst.profit < 0) ? "The worst case loses money — keep the reserve and a rent-to-sales ceiling." : "Even the base case can be thin, so keep the reserve."}</div><div class="src">Projected · revenue range × cost sensitivity</div></div>
 
     <div class="section-label"><span class="n">22</span> What would have to be true</div>
     <div class="card accent"><div class="desc" style="margin-top:0">To clear break-even you'd need roughly <b style="color:var(--teal-bright)">${w.custPerDay} customers/day</b> at a <b style="color:var(--teal-bright)">$${w.ticket} average ticket</b>, six days a week. ${ctx.ftReal ? "On a block with this much measured foot traffic, that capture rate is plausible — but it still depends on visibility and concept." : "Whether that capture rate is realistic depends on foot traffic, visibility and concept."}</div><div class="src">Derived · break-even ÷ avg ticket</div></div>`;
@@ -5145,24 +5145,24 @@ function sv3MoneyHTML(ctx) {
   const aud = ctx.profile.audience || [];
   const profileCards = aud.map((row) => `<div style="margin-bottom:14px"><div class="cvt" style="font-size:13.5px;font-weight:650">${escapeText(row[0])}</div><div class="cvd" style="font-size:12px;color:var(--txt-3);margin-top:3px">${escapeText(row[1])}</div></div>`).join("");
   return `
-    <div class="note" style="margin-top:18px"><b>Modeled estimates — not live financials.</b> SpotVest has live demographics and competition data, but not per-business revenue, costs, or seasonality. The figures below are projected from category economics, area income and the modeled local rent. Verify against real operator P&amp;Ls.</div>
+    <div class="note" style="margin-top:18px"><b>SpotVest estimates — not live financials.</b> SpotVest has live demographics and competition data, but not per-business revenue, costs, or seasonality. The figures below are projected from category economics, area income and the estimated local rent. Verify against real operator P&amp;Ls.</div>
     <div class="section-label"><span class="n">18</span> Cost vs revenue at a glance</div>
     <div class="cvr">
       <div class="cvr-row"><div class="lab"><span class="n">Projected revenue (low)</span><span class="v" style="color:var(--green)">${escapeText(revLow)}/mo</span></div><div class="tk"><div class="fl rev" style="width:100%"></div></div></div>
       <div class="cvr-row"><div class="lab"><span class="n">Est. total monthly cost</span><span class="v" style="color:var(--amber)">~${escapeText(cost)}/mo</span></div><div class="tk"><div class="fl cost" style="width:${ctx.costPct}%"></div></div></div>
-      <div class="desc" style="margin-top:4px">Base-case projected revenue vs. estimated total monthly cost (modeled at ~${ctx.costPct}% of revenue for this category). Confirm real rent and labor before committing.</div>
+      <div class="desc" style="margin-top:4px">Base-case projected revenue vs. estimated total monthly cost (estimated at ~${ctx.costPct}% of revenue for this category). Confirm real rent and labor before committing.</div>
     </div>
     ${sv3PnLHTML(ctx)}
-    <div class="card"><div class="sub">Revenue vs cost · first 24 months</div><div class="chart"><svg viewBox="0 0 320 150" style="margin-top:8px"><line class="gl" x1="0" y1="35" x2="320" y2="35"/><line class="gl" x1="0" y1="75" x2="320" y2="75"/><line class="gl" x1="0" y1="115" x2="320" y2="115"/><path d="${ctx.revCost.costLine}" fill="none" stroke="#FF6B6B" stroke-width="2.5"/><path d="${ctx.revCost.rev}" fill="none" stroke="#4ADE80" stroke-width="2.5"/><line x1="${ctx.revCost.x}" y1="18" x2="${ctx.revCost.x}" y2="140" stroke="rgba(57,194,214,.4)" stroke-width="1.5" stroke-dasharray="4 4"/><circle cx="${ctx.revCost.x}" cy="${ctx.revCost.cy}" r="4.5" fill="#4FE3D8" stroke="#0c1120" stroke-width="2"/></svg><div style="position:relative"><span class="peaktag" style="left:${Math.max(8, Math.min(82, Math.round(ctx.revCost.x / 320 * 100)))}%;top:-2px;transform:translateX(-50%)">Break-even ≈ ${escapeText(ctx.breakevenShort)}</span></div><div style="display:flex;justify-content:space-between;margin-top:10px" class="axlab"><span>Mo 1</span><span>6</span><span>12</span><span>18</span><span>24</span></div></div><div class="legend-row"><span class="li"><span class="sw" style="background:#4ADE80"></span>Projected revenue</span><span class="li"><span class="sw" style="background:#FF6B6B"></span>Total cost</span></div><div class="src">Modeled planning estimate · verify real P&amp;L before using with a client</div></div>
+    <div class="card"><div class="sub">Revenue vs cost · first 24 months</div><div class="chart"><svg viewBox="0 0 320 150" style="margin-top:8px"><line class="gl" x1="0" y1="35" x2="320" y2="35"/><line class="gl" x1="0" y1="75" x2="320" y2="75"/><line class="gl" x1="0" y1="115" x2="320" y2="115"/><path d="${ctx.revCost.costLine}" fill="none" stroke="#FF6B6B" stroke-width="2.5"/><path d="${ctx.revCost.rev}" fill="none" stroke="#4ADE80" stroke-width="2.5"/><line x1="${ctx.revCost.x}" y1="18" x2="${ctx.revCost.x}" y2="140" stroke="rgba(57,194,214,.4)" stroke-width="1.5" stroke-dasharray="4 4"/><circle cx="${ctx.revCost.x}" cy="${ctx.revCost.cy}" r="4.5" fill="#4FE3D8" stroke="#0c1120" stroke-width="2"/></svg><div style="position:relative"><span class="peaktag" style="left:${Math.max(8, Math.min(82, Math.round(ctx.revCost.x / 320 * 100)))}%;top:-2px;transform:translateX(-50%)">Break-even ≈ ${escapeText(ctx.breakevenShort)}</span></div><div style="display:flex;justify-content:space-between;margin-top:10px" class="axlab"><span>Mo 1</span><span>6</span><span>12</span><span>18</span><span>24</span></div></div><div class="legend-row"><span class="li"><span class="sw" style="background:#4ADE80"></span>Projected revenue</span><span class="li"><span class="sw" style="background:#FF6B6B"></span>Total cost</span></div><div class="src">Projected planning estimate · verify real P&amp;L before using with a client</div></div>
     <div class="card whatif"><div class="sub">What-if · drag to test the deal</div>
       <div style="margin-top:12px"><div class="rng-lab"><span>Monthly rent</span><span class="rv" id="sv3-wf-rent-l">$18,000</span></div><input type="range" class="rng" id="sv3-wf-rent" min="8000" max="35000" step="500" value="18000"></div>
       <div style="margin-top:16px"><div class="rng-lab"><span>Size (sq ft)</span><span class="rv" id="sv3-wf-size-l">1,200</span></div><input type="range" class="rng" id="sv3-wf-size" min="500" max="4000" step="50" value="1200"></div>
       <div class="wf-out"><div class="wf-box"><div class="k">Projected revenue</div><div class="v" id="sv3-wf-rev">$102k–$171k</div></div><div class="wf-box"><div class="k">Break-even</div><div class="v" id="sv3-wf-be">14–28 mo</div></div><div class="wf-box"><div class="k">Rent % of sales</div><div class="v" id="sv3-wf-pct">6%</div></div><div class="wf-box"><div class="k">Verdict</div><div class="v" id="sv3-wf-verd" style="color:var(--amber)">Conditional</div></div></div>
       <div class="src">Live estimate · recalculated locally</div>
     </div>
-    <div class="card"><div class="sub">Seasonality · projected demand by month</div><div class="chart"><svg viewBox="0 0 320 110"><g>${ctx.seasonSVG}</g></svg><div style="display:flex;justify-content:space-between" class="axlab"><span>J</span><span>F</span><span>M</span><span>A</span><span>M</span><span>J</span><span>J</span><span>A</span><span>S</span><span>O</span><span>N</span><span>D</span></div></div><div class="desc">Modeled from typical seasonality for this category — plan 2–3 months of runway for the slower months.</div><div class="src">Modeled estimate · category seasonality pattern</div></div>
+    <div class="card"><div class="sub">Seasonality · projected demand by month</div><div class="chart"><svg viewBox="0 0 320 110"><g>${ctx.seasonSVG}</g></svg><div style="display:flex;justify-content:space-between" class="axlab"><span>J</span><span>F</span><span>M</span><span>A</span><span>M</span><span>J</span><span>J</span><span>A</span><span>S</span><span>O</span><span>N</span><span>D</span></div></div><div class="desc">Estimated from typical seasonality for this category — plan 2–3 months of runway for the slower months.</div><div class="src">SpotVest estimate · category seasonality pattern</div></div>
     <div class="section-label"><span class="n">23</span> Revenue estimator · estimate only</div>
-    <div class="card"><div class="statline"><span class="sl">Projected monthly revenue</span><span class="sv" style="color:var(--teal-bright)">${escapeText(ctx.revenueProjection)}</span></div><div class="statline"><span class="sl">Break-even estimate</span><span class="sv">${escapeText(ctx.revenueBreakeven)}</span></div><div class="statline"><span class="sl">Rent %</span><span class="sv">${escapeText(ctx.revenueRentPercent)}</span></div><div class="desc" style="margin-top:12px">${escapeText(ctx.revenueNote)}</div><div class="src">Modeled estimate · scaled by local demand, foot traffic &amp; income (not actual sales). Rent affects break-even, not revenue.</div></div>
+    <div class="card"><div class="statline"><span class="sl">Projected monthly revenue</span><span class="sv" style="color:var(--teal-bright)">${escapeText(ctx.revenueProjection)}</span></div><div class="statline"><span class="sl">Break-even estimate</span><span class="sv">${escapeText(ctx.revenueBreakeven)}</span></div><div class="statline"><span class="sl">Rent %</span><span class="sv">${escapeText(ctx.revenueRentPercent)}</span></div><div class="desc" style="margin-top:12px">${escapeText(ctx.revenueNote)}</div><div class="src">SpotVest estimate · scaled by local demand, foot traffic &amp; income (not actual sales). Rent affects break-even, not revenue.</div></div>
     <div class="section-label"><span class="n">24</span> Customer profile</div>
     <div class="card">${profileCards}<div class="src">Census ACS 5-year · NYC Open Data</div></div>
     <div class="section-label"><span class="n">25</span> Market pulse</div>
@@ -5229,8 +5229,8 @@ function renderSpotVestV3(profile, recommendations, analysis) {
   const signalPills = [
     sv3Pill("Demographics", state.liveProfiles[state.zip] ? "Verified" : "Estimated"),
     sv3Pill("Competition", businessResult?.googlePlaces || businessResult?.registryExact ? "Verified" : "Estimated"),
-    sv3Pill("Mobility", siteIntelResult && !siteIntelResult.fallback ? "Verified" : "Modeled"),
-    sv3Pill("Foot traffic", "Modeled"),
+    sv3Pill("Mobility", siteIntelResult && !siteIntelResult.fallback ? "Verified" : "Estimated"),
+    sv3Pill("Foot traffic", ((sv3AreaBusyness && sv3AreaBusyness.key === state.zip && sv3AreaBusyness.data && sv3AreaBusyness.data.available) || (sv3FootReal && sv3FootReal.real)) ? "Verified" : "Estimated"),
     sv3Pill("Risk signals", civicResult && !civicResult.fallback ? "Verified" : "Partial"),
     sv3Pill("Demand", businessResult?.demandMomentum?.available ? "Light" : "Estimated")
   ].join("");
@@ -5303,7 +5303,7 @@ function renderSpotVestV3(profile, recommendations, analysis) {
   const revenueProjection = elements.revenueProjection?.textContent || "Run a location first";
   const revenueBreakeven = elements.revenueBreakeven?.textContent || "—";
   const revenueRentPercent = elements.revenueRentPercent?.textContent || "—";
-  const revenueNote = elements.revenueNote?.textContent || "Modeled ranges — verify against operator P&Ls.";
+  const revenueNote = elements.revenueNote?.textContent || "Projected ranges — verify against operator P&Ls.";
   const revNums = revenueProjection.match(/\$([\d.,]+)\s*[kK]?/g) || [];
   const parseK = (s) => { const n = Number(String(s).replace(/[^\d.]/g, "")); return /k/i.test(s) ? n : n / 1000; };
   const revLowNum = revNums.length ? parseK(revNums[0]) : 0;            // $k/mo (modeled, low)
@@ -5370,7 +5370,7 @@ function renderSpotVestV3(profile, recommendations, analysis) {
   const hourlySource = areaBz ? "besttime" : (footReal ? "mta" : null);
 
   // ---- v4 sections: P&L, cash-to-open, scenarios, what-be-true, permit,
-  // area dining, survival (modeled from real signals; honest labels) ----
+  // area dining, survival (estimated from real signals; honest labels) ----
   const bucket = sv3Bucket(state.business);
   const rentPctNum = Number((String(revenueRentPercent).match(/\d+/) || [0])[0]);
   const baseRev = Math.round(((revLowNum + revHighNum) / 2) * 1000);
@@ -5441,7 +5441,7 @@ function renderSpotVestV3(profile, recommendations, analysis) {
     ftReal: !!footReal,
     ftScore: footReal ? String(footReal.footPct) : (String(elements.footTrafficScore?.textContent || "").match(/\d+/) || ["60"])[0],
     ftActivity: footReal ? (footReal.footPct >= 74 ? "High" : footReal.footPct >= 48 ? "Medium" : "Low") : (elements.footTrafficActivity?.textContent || "Moderate").replace(/^Estimated Activity:\s*/i, "").replace(/\..*$/, ""),
-    ftBacking: footReal ? "live MTA ridership near this location" : "modeled estimate",
+    ftBacking: footReal ? "live MTA ridership near this location" : "estimate",
     // Rounded to avoid false precision. Real MTA ridership is a verified proxy;
     // the modeled path is already an estimated range. Tagged honestly.
     ftVisitors: footReal
@@ -5450,10 +5450,10 @@ function renderSpotVestV3(profile, recommendations, analysis) {
     // Verified figure is MTA station ridership — a proxy for foot traffic, NOT
     // a count of block visitors. Label it as riders, never "visitors".
     ftVisitorsLabel: footReal ? "Transit riders nearby" : "Est. daily foot traffic",
-    ftVisitorsTag: footReal ? "MTA ridership (verified) · proxy for foot traffic" : "MODELED RANGE",
+    ftVisitorsTag: footReal ? "MTA ridership (verified) · proxy for foot traffic" : "ESTIMATED RANGE",
     ftWalk: (String(elements.footTrafficWalkability?.textContent || "").match(/\d+/) || ["60"])[0],
     ftPeak: elements.footTrafficPeaks?.textContent || "Morning / lunch / evening",
-    ftSplit: (elements.footTrafficWeekSplit?.textContent || "").replace(/Weekday\s*/i, "").replace(/\s*\/\s*weekend\s*/i, " / ").replace(/\s*modeled split\.?$/i, "") || "64% / 36%",
+    ftSplit: (elements.footTrafficWeekSplit?.textContent || "").replace(/Weekday\s*/i, "").replace(/\s*\/\s*weekend\s*/i, " / ").replace(/\s*estimated split\.?$/i, "") || "64% / 36%",
     freshness: formatBadgeScore(analysis.validation.freshness), sourceQuality: formatBadgeScore(analysis.validation.sourceQuality),
     revenueProjection, revenueBreakeven, revenueRentPercent, revenueNote, revenueLowK, costK, costPct, breakevenShort,
     pulseFoot: sv3Level((String(elements.footTrafficScore?.textContent || "").match(/\d+/) || [String(safeNumber(profile.transit, 50))])[0]), pulseSpend: sv3Level(profile.income),
@@ -5559,7 +5559,7 @@ async function sv3LoadFootTraffic(center, key, profile, recommendations, analysi
     // Keep the cached mobility signal for the next render/tab refresh without
     // mutating the already-presented executive decision.
   } catch (e) {
-    sv3FootReal = { key, real: false }; // mark attempted; keep modeled fallback
+    sv3FootReal = { key, real: false }; // mark attempted; keep estimated fallback
   }
 }
 
@@ -6216,7 +6216,7 @@ function renderEvidenceCoverage(analysis) {
         : hasLocalActivity
           ? "Observed category activity is connected for this market."
           : businessFallback
-            ? "Live competitive visibility did not return in time; modeled pressure is active."
+            ? "Live competitive visibility did not return in time; estimated pressure is active."
             : "Competitive visibility is still being checked."
     },
     {
@@ -6233,9 +6233,9 @@ function renderEvidenceCoverage(analysis) {
       tone: hasLocalActivity ? "good" : "partial",
       copy: localMatches !== null
         ? businessFallback
-          ? "Modeled local activity is active until live matches return."
+          ? "Projected local activity is active until live matches return."
           : "Verified local activity matches inform category pressure."
-        : "SpotVest is using modeled activity until verified matches return."
+        : "SpotVest is using estimated activity until verified matches return."
     },
     {
       title: "Mobility and site signals",
@@ -6518,13 +6518,13 @@ function applyBusinessResult({ count, business, sourceNote, isLive, result, load
   } else {
     elements.businessVerdict.textContent = businessVerdictFor(saturation, profile, config, hasVisibleCompetitors);
   }
-  elements.businessReason.textContent = `${businessLabel} demand: ${config.notes} ${sourceNote || (isLive ? "Verified market signals are available." : "Modeled local estimate.")}`;
+  elements.businessReason.textContent = `${businessLabel} demand: ${config.notes} ${sourceNote || (isLive ? "Verified market signals are available." : "Projected local estimate.")}`;
   elements.heroBusiness.textContent = loading
     ? `Checking ${businessLabel} demand`
     : `${businessLabel} demand · ${saturationLabel(saturation)} competition`;
   setStatusPill(
     elements.heroSource,
-    state.location ? `Address radius: ${state.location.radiusMiles} mi` : isLive ? "Verified market signals" : "Modeled while signals load",
+    state.location ? `Address radius: ${state.location.radiusMiles} mi` : isLive ? "Verified market signals" : "Projected while signals load",
     loading ? "Refreshing" : isLive ? "Available" : "Estimated"
   );
   elements.heroMarket.textContent = `${saturationLabel(saturation)} competition`;
@@ -6650,7 +6650,7 @@ async function renderBusinessCheck() {
       displayBusiness: businessLabel,
       isLive: false,
       result: state.lastBusinessResult,
-      sourceNote: "Live lookup failed, so SpotVest is clearly marking this as a modeled estimate."
+      sourceNote: "Live lookup failed, so SpotVest is clearly marking this as a estimate."
     });
     const updatedRecommendations = buildRecommendations(profile);
     renderDecisionStrip(profile, updatedRecommendations);
@@ -6747,7 +6747,7 @@ function headlineFor(recommendations, profile) {
 function narrativeFor(zip, profile, recommendations) {
   const top = recommendations[0];
   const weak = [...recommendations].reverse()[0];
-  return `${zip} covers ${profile.name}. This looks like a ${profile.affluenceLabel.toLowerCase()} area. The strongest current fit is ${top.name.toLowerCase()} because the area scores well on the demand signals that category needs. The weakest modeled fit is ${weak.name.toLowerCase()}, mostly because its economics are less protected against this ZIP code's cost pressure, competition, or customer profile. Treat this as a first-pass business decision screen, then verify the exact block, frontage, cost terms, and live competitor data before making a recommendation.`;
+  return `${zip} covers ${profile.name}. This looks like a ${profile.affluenceLabel.toLowerCase()} area. The strongest current fit is ${top.name.toLowerCase()} because the area scores well on the demand signals that category needs. The weakest estimated fit is ${weak.name.toLowerCase()}, mostly because its economics are less protected against this ZIP code's cost pressure, competition, or customer profile. Treat this as a first-pass business decision screen, then verify the exact block, frontage, cost terms, and live competitor data before making a recommendation.`;
 }
 
 function render(zip, options = {}) {
@@ -6963,7 +6963,7 @@ function exportSummary() {
     ...recommendations.slice(0, 5).map((item) => `- ${item.name}: ${formatScore(item.score)} (${item.band})`),
     "",
     "Profit note:",
-    "Profit ranges in the app are modeled screening estimates, Due Diligence Required on operator profit.",
+    "Profit ranges in the app are projected screening estimates, Due Diligence Required on operator profit.",
     "",
     "Research signals:",
     ...profile.evidence.map((item) => `- ${item}`),
@@ -6982,7 +6982,7 @@ function exportSummary() {
 }
 
 // Print-to-PDF: the browser's "Save as PDF" renders the on-screen report, so
-// the Live/Modeled honesty labels carry straight into the exported document.
+// the Live/Projected honesty labels carry straight into the exported document.
 function setPrintMeta() {
   if (!elements.printMeta) return;
   const profile = profileForZip(state.zip);
@@ -7035,7 +7035,7 @@ function renderExecSummary() {
     : `No matching competitor records were returned for this exact search; treat competitive intensity as directional and verify on the block.`;
 
   // Financials (modeled).
-  const revenue = elements.revenueProjection?.textContent?.trim() || "Modeled on request";
+  const revenue = elements.revenueProjection?.textContent?.trim() || "Projected on request";
   const breakeven = elements.revenueBreakeven?.textContent?.trim() || "—";
   const rentPct = elements.revenueRentPercent?.textContent?.trim() || "—";
 
@@ -7086,7 +7086,7 @@ function renderExecSummary() {
 
       <section class="rd-section">
         <h2>Financial Considerations</h2>
-        ${para(`Modeled estimates (not live financials): projected monthly revenue ${revenue}, break-even ${breakeven}, with rent at approximately ${rentPct} of sales. These are derived from category economics, area income and modeled local rent — verify against real operator P&Ls before committing.`)}
+        ${para(`SpotVest estimates (not live financials): projected monthly revenue ${revenue}, break-even ${breakeven}, with rent at approximately ${rentPct} of sales. These are derived from category economics, area income and estimated local rent — verify against real operator P&Ls before committing.`)}
       </section>
 
       <section class="rd-section">
@@ -7106,7 +7106,7 @@ function renderExecSummary() {
       </section>
 
       <footer class="rd-foot">
-        Generated ${escapeText(generated)} by SpotVest. Modeled values are estimates, not guaranteed outcomes — Due Diligence Required on financials, lease terms, and operator strength. This report is decision-support intelligence, not brokerage, legal, or financial advice.
+        Generated ${escapeText(generated)} by SpotVest. Projected values are estimates, not guaranteed outcomes — Due Diligence Required on financials, lease terms, and operator strength. This report is decision-support intelligence, not brokerage, legal, or financial advice.
       </footer>
     </article>
   `;
