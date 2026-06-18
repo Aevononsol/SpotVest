@@ -4498,6 +4498,29 @@ function sv3WhatsAroundCard(ctx) {
   </div>`;
 }
 
+/* ---------- "Nearby busyness" — real venue foot traffic from BestTime (display only) ---------- */
+function sv3LiveBusynessCard(ctx) {
+  if (ctx.areaBusynessLoading) {
+    return `<div class="card"><div class="sub">Nearby busyness · live</div><div class="desc" style="margin-top:6px">Reading real venue busyness near here… (first time in a new area can take ~20s)</div></div>`;
+  }
+  const b = ctx.areaBusyness;
+  if (!b || !b.available || !Array.isArray(b.hourly)) return ""; // hide; the modeled foot-traffic card above still shows
+  const max = Math.max(1, ...b.hourly);
+  const bars = b.hourly.map((v, h) => {
+    const pct = Math.max(3, Math.round((v / max) * 100));
+    const peak = h === b.peakHour;
+    const hr = `${((h + 11) % 12) + 1}${h < 12 ? "AM" : "PM"}`;
+    return `<div title="${hr}: ${v}%" style="flex:1;display:flex;align-items:flex-end;height:48px"><div style="width:100%;border-radius:2px 2px 0 0;height:${pct}%;background:${peak ? "var(--teal-bright)" : "rgba(79,227,216,.32)"}"></div></div>`;
+  }).join("");
+  return `<div class="card">
+    <div class="sub">Nearby busyness · live</div>
+    <div class="big" style="font-size:18px;margin-top:2px">Busiest around <b style="color:var(--teal-bright)">${escapeText(b.peakLabel || "—")}</b></div>
+    <div style="display:flex;gap:1px;align-items:flex-end;margin-top:10px">${bars}</div>
+    <div style="display:flex;justify-content:space-between;font-size:9.5px;color:var(--txt-3);margin-top:4px"><span>12a</span><span>6a</span><span>12p</span><span>6p</span><span>11p</span></div>
+    <div class="src" style="margin-top:8px">Real venue busyness from ${formatInteger(b.venuesWithData)} places near here — Google Popular Times via BestTime. Hourly average, relative to each venue's weekly peak. Display only — not used in the score.</div>
+  </div>`;
+}
+
 /* ---------- "Business landscape (active)" — live NYC business records (display only) ---------- */
 function sv3BusinessLandscapeCard(ctx) {
   if (ctx.businessPatternsLoading) {
@@ -4630,6 +4653,20 @@ async function sv3LoadNearbyTransit(lat, lng, key) {
   // already committed and unaffected).
   if (state.location?.lat && state.location?.lng && `${state.location.lat},${state.location.lng}` === key) {
     try { safeUiUpdate("nearest transit (loaded)", () => renderInstitutionalAnalysis(profileForZip(state.zip), buildRecommendations(profileForZip(state.zip)))); } catch (e) { /* non-fatal */ }
+  }
+}
+let sv3AreaBusyness = null; // { key, loading, data } — real venue busyness (BestTime, display only)
+async function sv3LoadAreaBusyness(key, params) {
+  sv3AreaBusyness = { key, loading: true, data: null };
+  try {
+    const d = await (await fetch(`/api/area-foot-traffic?${params}`)).json();
+    sv3AreaBusyness = { key, loading: false, data: d };
+  } catch (e) {
+    sv3AreaBusyness = { key, loading: false, data: { available: false } };
+  }
+  // Re-render so the busyness card fills in (display only; score unaffected).
+  if (state.zip) {
+    try { safeUiUpdate("nearby busyness (loaded)", () => renderInstitutionalAnalysis(profileForZip(state.zip), buildRecommendations(profileForZip(state.zip)))); } catch (e) { /* non-fatal */ }
   }
 }
 let sv3NearbyConstruction = null; // { key, loading, data }
@@ -4959,6 +4996,7 @@ function sv3MarketHTML(ctx) {
     ${competitors}
     <div class="src" style="margin:-4px 2px 8px">Google Places · Yelp Fusion API</div>
     <div class="section-label"><span class="n">09</span> Foot traffic intelligence</div>
+    ${sv3LiveBusynessCard(ctx)}
     ${sv3NearestTransitCard(ctx)}
     ${sv3ConstructionCard(ctx)}
     ${sv3WhatsAroundCard(ctx)}
@@ -5338,6 +5376,8 @@ function renderSpotVestV3(profile, recommendations, analysis) {
     whatsAround: (sv3WhatsAround && state.location && sv3WhatsAround.key === `${state.location.lat},${state.location.lng}`) ? sv3WhatsAround.data : null,
     whatsAroundLoading: Boolean(sv3WhatsAround && sv3WhatsAround.loading && state.location && sv3WhatsAround.key === `${state.location.lat},${state.location.lng}`),
     businessPatterns: (sv3BusinessPatterns && sv3BusinessPatterns.zip === state.zip) ? sv3BusinessPatterns.data : null,
+    areaBusyness: (sv3AreaBusyness && sv3AreaBusyness.key === state.zip) ? sv3AreaBusyness.data : null,
+    areaBusynessLoading: Boolean(sv3AreaBusyness && sv3AreaBusyness.loading && sv3AreaBusyness.key === state.zip),
     businessPatternsLoading: Boolean(sv3BusinessPatterns && sv3BusinessPatterns.loading && sv3BusinessPatterns.zip === state.zip),
     liveCompetitors: (function () { const b = currentBusinessResult(); return b && typeof b.count === "number" ? b.count : null; })(),
     point: state.location?.lat && state.location?.lng ? { lat: state.location.lat, lng: state.location.lng } : null,
@@ -5473,6 +5513,13 @@ function renderSpotVestV3(profile, recommendations, analysis) {
   // Official ZBP counts are ZIP-keyed — load regardless of address/area mode.
   if (state.zip && (!sv3BusinessPatterns || sv3BusinessPatterns.zip !== state.zip)) {
     sv3LoadBusinessPatterns(state.zip);
+  }
+  // Real venue busyness (BestTime) — keyed by ZIP, cached server-side per area.
+  if (state.zip && (!sv3AreaBusyness || sv3AreaBusyness.key !== state.zip)) {
+    const p = new URLSearchParams({ zip: state.zip });
+    if (state.location?.lat && state.location?.lng) { p.set("lat", state.location.lat); p.set("lng", state.location.lng); }
+    if (state.location?.address) p.set("address", state.location.address);
+    sv3LoadAreaBusyness(state.zip, p.toString());
   }
 }
 

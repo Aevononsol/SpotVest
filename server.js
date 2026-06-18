@@ -2888,6 +2888,10 @@ async function businessLandscape(zip) {
 function besttimeConfigured() {
   return Boolean(process.env.BESTTIME_API_KEY);
 }
+// Per-area busyness cache: build an area once (spends credits), then serve it
+// free for a week so customer reports stay instant and cheap.
+const besttimeAreaCache = new Map();
+const BESTTIME_AREA_TTL = 7 * 24 * 60 * 60 * 1000;
 
 // Pull real venue busyness near a point from BestTime (built on Google Popular
 // Times — aggregated, anonymized phone-location data). Defensive parser: the
@@ -5400,6 +5404,54 @@ createServer(async (request, response) => {
         sendJson(response, 200, await businessLandscape(zip));
       } catch (error) {
         sendJson(response, 200, { available: false, unavailable: true });
+      }
+      return;
+    }
+
+    if (url.pathname === "/api/area-foot-traffic") {
+      const zip = String(url.searchParams.get("zip") || "").trim();
+      const lat = Number(url.searchParams.get("lat"));
+      const lng = Number(url.searchParams.get("lng"));
+      const address = safeText(url.searchParams.get("address"), 120);
+      if (!besttimeConfigured()) {
+        sendJson(response, 200, { configured: false, available: false });
+        return;
+      }
+      const areaKey = /^\d{5}$/.test(zip) ? zip
+        : (Number.isFinite(lat) && Number.isFinite(lng) ? `${lat.toFixed(3)},${lng.toFixed(3)}` : "");
+      if (!areaKey) {
+        sendJson(response, 400, { error: "Provide a ZIP or lat/lng." });
+        return;
+      }
+      const clean = (r) => ({
+        configured: true,
+        available: Boolean(r.available),
+        hourly: r.hourly || null,
+        peakHour: r.peakHour ?? null,
+        peakLabel: r.peakLabel || null,
+        peakBusyness: r.peakBusyness ?? null,
+        venuesWithData: r.venuesWithData || 0,
+        cached: Boolean(r.cached),
+        source: r.source || "BestTime venue busyness (Google Popular Times)"
+      });
+      const hit = besttimeAreaCache.get(areaKey);
+      if (hit && Date.now() - hit.at < BESTTIME_AREA_TTL) {
+        sendJson(response, 200, clean({ ...hit.data, cached: true }));
+        return;
+      }
+      const hasLoc = Number.isFinite(lat) && Number.isFinite(lng);
+      const q = address ? `restaurants near ${address}` : `restaurants in ${zip} New York`;
+      try {
+        // Cheap read first (cached venues, no new credits). If the area was
+        // never built, forecast it once (spends credits, slower) and cache it.
+        let result = await besttimeAreaForecast({ q, lat: hasLoc ? lat : undefined, lng: hasLoc ? lng : undefined, radius: 1000, fast: true });
+        if (!result.available) {
+          result = await besttimeAreaForecast({ q, lat: hasLoc ? lat : undefined, lng: hasLoc ? lng : undefined, radius: 1000, fast: false });
+        }
+        if (result.available) besttimeAreaCache.set(areaKey, { at: Date.now(), data: result });
+        sendJson(response, 200, clean(result));
+      } catch (error) {
+        sendJson(response, 200, { configured: true, available: false });
       }
       return;
     }
