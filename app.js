@@ -4498,6 +4498,22 @@ function sv3WhatsAroundCard(ctx) {
   </div>`;
 }
 
+/* ---------- Real-busyness insight helper (from BestTime hourly curve) ---------- */
+function sv3BusynessInsight(b) {
+  if (!b || !b.available || !Array.isArray(b.hourly) || b.hourly.length < 24) return null;
+  const h = b.hourly;
+  const avg = (a, z) => { let s = 0, n = 0; for (let i = a; i <= z; i++) { s += h[i] || 0; n++; } return n ? s / n : 0; };
+  const windows = [
+    ["morning", avg(6, 10), "Morning-driven — coffee, breakfast, and grab-and-go fit best here."],
+    ["lunch", avg(11, 14), "Daytime-driven — lunch spots, cafés, and daytime retail fit best here."],
+    ["afternoon", avg(15, 16), "Afternoon-driven — daytime retail and cafés do well here."],
+    ["evening", avg(17, 21), "Evening-driven — dinner, bars, and nightlife concepts fit best here."],
+    ["late night", ((h[22] || 0) + (h[23] || 0) + (h[0] || 0)) / 3, "Late-night block — bars and nightlife drive the traffic here."]
+  ].sort((a, c) => c[1] - a[1]);
+  const peakLabel = b.peakLabel || null;
+  return { verdict: windows[0][2], topWindow: windows[0][0], peakLabel };
+}
+
 /* ---------- "Nearby busyness" — real venue foot traffic from BestTime (display only) ---------- */
 function sv3LiveBusynessCard(ctx) {
   if (ctx.areaBusynessLoading) {
@@ -4512,11 +4528,13 @@ function sv3LiveBusynessCard(ctx) {
     const hr = `${((h + 11) % 12) + 1}${h < 12 ? "AM" : "PM"}`;
     return `<div title="${hr}: ${v}%" style="flex:1;display:flex;align-items:flex-end;height:48px"><div style="width:100%;border-radius:2px 2px 0 0;height:${pct}%;background:${peak ? "var(--teal-bright)" : "rgba(79,227,216,.32)"}"></div></div>`;
   }).join("");
+  const insight = sv3BusynessInsight(b);
   return `<div class="card">
     <div class="sub">Nearby busyness · live</div>
     <div class="big" style="font-size:18px;margin-top:2px">Busiest around <b style="color:var(--teal-bright)">${escapeText(b.peakLabel || "—")}</b></div>
     <div style="display:flex;gap:1px;align-items:flex-end;margin-top:10px">${bars}</div>
     <div style="display:flex;justify-content:space-between;font-size:9.5px;color:var(--txt-3);margin-top:4px"><span>12a</span><span>6a</span><span>12p</span><span>6p</span><span>11p</span></div>
+    ${insight ? `<div class="desc" style="margin-top:10px"><b>${escapeText(insight.verdict)}</b></div>` : ""}
     <div class="src" style="margin-top:8px">Real venue busyness from ${formatInteger(b.venuesWithData)} places near here — Google Popular Times via BestTime. Hourly average, relative to each venue's weekly peak. Display only — not used in the score.</div>
   </div>`;
 }
@@ -4610,7 +4628,8 @@ function sv3OverviewHTML(ctx) {
     <div class="bottomline">
       <div class="bt">Bottom line for the owner</div>
       <p>${ctx.bottomLine}</p>
-      <div class="src">Generated · OpenAI summary over SpotVest signals</div>
+      ${ctx.areaBusyness?.available ? `<p style="margin-top:8px"><b style="color:var(--teal-bright)">Real foot-traffic check:</b> nearby venues are busiest around <b>${escapeText(ctx.areaBusyness.peakLabel || "—")}</b> — ${escapeText((sv3BusynessInsight(ctx.areaBusyness) || {}).verdict || "live busyness data, full hourly chart inside.")}</p>` : ""}
+      <div class="src">Generated · OpenAI summary over SpotVest signals${ctx.areaBusyness?.available ? " · live busyness via BestTime" : ""}</div>
     </div>
     ${/CONDITIONAL/i.test(ctx.decision) ? `<div class="section-label"><span class="n">!</span> Conditions to open</div><div class="card accent"><div class="sub">This location works for ${escapeText(ctx.business.toLowerCase())} only if</div><ul class="bullets">${(ctx.conditions || []).slice(0, 5).map(sv3SplitLabel).join("") || "<li>Verify site economics before committing.</li>"}</ul></div>` : ""}
     <div class="duo">
@@ -5000,7 +5019,7 @@ function sv3MarketHTML(ctx) {
     ${sv3NearestTransitCard(ctx)}
     ${sv3ConstructionCard(ctx)}
     ${sv3WhatsAroundCard(ctx)}
-    <div class="card accent"><div class="sub">${ctx.ftReal ? "Live signal · MTA ridership near this point" : "Modeled estimate · SpotVest location model"}</div><div class="k" style="margin-top:4px">Foot traffic score</div><div class="big" style="color:var(--teal-bright)">${ctx.ftScore}<span style="font-size:16px;color:var(--txt-3)">/100</span></div><div class="desc">Estimated activity: ${escapeText(ctx.ftActivity)}. ${ctx.ftReal ? "Derived from MTA subway ridership near this location." : "Modeled from area density, transit, and commercial activity."}</div></div>
+    <div class="card accent"><div class="sub">${ctx.ftReal ? "Live signal · MTA ridership near this point" : "Modeled estimate · SpotVest location model"}</div><div class="k" style="margin-top:4px">Foot traffic score</div><div class="big" style="color:var(--teal-bright)">${ctx.ftScore}<span style="font-size:16px;color:var(--txt-3)">/100</span></div><div class="desc">Estimated activity: ${escapeText(ctx.ftActivity)}. ${ctx.ftReal ? "Derived from MTA subway ridership near this location." : "Modeled from area density, transit, and commercial activity."}${ctx.areaBusyness?.available ? ` <b style="color:var(--teal-bright)">Real-world check:</b> nearby venues are busiest around ${escapeText(ctx.areaBusyness.peakLabel || "—")} (live data, below).` : ""}</div></div>
     <div class="duo"><div class="metric"><div class="k">${escapeText(ctx.ftVisitorsLabel || "Est. daily foot traffic")}</div><div class="v" style="font-size:16px">${escapeText(ctx.ftVisitors)}</div><div class="src" style="margin-top:4px">${escapeText(ctx.ftVisitorsTag || "MODELED RANGE")}</div></div><div class="metric"><div class="k">Walkability</div><div class="v">${ctx.ftWalk}<span class="u">/100</span> <span class="src" style="display:inline">MODELED</span></div></div></div>
     <div class="card"><div class="statline"><span class="sl">Peak hours</span><span class="sv">${escapeText(ctx.ftPeak)}</span></div><div class="statline"><span class="sl">Weekday / weekend split</span><span class="sv">${escapeText(ctx.ftSplit)}</span></div><div class="src">Modeled · SpotVest mobility model (peak hours &amp; split)</div></div>
     <div class="card"><div class="sub">Foot traffic by hour</div><div class="chart" style="position:relative">${ctx.ftReal ? "" : `<span class="peaktag" style="left:34%;top:-2px">Lunch peak</span><span class="peaktag" style="left:72%;top:-2px">Dinner peak</span>`}<svg viewBox="0 0 320 130" style="margin-top:14px"><line class="gl" x1="0" y1="30" x2="320" y2="30"/><line class="gl" x1="0" y1="65" x2="320" y2="65"/><line class="gl" x1="0" y1="100" x2="320" y2="100"/>${ctx.footHourSVG}</svg><div style="display:flex;justify-content:space-between" class="axlab"><span>6a</span><span>9a</span><span>12p</span><span>3p</span><span>6p</span><span>9p</span><span>12a</span></div></div><div class="src">${ctx.ftReal ? "Live · MTA subway ridership by hour near this location (Dec 2024)" : "Modeled · category day-pattern scaled by area foot-traffic"}</div></div>
