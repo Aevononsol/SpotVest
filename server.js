@@ -2906,9 +2906,11 @@ async function besttimeJson(url, { method = "GET", timeoutMs = 15000 } = {}) {
   }
 }
 
-async function besttimeAreaForecast({ q, lat, lng, radius, num = 20, fast = false } = {}) {
+async function besttimeAreaForecast({ q, lat, lng, radius, num = 20, fast = true } = {}) {
   if (!besttimeConfigured()) return { configured: false, available: false };
   const key = process.env.BESTTIME_API_KEY;
+  // fast=true returns venues already cached in the account WITHOUT spending new
+  // forecast credits — so once an area is built, repeat lookups are cheap/free.
   // BestTime geocodes the q TEXT, so it must include a location ("restaurants
   // in New York City") — a bare "restaurants" returns nothing.
   const url = new URL("https://besttime.app/api/v1/venues/search");
