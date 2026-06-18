@@ -4603,6 +4603,30 @@ function sv3BestDaysHoursCard(ctx) {
   </div>`;
 }
 
+/* ---------- "Busiest blocks nearby" — ranked streets from BestTime (display only) ---------- */
+function sv3BusiestBlocksCard(ctx) {
+  const b = ctx.areaBusyness;
+  if (!b || !b.available || !Array.isArray(b.blocks) || b.blocks.length < 2) return "";
+  const max = Math.max(1, ...b.blocks.map((x) => x.busyness));
+  const rows = b.blocks.map((x, i) => {
+    const pct = Math.max(6, Math.round((x.busyness / max) * 100));
+    const lead = i === 0;
+    return `<div class="vs-row" style="align-items:center">
+      <div class="vs-main">
+        <div class="vs-addr">${i + 1}. ${escapeText(x.street)}${lead ? ' <span class="vs-badge ok">busiest</span>' : ""}</div>
+        <div class="dtrack" style="margin-top:6px"><div class="dfill" style="width:${pct}%;background:${lead ? "var(--teal-bright)" : "rgba(79,227,216,.45)"}"></div></div>
+      </div>
+      <span class="dv" style="color:var(--teal-bright);min-width:54px;text-align:right">${x.busyness}%<span class="u" style="display:block;font-size:9px;color:var(--txt-3)">${formatInteger(x.venues)} venues</span></span>
+    </div>`;
+  }).join("");
+  return `<div class="card">
+    <div class="sub">Busiest blocks nearby</div>
+    <div class="desc" style="margin-top:4px">Streets near here ranked by how busy their venues get — where the foot traffic actually concentrates.</div>
+    <div class="vs-list" style="margin-top:8px">${rows}</div>
+    <div class="src" style="margin-top:6px">Average venue peak busyness per street (Google Popular Times via BestTime). Display only — not used in the score.</div>
+  </div>`;
+}
+
 /* ---------- "Business landscape (active)" — live NYC business records (display only) ---------- */
 function sv3BusinessLandscapeCard(ctx) {
   if (ctx.businessPatternsLoading) {
@@ -5087,6 +5111,7 @@ function sv3MarketHTML(ctx) {
     <div class="section-label"><span class="n">08</span> Foot traffic intelligence</div>
     ${sv3LiveBusynessCard(ctx)}
     ${sv3BestDaysHoursCard(ctx)}
+    ${sv3BusiestBlocksCard(ctx)}
     ${sv3NearestTransitCard(ctx)}
     ${sv3ConstructionCard(ctx)}
     ${sv3WhatsAroundCard(ctx)}

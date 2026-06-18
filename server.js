@@ -2975,9 +2975,13 @@ async function besttimeAreaForecast({ q, lat, lng, radius, num = 20, fast = true
   const dayTotals = Array.from({ length: 7 }, () => new Array(24).fill(0));
   const dayCounts = new Array(7).fill(0);
   const isHourArray = (a) => Array.isArray(a) && a.length === 24 && a.every((n) => typeof n === "number" && n >= 0 && n <= 100);
+  // Group venues by street so we can rank the busiest blocks in the area.
+  const streetOf = (addr) => String(addr || "").split(",")[0].trim().replace(/^\d+[-–]?\d*\s+/, "").trim();
+  const blockMap = new Map(); // street -> { sum, count }
   for (const venue of venues) {
     const forecast = Array.isArray(venue?.venue_foot_traffic_forecast) ? venue.venue_foot_traffic_forecast
       : Array.isArray(venue?.analysis) ? venue.analysis : [];
+    let venuePeak = 0;
     for (const day of forecast) {
       const raw = day?.day_raw || day?.dayRaw;
       let di = day?.day_info?.day_int;
@@ -2986,8 +2990,20 @@ async function besttimeAreaForecast({ q, lat, lng, radius, num = 20, fast = true
       di = ((Number(di) % 7) + 7) % 7;
       for (let h = 0; h < 24; h++) dayTotals[di][h] += raw[h] || 0;
       dayCounts[di] += 1;
+      venuePeak = Math.max(venuePeak, ...raw);
+    }
+    const street = streetOf(venue?.venue_address);
+    if (street && venuePeak > 0) {
+      const e = blockMap.get(street) || { sum: 0, count: 0 };
+      e.sum += venuePeak; e.count += 1; blockMap.set(street, e);
     }
   }
+  // Busiest blocks: streets with at least 2 venues, ranked by average peak.
+  const blocks = [...blockMap.entries()]
+    .filter(([, e]) => e.count >= 2)
+    .map(([street, e]) => ({ street: safeText(street, 60), busyness: Math.round(e.sum / e.count), venues: e.count }))
+    .sort((a, c) => c.busyness - a.busyness)
+    .slice(0, 6);
   const haveDays = dayCounts.some((c) => c > 0);
   const dayCurves = dayTotals.map((tot, di) => dayCounts[di] ? tot.map((v) => v / dayCounts[di]) : null);
   const dayMean = (c) => c ? c.reduce((s, v) => s + v, 0) / 24 : null;
@@ -3044,6 +3060,7 @@ async function besttimeAreaForecast({ q, lat, lng, radius, num = 20, fast = true
     venuesReturned: venues.length,
     venuesWithData: counted,
     venueRefs,
+    blocks,
     daily,
     hourly: counted ? area : null,
     peakHour,
@@ -5504,6 +5521,7 @@ createServer(async (request, response) => {
         available: Boolean(r.available),
         hourly: r.hourly || null,
         daily: r.daily || null,
+        blocks: r.blocks || null,
         peakHour: r.peakHour ?? null,
         peakLabel: r.peakLabel || null,
         peakBusyness: r.peakBusyness ?? null,
