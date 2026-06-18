@@ -4963,7 +4963,7 @@ function sv3WhatToBeTrue(rentDollars, bucket) {
   const breakevenRev = rentDollars / (1 - varRatio);
   return { custPerDay: Math.max(10, Math.round(breakevenRev / cs.ticket / 26)), ticket: cs.ticket };
 }
-function sv3DiningDemand(businessResult, hourly) {
+function sv3DiningDemand(businessResult, hourly, hourlySource) {
   const gp = businessResult && businessResult.googlePlaces;
   const count = safeNumber(gp && gp.count, 0);
   const reviews = safeNumber(gp && gp.reviewCount, 0);
@@ -4977,7 +4977,7 @@ function sv3DiningDemand(businessResult, hourly) {
   const brunchV = hourly ? Math.round((avg(10, 13) || 0) * 100) : Math.max(45, score - 2);
   const hardest = (gp && gp.topPlaces || []).slice().sort((a, b) => safeNumber(b.reviews, 0) - safeNumber(a.reviews, 0)).slice(0, 3);
   const maxRev = Math.max(1, ...hardest.map((p) => safeNumber(p.reviews, 0)));
-  return { score, label, dinnerV, lunchV, brunchV, hourlyReal: Array.isArray(hourly), count,
+  return { score, label, dinnerV, lunchV, brunchV, hourlyReal: Array.isArray(hourly), hourlySource: hourlySource || null, count,
     hardest: hardest.map((p) => ({ name: p.name || "Operator", pct: Math.max(35, Math.round(safeNumber(p.reviews, 0) / maxRev * 100)) })) };
 }
 function sv3Survival(bucket, pressure) {
@@ -5022,7 +5022,7 @@ function sv3MarketHTML(ctx) {
     <div class="card accent"><div class="sub">${ctx.ftReal ? "Live signal · MTA ridership near this point" : "Modeled estimate · SpotVest location model"}</div><div class="k" style="margin-top:4px">Foot traffic score</div><div class="big" style="color:var(--teal-bright)">${ctx.ftScore}<span style="font-size:16px;color:var(--txt-3)">/100</span></div><div class="desc">Estimated activity: ${escapeText(ctx.ftActivity)}. ${ctx.ftReal ? "Derived from MTA subway ridership near this location." : "Modeled from area density, transit, and commercial activity."}${ctx.areaBusyness?.available ? ` <b style="color:var(--teal-bright)">Real-world check:</b> nearby venues are busiest around ${escapeText(ctx.areaBusyness.peakLabel || "—")} (live data, below).` : ""}</div></div>
     <div class="duo"><div class="metric"><div class="k">${escapeText(ctx.ftVisitorsLabel || "Est. daily foot traffic")}</div><div class="v" style="font-size:16px">${escapeText(ctx.ftVisitors)}</div><div class="src" style="margin-top:4px">${escapeText(ctx.ftVisitorsTag || "MODELED RANGE")}</div></div><div class="metric"><div class="k">Walkability</div><div class="v">${ctx.ftWalk}<span class="u">/100</span> <span class="src" style="display:inline">MODELED</span></div></div></div>
     <div class="card"><div class="statline"><span class="sl">Peak hours</span><span class="sv">${escapeText(ctx.ftPeak)}</span></div><div class="statline"><span class="sl">Weekday / weekend split</span><span class="sv">${escapeText(ctx.ftSplit)}</span></div><div class="src">Modeled · SpotVest mobility model (peak hours &amp; split)</div></div>
-    <div class="card"><div class="sub">Foot traffic by hour</div><div class="chart" style="position:relative">${ctx.ftReal ? "" : `<span class="peaktag" style="left:34%;top:-2px">Lunch peak</span><span class="peaktag" style="left:72%;top:-2px">Dinner peak</span>`}<svg viewBox="0 0 320 130" style="margin-top:14px"><line class="gl" x1="0" y1="30" x2="320" y2="30"/><line class="gl" x1="0" y1="65" x2="320" y2="65"/><line class="gl" x1="0" y1="100" x2="320" y2="100"/>${ctx.footHourSVG}</svg><div style="display:flex;justify-content:space-between" class="axlab"><span>6a</span><span>9a</span><span>12p</span><span>3p</span><span>6p</span><span>9p</span><span>12a</span></div></div><div class="src">${ctx.ftReal ? "Live · MTA subway ridership by hour near this location (Dec 2024)" : "Modeled · category day-pattern scaled by area foot-traffic"}</div></div>
+    <div class="card"><div class="sub">Foot traffic by hour</div><div class="chart" style="position:relative">${ctx.hourlyReal ? "" : `<span class="peaktag" style="left:34%;top:-2px">Lunch peak</span><span class="peaktag" style="left:72%;top:-2px">Dinner peak</span>`}<svg viewBox="0 0 320 130" style="margin-top:14px"><line class="gl" x1="0" y1="30" x2="320" y2="30"/><line class="gl" x1="0" y1="65" x2="320" y2="65"/><line class="gl" x1="0" y1="100" x2="320" y2="100"/>${ctx.footHourSVG}</svg><div style="display:flex;justify-content:space-between" class="axlab"><span>6a</span><span>9a</span><span>12p</span><span>3p</span><span>6p</span><span>9p</span><span>12a</span></div></div><div class="src">${ctx.hourlySource === "besttime" ? "Live · real venue busyness by hour near this location (Google Popular Times via BestTime)" : ctx.hourlySource === "mta" ? "Live · MTA subway ridership by hour near this location (Dec 2024)" : "Modeled · category day-pattern scaled by area foot-traffic"}</div></div>
     <div class="card"><div class="sub">Weekday vs weekend demand</div><div class="chart"><svg viewBox="0 0 320 120"><g>${ctx.weekSVG}</g></svg><div style="display:flex;justify-content:space-between" class="axlab"><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span></div></div><div class="legend-row"><span class="li"><span class="sw" style="background:#3BD6C9"></span>Weekday</span><span class="li"><span class="sw" style="background:#5B8CFF"></span>Weekend</span></div></div>
     <div class="card"><div class="sub">Category saturation nearby</div>${cuisine}<div class="src">Google Places density · ${escapeText(ctx.radiusLabel)}</div></div>
     ${sv3DiningHTML(ctx)}`;
@@ -5041,11 +5041,11 @@ function sv3DiningHTML(ctx) {
     <div class="card accent">
       <div class="sub">How busy nearby restaurants are at peak</div>
       <div class="big" style="color:var(--teal-bright)">${escapeText(d.label || "Limited data")}<span style="font-size:15px;color:var(--txt-3)"> · ${safeNumber(d.score, 0)}/100</span></div>
-      <div class="desc">Modeled from nearby restaurant density, Google review volume${d.hourlyReal ? " and real MTA ridership by hour" : ""}. Strong nearby demand means diners already come to this area — a positive signal for a new food concept.</div>
+      <div class="desc">Strength from nearby restaurant density and Google review volume. The dinner/lunch/brunch split below is ${d.hourlySource === "besttime" ? "from <b>real venue busyness</b> by hour (Google Popular Times)" : d.hourlySource === "mta" ? "from real MTA ridership by hour" : "modeled from the area's day pattern"}. Strong nearby demand means diners already come here — a positive signal for a new food concept.</div>
       ${bar("Dinner (6–9pm)", safeNumber(d.dinnerV, 0))}
       ${bar("Lunch (12–2pm)", safeNumber(d.lunchV, 0))}
       ${bar("Late morning / brunch", safeNumber(d.brunchV, 0))}
-      <div class="src">${d.hourlyReal ? "Google Places density · MTA ridership by hour · 0.5 mi" : "Google Places density · area foot-traffic · 0.5 mi"}</div>
+      <div class="src">${d.hourlySource === "besttime" ? "Google Places density · real venue busyness by hour (BestTime) · 0.5 mi" : d.hourlySource === "mta" ? "Google Places density · MTA ridership by hour · 0.5 mi" : "Google Places density · area foot-traffic · 0.5 mi"}</div>
     </div>
     ${hardest}`;
 }
@@ -5362,6 +5362,12 @@ function renderSpotVestV3(profile, recommendations, analysis) {
   // Real per-location foot traffic from MTA ridership (fetched async below).
   const centerKey = `${mapCenter[0].toFixed(3)},${mapCenter[1].toFixed(3)}`;
   const footReal = sv3FootReal && sv3FootReal.key === centerKey && sv3FootReal.real ? sv3FootReal : null;
+  // ONE real hourly curve for every foot-traffic card so they all agree. Prefer
+  // BestTime venue busyness (0-100 → 0-1), then MTA ridership, then modeled.
+  const areaBz = (sv3AreaBusyness && sv3AreaBusyness.key === state.zip && sv3AreaBusyness.data
+    && sv3AreaBusyness.data.available && Array.isArray(sv3AreaBusyness.data.hourly)) ? sv3AreaBusyness.data : null;
+  const unifiedHourly = areaBz ? areaBz.hourly.map((v) => (Number(v) || 0) / 100) : (footReal ? footReal.hourly : null);
+  const hourlySource = areaBz ? "besttime" : (footReal ? "mta" : null);
 
   // ---- v4 sections: P&L, cash-to-open, scenarios, what-be-true, permit,
   // area dining, survival (modeled from real signals; honest labels) ----
@@ -5376,7 +5382,7 @@ function renderSpotVestV3(profile, recommendations, analysis) {
   const cashOpen = sv3CashToOpen(bucket, rentDollars, safeNumber(profile.rent, 50));
   const scenarios = sv3ScenariosData(revLowNum, revHighNum, rentDollars, bucket);
   const wtbt = sv3WhatToBeTrue(rentDollars, bucket);
-  const dining = sv3DiningDemand(currentBusinessResult(), footReal ? footReal.hourly : null);
+  const dining = sv3DiningDemand(currentBusinessResult(), unifiedHourly, hourlySource);
   const survival = sv3Survival(bucket, pressure);
   const permit = sv3PermitRoadmap(bucket);
 
@@ -5453,7 +5459,9 @@ function renderSpotVestV3(profile, recommendations, analysis) {
     pulseFoot: sv3Level((String(elements.footTrafficScore?.textContent || "").match(/\d+/) || [String(safeNumber(profile.transit, 50))])[0]), pulseSpend: sv3Level(profile.income),
     pulseCost: safeNumber(profile.rent, 50) >= 70 ? "Elevated" : "Manageable",
     chainFitPct: sv3Pct(safeNumber(profile.chainFit, 50)),
-    footHourSVG: sv3FootHourSVG(state.business, ftScoreNum, seed, footReal ? footReal.hourly : null),
+    footHourSVG: sv3FootHourSVG(state.business, ftScoreNum, seed, unifiedHourly),
+    hourlySource,
+    hourlyReal: Boolean(hourlySource),
     weekSVG: sv3WeekSVG(weekdayPct),
     revCost: sv3RevCostSVG(beMonth, costFrac),
     seasonSVG: sv3SeasonSVG(state.business, ftScoreNum),
