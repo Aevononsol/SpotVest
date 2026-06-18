@@ -2894,14 +2894,19 @@ function besttimeConfigured() {
 // venue object shape can vary, so we scan each venue for any 24-length hourly
 // busyness array (0-100%, 100 = the venue's weekly peak) and average across
 // venues to get an AREA busyness curve. Returns a `sample` for diagnostics.
-async function besttimeAreaForecast(lat, lng, { radius = 400, query = "restaurants", num = 20, fast = true } = {}) {
+async function besttimeAreaForecast({ q, lat, lng, radius, num = 20, fast = true } = {}) {
   if (!besttimeConfigured()) return { configured: false, available: false };
+  // BestTime geocodes the q TEXT, so it must include a location ("restaurants
+  // in New York City") — a bare "restaurants" returns nothing. lat/lng/radius
+  // are optional extra filters layered on top of the text search.
   const url = new URL("https://besttime.app/api/v1/venues/search");
   url.searchParams.set("api_key_private", process.env.BESTTIME_API_KEY);
-  url.searchParams.set("q", query);
-  url.searchParams.set("lat", String(lat));
-  url.searchParams.set("lng", String(lng));
-  url.searchParams.set("radius", String(radius));
+  url.searchParams.set("q", q || "restaurants in New York City");
+  if (Number.isFinite(lat) && Number.isFinite(lng)) {
+    url.searchParams.set("lat", String(lat));
+    url.searchParams.set("lng", String(lng));
+    if (Number.isFinite(radius)) url.searchParams.set("radius", String(radius));
+  }
   url.searchParams.set("num", String(num));
   url.searchParams.set("fast", fast ? "true" : "false");
 
@@ -2920,9 +2925,11 @@ async function besttimeAreaForecast(lat, lng, { radius = 400, query = "restauran
     clearTimeout(timer);
   }
 
-  // Find the venues array wherever BestTime puts it.
+  // Find the venues array wherever BestTime puts it (defensive across shapes).
   const venues = Array.isArray(data?.venues) ? data.venues
     : Array.isArray(data?.results) ? data.results
+    : Array.isArray(data?.venues_n) ? data.venues_n
+    : Array.isArray(data?.analysis) ? data.analysis
     : Array.isArray(data) ? data : [];
   // Pull every plausible 24-length hourly busyness array out of a venue object.
   const hourArraysOf = (venue) => {
@@ -2966,6 +2973,11 @@ async function besttimeAreaForecast(lat, lng, { radius = 400, query = "restauran
     peakHour,
     peakLabel: hourLabel(peakHour),
     peakBusyness: counted ? Math.max(...area) : null,
+    // Diagnostics: top-level response keys + async hints so we can see the real
+    // shape even when venues come back empty.
+    responseKeys: data && typeof data === "object" ? Object.keys(data) : [],
+    jobId: data?.job_id || data?.jobId || null,
+    status: data?.status || null,
     source: "BestTime venue busyness (Google Popular Times, aggregated phone-location data)",
     // Trimmed first-venue shape so we can confirm parsing without dumping the key.
     sample: venues[0] ? { keys: Object.keys(venues[0]), first: JSON.parse(JSON.stringify(venues[0])) } : null
@@ -4842,10 +4854,8 @@ createServer(async (request, response) => {
         sendJson(response, 200, { configured: false, available: false, note: "Set BESTTIME_API_KEY in Render first." });
         return;
       }
-      const lat = Number(url.searchParams.get("lat") || 40.7295);
-      const lng = Number(url.searchParams.get("lng") || -73.9853);
-      const query = safeText(url.searchParams.get("q"), 80) || "restaurants";
-      const result = await besttimeAreaForecast(lat, lng, { query });
+      const q = safeText(url.searchParams.get("q"), 120) || "restaurants in New York City";
+      const result = await besttimeAreaForecast({ q });
       sendJson(response, 200, result);
       return;
     }

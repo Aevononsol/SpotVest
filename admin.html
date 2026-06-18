@@ -117,10 +117,10 @@
         <p class="section-label">Integrations</p>
         <div class="launch-section-header">
           <h3>BestTime foot-traffic test</h3>
-          <p>After adding <b>BESTTIME_API_KEY</b> in Render, run this to confirm the key works and see the real venue busyness pulled near an address. Each run uses ~5 BestTime credits. Default point is the East Village; paste any "lat,lng" to test elsewhere.</p>
+          <p>After adding <b>BESTTIME_API_KEY</b> in Render, run this to confirm the key works and see real venue busyness. Type what to search <b>with a location</b> — e.g. <i>"restaurants in East Village New York"</i> or <i>"coffee in SoHo New York"</i>. Blank = "restaurants in New York City". Each run uses ~5 BestTime credits.</p>
         </div>
         <form id="admin-besttime-form" class="admin-token-row">
-          <input id="besttime-latlng" placeholder="lat,lng (blank = East Village)" autocomplete="off" />
+          <input id="besttime-q" placeholder='e.g. restaurants in East Village New York' autocomplete="off" />
           <button type="submit">Run BestTime test</button>
         </form>
         <p id="besttime-status" class="launch-status" role="status"></p>
@@ -215,6 +215,6 @@
         </div>
       </section>
     </main>
-    <script type="module" src="/admin.js?v=20260616-besttime1"></script>
+    <script type="module" src="/admin.js?v=20260616-besttime2"></script>
   </body>
 </html>

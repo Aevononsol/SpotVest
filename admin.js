@@ -399,7 +399,7 @@ revokeEls.form?.addEventListener("submit", async (event) => {
 
 const besttimeEls = {
   form: document.querySelector("#admin-besttime-form"),
-  latlng: document.querySelector("#besttime-latlng"),
+  q: document.querySelector("#besttime-q"),
   status: document.querySelector("#besttime-status"),
   result: document.querySelector("#besttime-result")
 };
@@ -410,9 +410,8 @@ besttimeEls.form?.addEventListener("submit", async (event) => {
     besttimeEls.status.className = "launch-status launch-status-error";
     return;
   }
-  const parts = besttimeEls.latlng.value.split(",").map((s) => s.trim());
   const params = new URLSearchParams();
-  if (parts.length === 2 && parts[0] && parts[1]) { params.set("lat", parts[0]); params.set("lng", parts[1]); }
+  if (besttimeEls.q.value.trim()) params.set("q", besttimeEls.q.value.trim());
   besttimeEls.status.textContent = "Calling BestTime (uses ~5 credits)…";
   besttimeEls.status.className = "launch-status";
   besttimeEls.result.style.display = "none";
@@ -428,7 +427,7 @@ besttimeEls.form?.addEventListener("submit", async (event) => {
       besttimeEls.status.textContent = `✓ Works — ${r.venuesWithData}/${r.venuesReturned} venues had busyness. Busiest around ${r.peakLabel} (peak ${r.peakBusyness}%).`;
       besttimeEls.status.className = "launch-status launch-status-ok";
     }
-    besttimeEls.result.textContent = JSON.stringify({ ...r, sample: r.sample ? { keys: r.sample.keys } : null }, null, 2);
+    besttimeEls.result.textContent = JSON.stringify(r, null, 2).slice(0, 4000);
     besttimeEls.result.style.display = "block";
   } catch (error) {
     besttimeEls.status.textContent = error.message || "Test failed.";
