@@ -1930,13 +1930,31 @@ async function googlePlaceSignals(zip, businessInput, location = null) {
   }
   url.searchParams.set("key", process.env.GOOGLE_PLACES_API_KEY);
 
-  const { response, data } = await fetchJsonWithTimeout(url, 5500);
-  if (!response.ok) throw new Error(`Google Places returned ${response.status}`);
-  if (data.status && !["OK", "ZERO_RESULTS"].includes(data.status)) {
-    throw new Error(`Google Places status ${data.status}`);
+  // Google returns ~20 results per page. Walk up to 3 pages (~60) so dense areas
+  // show the real count, not a capped 20. Each next page needs a ~2s pause for
+  // its token to activate. This runs once per area then gets snapshot-cached, so
+  // the added latency is one-time, not per report.
+  const endpointPath = location?.lat ? "nearbysearch" : "textsearch";
+  const places = [];
+  let pageUrl = url;
+  let paged = 0;
+  for (let page = 0; page < 3; page++) {
+    const { response, data } = await fetchJsonWithTimeout(pageUrl, 6000);
+    if (!response.ok) { if (page === 0) throw new Error(`Google Places returned ${response.status}`); break; }
+    if (data.status && !["OK", "ZERO_RESULTS"].includes(data.status)) {
+      if (page === 0) throw new Error(`Google Places status ${data.status}`);
+      break;
+    }
+    if (Array.isArray(data.results)) places.push(...data.results);
+    paged = page + 1;
+    const token = data.next_page_token;
+    if (!token || page === 2) break;
+    await new Promise((r) => setTimeout(r, 2100)); // next_page_token needs ~2s to go live
+    pageUrl = new URL(`https://maps.googleapis.com/maps/api/place/${endpointPath}/json`);
+    pageUrl.searchParams.set("pagetoken", token);
+    pageUrl.searchParams.set("key", process.env.GOOGLE_PLACES_API_KEY);
   }
 
-  const places = Array.isArray(data.results) ? data.results : [];
   const names = places.map((place) => String(place.name || "").toUpperCase());
   const chainCount = names.filter((name) => knownChains.some((chain) => name.includes(chain))).length;
   const ratedPlaces = places.filter((place) => Number.isFinite(Number(place.rating)));
@@ -1986,8 +2004,11 @@ async function googlePlaceSignals(zip, businessInput, location = null) {
       chain: place.chain,
       placeId: place.placeId
     })),
-    source: location?.lat ? "Google Places Nearby Search first page" : "Google Places Text Search first page",
-    caveat: "Google Places is limited to a fast first-page sample. NYC record pins show the broader registry picture."
+    pagesFetched: paged,
+    source: location?.lat ? "Google Places Nearby Search" : "Google Places Text Search",
+    caveat: paged >= 3
+      ? "Google returns up to ~60 nearby results; very dense areas may hold more."
+      : "Nearby results from Google Places. NYC record pins show the broader registry picture."
   };
 }
 
