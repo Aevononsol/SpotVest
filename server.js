@@ -2109,7 +2109,11 @@ async function businessCount(zip, businessInput, location = null) {
     openDataCount: openDataTotal,
     zipOpenDataCount: countedOpenDataTotal,
     radiusOpenDataCount: locationScoped ? mappedOpenDataTotal : null,
-    registryExact: openDataTotal > 0,
+    // Only treat the city registry as the authoritative count when it actually
+    // covers the category. Categories with no real registry (banks, gyms, etc.)
+    // pick up a stray record or two while Google clearly sees far more — those
+    // should score off Google's visible count, not the misleading 1-2.
+    registryExact: openDataTotal > 0 && openDataTotal >= googleVisibleCount,
     searchContext: location
       ? {
           mode: "address-radius",

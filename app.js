@@ -3596,7 +3596,11 @@ function buildBusinessSuccessModel(profile, recommendations) {
   const competitionPressure = competitionSource === "registry"
     ? saturationFromCount(safeNumber(businessResult.count, 0) + proximityBoost, profile)
     : competitionSource === "google"
-      ? saturationFromCount(googleVisible, profile)
+      // Google's nearby count is a capped (~20-max) visibility signal, not an
+      // exhaustive density tally. A full page of results means "competitive
+      // area," but we cap the pressure at moderate-crowded so a capped count
+      // can't fake an extreme-saturation crisis that crashes the score.
+      ? Math.min(60, saturationFromCount(googleVisible, profile))
       : profile.competition;
   const googleReviews = Number(businessResult?.googlePlaces?.reviewCount || 0);
   const googleRating = Number(businessResult?.googlePlaces?.avgRating || 0);
