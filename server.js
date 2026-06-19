@@ -4885,27 +4885,61 @@ createServer(async (request, response) => {
       }
       const rawQuery = safeText(url.searchParams.get("query"), 120) || "commercial real estate broker";
       const area = safeText(url.searchParams.get("area"), 120) || "New York";
-      // A bare "real estate" search returns mostly residential agencies. Bias
-      // the query toward commercial/retail leasing brokers — SpotVest's real
-      // audience (they advise tenants signing storefront leases).
-      let query = rawQuery;
-      if (/real estate|realty/i.test(query)) {
-        if (!/commercial|retail|leasing/i.test(query)) query = `commercial ${query}`;
-        if (!/broker|brokerage|leasing/i.test(query)) query = `${query} broker`;
-      }
-      const searchUrl = new URL("https://maps.googleapis.com/maps/api/place/textsearch/json");
-      searchUrl.searchParams.set("query", `${query} in ${area}, New York`);
-      searchUrl.searchParams.set("key", process.env.GOOGLE_PLACES_API_KEY);
+      // Google text search for a single "real estate" phrase returns mostly
+      // RESIDENTIAL agencies (houses/apartments), which aren't SpotVest's
+      // audience. SpotVest sells to commercial/retail leasing brokers (they
+      // advise tenants signing storefront leases). So for any real-estate
+      // query we run several commercial/retail phrasings, merge them, and then
+      // drop the obviously-residential names before returning.
+      const realEstateQuery = /real estate|realty|broker|leasing|agent/i.test(rawQuery);
+      const queries = realEstateQuery
+        ? [
+            `commercial real estate broker in ${area}, New York`,
+            `retail leasing broker in ${area}, New York`,
+            `commercial property leasing in ${area}, New York`
+          ]
+        : [`${rawQuery} in ${area}, New York`];
+      // Strong residential signals (names/brands that sell homes & apartments).
+      const RESIDENTIAL = /\b(residential|apartments?|homes?|housing|rentals?|condos?|co-?op|townhouse|brownstone|luxury living|relocation|mortgage)\b|douglas elliman|corcoran|keller williams|coldwell banker|re\/?max|sotheby|halstead|citi habitats|bond new york|nest seekers|triplemint|brown harris|warburg|stribling/i;
+      // Commercial signals (commercial/retail brokerages and the major firms).
+      const COMMERCIAL = /\b(commercial|retail|leasing|office space|industrial|storefront|tenant rep|net lease)\b|cbre|jll|cushman|newmark|colliers|savills|avison|ripco|lee & associates|marcus & millichap|\bsvn\b|winick|kassin|rkf|sinvin|northwest atlantic/i;
       try {
-        const placesResult = await cachedJsonFetch(searchUrl, { timeoutMs: 9000, ttlMs: 6 * 60 * 60 * 1000 });
-        if (!placesResult.ok) throw new Error(`Places returned ${placesResult.status}`);
-        const base = (placesResult.data.results || []).slice(0, 12).map((place) => ({
-          placeId: place.place_id,
-          name: place.name,
-          address: place.formatted_address || "",
-          rating: place.rating || null,
-          reviews: place.user_ratings_total || 0
-        }));
+        const byId = new Map();
+        for (const q of queries) {
+          const searchUrl = new URL("https://maps.googleapis.com/maps/api/place/textsearch/json");
+          searchUrl.searchParams.set("query", q);
+          searchUrl.searchParams.set("key", process.env.GOOGLE_PLACES_API_KEY);
+          const placesResult = await cachedJsonFetch(searchUrl, { timeoutMs: 9000, ttlMs: 6 * 60 * 60 * 1000 });
+          if (!placesResult.ok) continue;
+          for (const place of placesResult.data.results || []) {
+            if (!place.place_id || byId.has(place.place_id)) continue;
+            byId.set(place.place_id, {
+              placeId: place.place_id,
+              name: place.name,
+              address: place.formatted_address || "",
+              rating: place.rating || null,
+              reviews: place.user_ratings_total || 0
+            });
+          }
+        }
+        if (!byId.size) throw new Error("no results");
+        // Keep a result if it reads commercial, OR if it's simply neutral
+        // (no residential signal) — since the query itself was commercial.
+        // Drop anything that's clearly residential and not commercial.
+        const filtered = [...byId.values()].filter((item) => {
+          const name = String(item.name || "");
+          const commercial = COMMERCIAL.test(name);
+          const residential = RESIDENTIAL.test(name);
+          return commercial || !residential;
+        });
+        // Commercial-named firms first, then by review count (prominence).
+        filtered.sort((a, b) => {
+          const ca = COMMERCIAL.test(a.name) ? 1 : 0;
+          const cb = COMMERCIAL.test(b.name) ? 1 : 0;
+          if (ca !== cb) return cb - ca;
+          return (b.reviews || 0) - (a.reviews || 0);
+        });
+        const base = filtered.slice(0, 12);
         // Details lookups add phone + website — the contact info that makes
         // a prospect actionable.
         const prospects = await Promise.all(base.map(async (item) => {
