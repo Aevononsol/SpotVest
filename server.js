@@ -2742,9 +2742,12 @@ async function vacantStorefronts(zip) {
 // "What's around" — walk-in-traffic generators within ~0.3 mi from OpenStreetMap
 // (Overpass, no key). Display only. Routed through the durable responseCache
 // (7-day) so we never hammer the free shared API per request. Facts only.
-async function whatsAround(lat, lng) {
+async function whatsAround(lat, lng, radiusMeters) {
   const rLat = Math.round(lat * 1e4) / 1e4, rLng = Math.round(lng * 1e4) / 1e4; // ~11m round → cache sharing + good citizen
-  const r = 483; // 0.3 mi
+  // Use the analysis radius (capped ~2 mi to keep the Overpass query sane); a
+  // larger radius returns far more places, which is what the user expects when
+  // they widen the search. Defaults to a 0.3 mi walk when none is given.
+  const r = Math.round(Math.max(300, Math.min(3300, radiusMeters || 483)));
   const q = `[out:json][timeout:25];(`
     + `nwr(around:${r},${rLat},${rLng})[leisure~"^(park|playground|fitness_centre|sports_centre)$"];`
     + `nwr(around:${r},${rLat},${rLng})[amenity~"^(school|university|college|pharmacy|bank|parking|coworking_space)$"];`
@@ -2807,7 +2810,7 @@ async function whatsAround(lat, lng) {
     return { key: k, label, count: items.length, nearest };
   });
   const totalPoints = categories.reduce((s, c) => s + c.count, 0);
-  return { available: totalPoints > 0, radiusMiles: 0.3, categories, source: "OpenStreetMap" };
+  return { available: totalPoints > 0, radiusMiles: Math.round((r / 1609.344) * 100) / 100, categories, source: "OpenStreetMap" };
 }
 
 // Official business counts from US Census ZIP Business Patterns (ZBP). NOTE:
@@ -5469,8 +5472,10 @@ createServer(async (request, response) => {
         sendJson(response, 400, { error: "lat/lng required" });
         return;
       }
+      const radiusMiles = Number(url.searchParams.get("radius"));
+      const radiusMeters = Number.isFinite(radiusMiles) && radiusMiles > 0 ? radiusMiles * 1609.344 : undefined;
       try {
-        sendJson(response, 200, await whatsAround(lat, lng));
+        sendJson(response, 200, await whatsAround(lat, lng, radiusMeters));
       } catch (error) {
         sendJson(response, 200, { available: false, unavailable: true });
       }

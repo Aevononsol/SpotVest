@@ -4482,12 +4482,13 @@ function sv3WhatsAroundCard(ctx) {
     return `<div class="card"><div class="sub">Foot-traffic anchors nearby</div><div class="desc" style="margin-top:6px">Enter an exact storefront address to map the everyday draws within a 3-minute walk.</div></div>`;
   }
   if (ctx.whatsAroundLoading) {
-    return `<div class="card"><div class="sub">Foot-traffic anchors nearby</div><div class="desc" style="margin-top:6px">Scanning the immediate surroundings (3-minute walk)…</div></div>`;
+    return `<div class="card"><div class="sub">Foot-traffic anchors nearby</div><div class="desc" style="margin-top:6px">Scanning anchors within your ${escapeText(ctx.radiusLabel || "search")} radius…</div></div>`;
   }
   const w = ctx.whatsAround;
   if (!w || !w.available || !(w.categories || []).some((c) => c.count > 0)) {
     return `<div class="card"><div class="sub">Foot-traffic anchors nearby</div><div class="desc" style="margin-top:6px">Surroundings data unavailable.</div><div class="src">OpenStreetMap</div></div>`;
   }
+  const rmi = w.radiusMiles || Number(ctx.radiusLabel && ctx.radiusLabel.match(/[\d.]+/)) || 0.3;
   const cells = (w.categories || []).filter((c) => c.count > 0).map((c) => {
     const near = (c.nearest || [])[0];
     return `<div class="wa-item">
@@ -4496,10 +4497,10 @@ function sv3WhatsAroundCard(ctx) {
     </div>`;
   }).join("");
   return `<div class="card">
-    <div class="sub">Foot-traffic anchors · 3-min walk</div>
-    <div class="desc" style="margin-top:4px">Everyday draws that bring people past the door — schools, banks, pharmacies, grocery, transit. <b>Not competitors</b>, and a fixed short-walk radius (separate from your ${escapeText(ctx.radiusLabel || "search")} search area).</div>
+    <div class="sub">Foot-traffic anchors · within ${escapeText(String(rmi))} mi</div>
+    <div class="desc" style="margin-top:4px">Everyday draws that bring people past the door — schools, banks, pharmacies, grocery, transit. <b>Not competitors</b> — these are the anchors inside your ${escapeText(String(rmi))}-mile search area.</div>
     <div class="wa-grid" style="margin-top:8px">${cells}</div>
-    <div class="src">Places mapped in OpenStreetMap within 0.3 mi (a ~6-minute walk); not exhaustive. Display only — not used in the score.</div>
+    <div class="src">Places mapped in OpenStreetMap within ${escapeText(String(rmi))} mi; not exhaustive. Display only — not used in the score.</div>
   </div>`;
 }
 
@@ -4803,12 +4804,13 @@ let sv3WhatsAround = null; // { key, loading, data }
 async function sv3LoadWhatsAround(lat, lng, key) {
   sv3WhatsAround = { key, loading: true, data: null };
   try {
-    const d = await (await fetch(`/api/whats-around?lat=${lat}&lng=${lng}`)).json();
+    const rad = Number(state.location?.radiusMiles) || 0.5;
+    const d = await (await fetch(`/api/whats-around?lat=${lat}&lng=${lng}&radius=${rad}`)).json();
     sv3WhatsAround = { key, loading: false, data: d };
   } catch (e) {
     sv3WhatsAround = { key, loading: false, data: { available: false } };
   }
-  if (state.location?.lat && state.location?.lng && `${state.location.lat},${state.location.lng}` === key) {
+  if (state.location?.lat && state.location?.lng && key.startsWith(`${state.location.lat},${state.location.lng}`)) {
     try { safeUiUpdate("what's around (loaded)", () => renderInstitutionalAnalysis(profileForZip(state.zip), buildRecommendations(profileForZip(state.zip)))); } catch (e) { /* non-fatal */ }
   }
 }
@@ -5499,8 +5501,8 @@ function renderSpotVestV3(profile, recommendations, analysis) {
     transitLoading: Boolean(sv3NearbyTransit && sv3NearbyTransit.loading && state.location && sv3NearbyTransit.key === `${state.location.lat},${state.location.lng}`),
     construction: (sv3NearbyConstruction && state.location && sv3NearbyConstruction.key === `${state.location.lat},${state.location.lng}`) ? sv3NearbyConstruction.data : null,
     constructionLoading: Boolean(sv3NearbyConstruction && sv3NearbyConstruction.loading && state.location && sv3NearbyConstruction.key === `${state.location.lat},${state.location.lng}`),
-    whatsAround: (sv3WhatsAround && state.location && sv3WhatsAround.key === `${state.location.lat},${state.location.lng}`) ? sv3WhatsAround.data : null,
-    whatsAroundLoading: Boolean(sv3WhatsAround && sv3WhatsAround.loading && state.location && sv3WhatsAround.key === `${state.location.lat},${state.location.lng}`),
+    whatsAround: (sv3WhatsAround && state.location && sv3WhatsAround.key && sv3WhatsAround.key.startsWith(`${state.location.lat},${state.location.lng}`)) ? sv3WhatsAround.data : null,
+    whatsAroundLoading: Boolean(sv3WhatsAround && sv3WhatsAround.loading && state.location && sv3WhatsAround.key && sv3WhatsAround.key.startsWith(`${state.location.lat},${state.location.lng}`)),
     businessPatterns: (sv3BusinessPatterns && sv3BusinessPatterns.zip === state.zip) ? sv3BusinessPatterns.data : null,
     areaBusyness: (sv3AreaBusyness && sv3AreaBusyness.key === state.zip) ? sv3AreaBusyness.data : null,
     areaBusynessLoading: Boolean(sv3AreaBusyness && sv3AreaBusyness.loading && sv3AreaBusyness.key === state.zip),
@@ -5637,8 +5639,10 @@ function renderSpotVestV3(profile, recommendations, analysis) {
     if (!sv3NearbyConstruction || sv3NearbyConstruction.key !== tKey) {
       sv3LoadNearbyConstruction(state.location.lat, state.location.lng, tKey);
     }
-    if (!sv3WhatsAround || sv3WhatsAround.key !== tKey) {
-      sv3LoadWhatsAround(state.location.lat, state.location.lng, tKey);
+    // Anchors now scale with the chosen radius, so the key includes it.
+    const waKey = `${tKey}@${state.location.radiusMiles || 0.5}`;
+    if (!sv3WhatsAround || sv3WhatsAround.key !== waKey) {
+      sv3LoadWhatsAround(state.location.lat, state.location.lng, waKey);
     }
   }
   // Official ZBP counts are ZIP-keyed — load regardless of address/area mode.
