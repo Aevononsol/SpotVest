@@ -279,9 +279,11 @@ function prospectPitch(prospect) {
   const body = [
     `Hi ${prospect.name} team,`,
     "",
-    "I'm Maher, founder of SpotVest (https://spotvest.ai). When a tenant is deciding whether to sign for a storefront, the thing that stalls the deal is doubt — \"will my business actually work here?\"",
+    "I'm Maher, founder of SpotVest (https://spotvest.ai). The thing that stalls a retail lease is the tenant's doubt — \"will my business actually work in this space?\"",
     "",
-    "SpotVest answers that in seconds: type any NYC address and a business type and you get a 0-100 viability score with live MTA foot traffic, nearby competitors, and demographics — e.g. \"this corner scores 78/100 for a coffee shop.\" Hand that to a tenant and they sign with confidence.",
+    "SpotVest answers that in seconds. Type any NYC address and a business type and you get a 0-100 viability score backed by real foot-traffic counts from the venues on that block (including how busy it is right now and the busiest days and hours), the actual competitors nearby, demographics, and rent-vs-revenue math — e.g. \"this corner scores 78/100 for a coffee shop.\" Hand that to a hesitant tenant and they sign with confidence.",
+    "",
+    "There's also a Spaces tool that pulls vacant storefronts and building-owner info for any ZIP, so you can source and qualify spaces faster.",
     "",
     "It's $29/month with a 3-day free trial. I'd be glad to run a few free reports on spaces you're showing right now — just reply with an address or two.",
     "",
