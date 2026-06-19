@@ -302,20 +302,25 @@ function renderProspectRow(prospect, saved) {
   const site = prospect.website
     ? `<a href="${escapeText(prospect.website)}" target="_blank" rel="noopener" style="color:var(--teal)">website</a>`
     : "no website listed";
+  const emailLine = prospect.email
+    ? `<span style="display:block;margin-top:2px;color:var(--teal)">✉ <a href="mailto:${escapeText(prospect.email)}" style="color:var(--teal)">${escapeText(prospect.email)}</a></span>`
+    : `<span style="display:block;margin-top:2px;color:var(--txt-3)">✉ no email found — check website</span>`;
   if (!saved) {
     return `<div class="admin-row">
       <strong>${escapeText(prospect.name)}</strong>
       <span>${escapeText(meta)} · ${site}</span>
+      ${emailLine}
       <small><button type="button" data-prospect-save='${escapeText(JSON.stringify(prospect))}' style="padding:7px 14px;font-size:12px">Save prospect</button></small>
     </div>`;
   }
   const pitch = prospect.draftPitch
     ? { subject: "Close retail leases faster — SpotVest", body: prospect.draftPitch }
     : prospectPitch(prospect);
-  const mailto = `mailto:?subject=${encodeURIComponent(pitch.subject)}&body=${encodeURIComponent(pitch.body)}`;
+  const mailto = `mailto:${encodeURIComponent(prospect.email || "")}?subject=${encodeURIComponent(pitch.subject)}&body=${encodeURIComponent(pitch.body)}`;
   return `<div class="admin-row">
     <strong>${escapeText(prospect.name)}</strong>
     <span>${escapeText(meta)} · ${site}</span>
+    ${emailLine}
     <small style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <a href="${mailto}" style="color:#04222a;background:linear-gradient(135deg,#3BD6C9,#33A7D8);border-radius:9px;padding:7px 13px;font-weight:700;text-decoration:none;font-family:Sora,sans-serif">Draft email</a>
       <button type="button" data-prospect-copy="${escapeText(prospect.id)}" style="padding:7px 13px;font-size:12px;background:var(--surface);color:var(--txt);border:1px solid var(--border-strong);box-shadow:none">Copy pitch</button>

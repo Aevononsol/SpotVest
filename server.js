@@ -1562,6 +1562,60 @@ async function fetchJsonWithTimeout(url, timeoutMs = 5000) {
   };
 }
 
+// Best-effort email discovery for outreach: Google never returns an email, so
+// fetch the prospect's own public website and pull any address they've
+// published — mailto: links first, then plain-text matches — checking the
+// homepage and then a /contact page. No paid email-finder API; just their own
+// public pages. Returns "" when nothing usable is found (many firms only have
+// a contact form). Cached so re-searching the same broker is free.
+async function findSiteEmail(website) {
+  if (!website) return "";
+  let base;
+  try { base = new URL(website); } catch { return ""; }
+  const cacheKey = `siteEmail:${base.hostname.replace(/^www\./, "")}`;
+  const cached = readCache(cacheKey);
+  if (cached !== undefined && cached !== null) return cached;
+
+  const JUNK = /\.(png|jpe?g|gif|svg|webp|css|js|ico|pdf)(\?|$)/i;
+  const JUNK_DOMAIN = /(sentry|wixpress|example\.|domain\.com|yourdomain|email\.com|squarespace|godaddy|cloudflare|googleapis|gstatic|schema\.org|\.png|sentry\.io)/i;
+  const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
+  const host = base.hostname.replace(/^www\./, "");
+  const brand = host.split(".")[0];
+  const pages = [base.href];
+  try { pages.push(new URL("/contact", base).href); } catch { /* ignore */ }
+  const found = new Set();
+  for (const page of pages) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 6000);
+      let html = "";
+      try {
+        const res = await fetch(page, {
+          signal: controller.signal,
+          redirect: "follow",
+          headers: { "user-agent": "Mozilla/5.0 (compatible; SpotVest prospect finder)" }
+        });
+        if (res.ok) html = (await res.text()).slice(0, 500000);
+      } finally { clearTimeout(timeout); }
+      if (!html) continue;
+      (html.match(/mailto:([^"'?>\s]+)/gi) || []).forEach((m) => found.add(m.replace(/mailto:/i, "").trim().toLowerCase()));
+      (html.match(EMAIL) || []).forEach((e) => found.add(e.trim().toLowerCase()));
+    } catch { /* try next page */ }
+    const clean = [...found].filter((e) => !JUNK.test(e) && !JUNK_DOMAIN.test(e) && e.length < 80 && !e.startsWith("@"));
+    if (clean.length) {
+      // Prefer an address on the broker's own domain (info@theirfirm.com).
+      clean.sort((a, b) => {
+        const score = (e) => (e.endsWith("@" + host) ? 0 : e.includes(brand) ? 1 : 2);
+        return score(a) - score(b);
+      });
+      writeCache(cacheKey, clean[0], 7 * 24 * 60 * 60 * 1000);
+      return clean[0];
+    }
+  }
+  writeCache(cacheKey, "", 24 * 60 * 60 * 1000);
+  return "";
+}
+
 function integrationFallback(source, fallback) {
   return (error) => {
     const detail = error?.name === "AbortError" ? "request timed out" : error?.message || String(error);
@@ -4954,13 +5008,16 @@ createServer(async (request, response) => {
             detailsUrl.searchParams.set("fields", "website,formatted_phone_number");
             detailsUrl.searchParams.set("key", process.env.GOOGLE_PLACES_API_KEY);
             const details = await cachedJsonFetch(detailsUrl, { timeoutMs: 7000, ttlMs: 7 * 24 * 60 * 60 * 1000 });
+            const website = details.data?.result?.website || "";
+            const email = website ? await findSiteEmail(website).catch(() => "") : "";
             return {
               ...item,
-              website: details.data?.result?.website || "",
-              phone: details.data?.result?.formatted_phone_number || ""
+              website,
+              phone: details.data?.result?.formatted_phone_number || "",
+              email
             };
           } catch {
-            return { ...item, website: "", phone: "" };
+            return { ...item, website: "", phone: "", email: "" };
           }
         }));
         sendJson(response, 200, { ok: true, prospects });
@@ -4987,6 +5044,7 @@ createServer(async (request, response) => {
               name: safeText(body.prospect.name, 200),
               address: safeText(body.prospect.address, 300),
               phone: safeText(body.prospect.phone, 60),
+              email: safeText(body.prospect.email, 200),
               website: safeText(body.prospect.website, 300),
               rating: Number(body.prospect.rating) || null,
               reviews: Number(body.prospect.reviews) || 0,
