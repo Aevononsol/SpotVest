@@ -4031,6 +4031,36 @@ createServer(async (request, response) => {
       return;
     }
 
+    // Outreach click tracking: each prospect email links here instead of
+    // straight to the site, so we can record whether the broker actually
+    // clicked through. Logs against the prospect, then forwards to the site.
+    // Public + best-effort: a logging failure must never block the redirect.
+    if (url.pathname.startsWith("/r/")) {
+      const trackId = decodeURIComponent(url.pathname.slice(3)).slice(0, 80);
+      try {
+        const ua = String(request.headers["user-agent"] || "");
+        // Corporate mail scanners and link-preview bots pre-fetch links and
+        // create false clicks; skip the obvious ones so the count reflects
+        // real people.
+        const isBot = /bot|crawl|spider|preview|scan|monitor|slurp|fetch|facebookexternalhit|whatsapp|telegram|safebrowsing|proofpoint|barracuda|mimecast|outlook|microsoft|google-read-aloud|headless/i.test(ua);
+        if (trackId && !isBot) {
+          const prospects = await readJsonStore("prospects", []);
+          const target = prospects.find((p) => p.id === trackId);
+          if (target) {
+            target.clicks = (Number(target.clicks) || 0) + 1;
+            target.lastClickAt = new Date().toISOString();
+            if (!target.firstClickAt) target.firstClickAt = target.lastClickAt;
+            await writeJsonStore("prospects", prospects);
+          }
+        }
+      } catch (error) {
+        console.warn(`[SpotVest] click track: ${error.message}`);
+      }
+      response.writeHead(302, { Location: "/?ref=outreach" });
+      response.end();
+      return;
+    }
+
     if (url.pathname === "/api/health") {
       sendJson(response, 200, {
         ok: true,

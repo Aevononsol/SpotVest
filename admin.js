@@ -293,6 +293,26 @@ function prospectPitch(prospect) {
   return { subject, body };
 }
 
+// Build the pitch for a saved prospect, routing the SpotVest link through the
+// click tracker (/r/{id}) so we can see who actually clicked through.
+function pitchFor(prospect) {
+  const base = prospect.draftPitch
+    ? { subject: "Close retail leases faster — SpotVest", body: prospect.draftPitch }
+    : prospectPitch(prospect);
+  if (!prospect.id) return base;
+  const tracked = `https://spotvest.ai/r/${prospect.id}`;
+  let body = base.body.replace(/https?:\/\/spotvest\.ai\b/gi, tracked);
+  if (!body.includes(tracked)) body += `\n\nSee a live example: ${tracked}`;
+  return { subject: base.subject, body };
+}
+
+function prospectEngagement(prospect) {
+  const clicks = Number(prospect.clicks) || 0;
+  if (!clicks) return `<span style="display:block;margin-top:2px;color:var(--txt-3)">○ no clicks yet</span>`;
+  const when = prospect.lastClickAt ? new Date(prospect.lastClickAt).toLocaleDateString() : "";
+  return `<span style="display:block;margin-top:2px;color:#4FE3D8;font-weight:600">● clicked ${clicks}×${when ? ` · last ${when}` : ""}</span>`;
+}
+
 function renderProspectRow(prospect, saved) {
   const meta = [
     prospect.address,
@@ -313,14 +333,13 @@ function renderProspectRow(prospect, saved) {
       <small><button type="button" data-prospect-save='${escapeText(JSON.stringify(prospect))}' style="padding:7px 14px;font-size:12px">Save prospect</button></small>
     </div>`;
   }
-  const pitch = prospect.draftPitch
-    ? { subject: "Close retail leases faster — SpotVest", body: prospect.draftPitch }
-    : prospectPitch(prospect);
+  const pitch = pitchFor(prospect);
   const mailto = `mailto:${encodeURIComponent(prospect.email || "")}?subject=${encodeURIComponent(pitch.subject)}&body=${encodeURIComponent(pitch.body)}`;
   return `<div class="admin-row">
     <strong>${escapeText(prospect.name)}</strong>
     <span>${escapeText(meta)} · ${site}</span>
     ${emailLine}
+    ${prospectEngagement(prospect)}
     <small style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
       <a href="${mailto}" style="color:#04222a;background:linear-gradient(135deg,#3BD6C9,#33A7D8);border-radius:9px;padding:7px 13px;font-weight:700;text-decoration:none;font-family:Sora,sans-serif">Draft email</a>
       <button type="button" data-prospect-copy="${escapeText(prospect.id)}" style="padding:7px 13px;font-size:12px;background:var(--surface);color:var(--txt);border:1px solid var(--border-strong);box-shadow:none">Copy pitch</button>
@@ -461,9 +480,7 @@ document.addEventListener("click", async (event) => {
   if (copyButton) {
     const prospect = prospectCache.find((candidate) => candidate.id === copyButton.dataset.prospectCopy);
     if (!prospect) return;
-    const pitch = prospect.draftPitch
-    ? { subject: "Close retail leases faster — SpotVest", body: prospect.draftPitch }
-    : prospectPitch(prospect);
+    const pitch = pitchFor(prospect);
     try {
       await navigator.clipboard.writeText(`Subject: ${pitch.subject}\n\n${pitch.body}`);
       copyButton.textContent = "Copied ✓";
