@@ -1588,6 +1588,21 @@ function withinSearchRadius(record, location) {
   return distanceMiles(location.lat, location.lng, record.lat, record.lng) <= Number(location.radiusMiles || 0.5);
 }
 
+// SoQL where-clause for a lat/lng bounding box around the search center. A
+// radius search (e.g. 1 mile in the East Village) crosses several zip codes,
+// so filtering city records by a single zipcode badly undercounts competitors
+// one block over in the next zip. The box is padded ~15% and the precise
+// circle trim still happens in withinSearchRadius, so this only widens the
+// candidate set — it never lets in anything outside the radius.
+function geoBoxWhere(latCol, lngCol, location) {
+  const r = Number(location.radiusMiles || 0.5);
+  const pad = r * 1.15;
+  const latDelta = pad / 69; // ~69 miles per degree latitude
+  const lngDelta = pad / (69 * Math.max(0.2, Math.cos((location.lat * Math.PI) / 180)));
+  const f = (n) => (Math.round(n * 1e6) / 1e6).toFixed(6);
+  return `${latCol} between ${f(location.lat - latDelta)} and ${f(location.lat + latDelta)} AND ${lngCol} between ${f(location.lng - lngDelta)} and ${f(location.lng + lngDelta)}`;
+}
+
 // 12s default: these sit on the score-gating path, so the page can't commit a
 // score until the slowest one answers. Socrata normally responds in 1-4s with
 // an app token; anything past 12s is effectively an outage and should fall
@@ -1839,8 +1854,9 @@ async function restaurantMapRecords(zip, business, location = null) {
   const terms = restaurantTerms[business];
   if (!terms) return [];
 
+  const useGeo = location?.lat && location?.lng;
   const where = [
-    `zipcode='${zip}'`,
+    useGeo ? geoBoxWhere("latitude", "longitude", location) : `zipcode='${zip}'`,
     "latitude IS NOT NULL",
     "longitude IS NOT NULL",
     terms.some(Boolean) ? `(${soqlTextFilter(["dba", "cuisine_description"], terms)})` : "1=1"
@@ -1871,8 +1887,9 @@ async function restaurantMapRecords(zip, business, location = null) {
 
 async function dcwpMapRecords(zip, business, location = null) {
   const terms = dcwpTerms[business] || [business.toUpperCase()];
+  const useGeo = location?.lat && location?.lng;
   const where = [
-    `address_zip='${zip}'`,
+    useGeo ? geoBoxWhere("latitude", "longitude", location) : `address_zip='${zip}'`,
     "license_status='Active'",
     "latitude IS NOT NULL",
     "longitude IS NOT NULL",
