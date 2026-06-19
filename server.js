@@ -4903,6 +4903,10 @@ createServer(async (request, response) => {
       const RESIDENTIAL = /\b(residential|apartments?|homes?|housing|rentals?|condos?|co-?op|townhouse|brownstone|luxury living|relocation|mortgage)\b|douglas elliman|corcoran|keller williams|coldwell banker|re\/?max|sotheby|halstead|citi habitats|bond new york|nest seekers|triplemint|brown harris|warburg|stribling/i;
       // Commercial signals (commercial/retail brokerages and the major firms).
       const COMMERCIAL = /\b(commercial|retail|leasing|office space|industrial|storefront|tenant rep|net lease)\b|cbre|jll|cushman|newmark|colliers|savills|avison|ripco|lee & associates|marcus & millichap|\bsvn\b|winick|kassin|rkf|sinvin|northwest atlantic/i;
+      // Hard veto: businesses that lease/sell things other than property.
+      // "Leasing" reads as commercial, but auto/equipment/furniture leasing
+      // companies are not real estate brokers and must never appear.
+      const NONREALESTATE = /\b(auto|cars?|vehicles?|trucks?|motors?|equipment|machinery|furniture|appliances?|tools?|aviation|aircraft|boats?|yachts?|electronics?|jewelry|insurance)\b/i;
       try {
         const byId = new Map();
         for (const q of queries) {
@@ -4928,6 +4932,7 @@ createServer(async (request, response) => {
         // Drop anything that's clearly residential and not commercial.
         const filtered = [...byId.values()].filter((item) => {
           const name = String(item.name || "");
+          if (NONREALESTATE.test(name)) return false; // auto/equipment leasing, etc.
           const commercial = COMMERCIAL.test(name);
           const residential = RESIDENTIAL.test(name);
           return commercial || !residential;
