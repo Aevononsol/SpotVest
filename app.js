@@ -4479,14 +4479,14 @@ function sv3SpaceDetailHTML(v, unlocked) {
 /* ---------- "What's around" — OpenStreetMap surroundings (facts only, display only) ---------- */
 function sv3WhatsAroundCard(ctx) {
   if (!ctx.spaceAddressMode || !ctx.point) {
-    return `<div class="card"><div class="sub">What's around</div><div class="desc" style="margin-top:6px">Enter an exact storefront address to map what's within a 3-minute walk.</div></div>`;
+    return `<div class="card"><div class="sub">Foot-traffic anchors nearby</div><div class="desc" style="margin-top:6px">Enter an exact storefront address to map the everyday draws within a 3-minute walk.</div></div>`;
   }
   if (ctx.whatsAroundLoading) {
-    return `<div class="card"><div class="sub">What's around</div><div class="desc" style="margin-top:6px">Scanning surroundings within 0.3 mi…</div></div>`;
+    return `<div class="card"><div class="sub">Foot-traffic anchors nearby</div><div class="desc" style="margin-top:6px">Scanning the immediate surroundings (3-minute walk)…</div></div>`;
   }
   const w = ctx.whatsAround;
   if (!w || !w.available || !(w.categories || []).some((c) => c.count > 0)) {
-    return `<div class="card"><div class="sub">What's around</div><div class="desc" style="margin-top:6px">Surroundings data unavailable.</div><div class="src">OpenStreetMap</div></div>`;
+    return `<div class="card"><div class="sub">Foot-traffic anchors nearby</div><div class="desc" style="margin-top:6px">Surroundings data unavailable.</div><div class="src">OpenStreetMap</div></div>`;
   }
   const cells = (w.categories || []).filter((c) => c.count > 0).map((c) => {
     const near = (c.nearest || [])[0];
@@ -4496,9 +4496,10 @@ function sv3WhatsAroundCard(ctx) {
     </div>`;
   }).join("");
   return `<div class="card">
-    <div class="sub">What's around · within 0.3 mi</div>
-    <div class="wa-grid">${cells}</div>
-    <div class="src">Counts of places mapped in OpenStreetMap within 0.3 mi (a ~6-minute walk); not exhaustive. Facts only — figures shown, no conclusions drawn. Display only — not used in the score.</div>
+    <div class="sub">Foot-traffic anchors · 3-min walk</div>
+    <div class="desc" style="margin-top:4px">Everyday draws that bring people past the door — schools, banks, pharmacies, grocery, transit. <b>Not competitors</b>, and a fixed short-walk radius (separate from your ${escapeText(ctx.radiusLabel || "search")} search area).</div>
+    <div class="wa-grid" style="margin-top:8px">${cells}</div>
+    <div class="src">Places mapped in OpenStreetMap within 0.3 mi (a ~6-minute walk); not exhaustive. Display only — not used in the score.</div>
   </div>`;
 }
 
