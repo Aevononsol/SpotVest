@@ -183,7 +183,7 @@ const restaurantTerms = {
   thai: ["THAI"],
   vietnamese: ["VIETNAMESE", "PHO", "BANH MI", "CAMBODIAN", "MALAYSIA"],
   filipino: ["FILIPINO"],
-  indian: ["INDIAN", "BANGLADESHI", "BENGALI", "PAKISTANI", "NEPALI", "NEPALESE", "HIMALAYAN", "TIBETAN", "CURRY", "TANDOORI", "BIRYANI", "PUNJABI", "SRI LANKAN", "DESI"],
+  indian: ["INDIAN", "BANGLADESHI", "BENGALI", "PAKISTANI", "NEPALI", "NEPALESE", "CURRY", "TANDOORI", "BIRYANI", "PUNJABI", "SRI LANKAN", "DESI"],
   pakistani: ["PAKISTANI", "BANGLADESHI", "BENGALI", "INDIAN", "DESI"],
   mexican: ["MEXICAN", "TACO"],
   latin: ["LATIN", "SPANISH"],
