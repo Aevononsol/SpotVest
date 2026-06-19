@@ -2099,17 +2099,23 @@ async function businessCount(zip, businessInput, location = null) {
     : (countedOpenDataTotal || mappedOpenDataTotal);
   const googleVisibleCount = googleSignal?.count || 0;
   const hasAnySourceSignal = openDataTotal > 0 || googleVisibleCount > 0;
+  // Many categories (banks, gyms, salons, retail) have no exhaustive NYC registry,
+  // so the city-record count is near-zero while Google clearly sees far more.
+  // Never report fewer competitors than are actually visible nearby.
+  const competitorCount = Math.max(openDataTotal, googleVisibleCount);
 
   return {
     zip,
     business,
-    count: openDataTotal,
+    count: competitorCount,
     googleVisibleCount,
     mode: hasAnySourceSignal ? "live" : "live-zero",
     openDataCount: openDataTotal,
     zipOpenDataCount: countedOpenDataTotal,
     radiusOpenDataCount: locationScoped ? mappedOpenDataTotal : null,
-    registryExact: openDataTotal > 0,
+    // "Exact" only when the registry is the fuller source; if Google sees more,
+    // the count is a Google-visibility estimate, not an exhaustive registry tally.
+    registryExact: openDataTotal > 0 && openDataTotal >= googleVisibleCount,
     searchContext: location
       ? {
           mode: "address-radius",
