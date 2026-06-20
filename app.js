@@ -3628,19 +3628,10 @@ function buildBusinessSuccessModel(profile, recommendations) {
   // so it's removed from the SCORE (kept as a display-only signal) and the
   // remaining demand weights are renormalized (÷0.90) to preserve scale. This
   // removes the 39↔45 non-determinism on the same address.
-  const demandScoreBase = clampScore((profile.density * 0.18 + profile.transit * 0.14 + effectiveOffice(profile) * 0.09 + effectiveNightlife(profile) * 0.07 + effectiveTourist(profile) * 0.05 + profile.student * 0.05 + config.baseDemand * 0.18 + reviewMomentum * 0.14) / 0.9);
+  const demandScore = clampScore((profile.density * 0.18 + profile.transit * 0.14 + effectiveOffice(profile) * 0.09 + effectiveNightlife(profile) * 0.07 + effectiveTourist(profile) * 0.05 + profile.student * 0.05 + config.baseDemand * 0.18 + reviewMomentum * 0.14) / 0.9);
   const customerFitScore = clampScore(profile.income * 0.24 + profile.families * 0.14 + profile.student * 0.08 + effectiveOffice(profile) * 0.12 + profile.localPreference * 0.16 + profile.chainFit * 0.1 + categoryFit * 0.16);
   const competitionScore = clampScore(100 - competitionPressure * 0.78 + (businessResult?.googlePlaces?.avgRating >= 4.5 ? 4 : 0));
-  const locationScoreBase = clampScore(profile.transit * 0.34 + profile.density * 0.22 + effectiveOffice(profile) * 0.12 + (100 - effectiveRent) * 0.1 + propertyBoost + transitBoost + (state.location ? 6 : 0));
-  // Light BestTime refinement: nudge Demand and Location toward REAL venue foot
-  // traffic (snapshotted server-side, deterministic). Neutral at 50; capped at
-  // ±6 Demand / ±4 Location so it refines the MTA/demographic signal rather than
-  // dominating it. Only applies when the venue sample is real (≥5 venues).
-  const footTraffic = siteIntelResult?.footTraffic;
-  const footTrafficApplied = Boolean(footTraffic && Number.isFinite(footTraffic.intensity) && (footTraffic.venuesWithData || 0) >= 5);
-  const footTrafficDelta = footTrafficApplied ? (footTraffic.intensity - 50) / 50 : 0;
-  const demandScore = clampScore(demandScoreBase + footTrafficDelta * 6);
-  const locationScore = clampScore(locationScoreBase + footTrafficDelta * 4);
+  const locationScore = clampScore(profile.transit * 0.34 + profile.density * 0.22 + effectiveOffice(profile) * 0.12 + (100 - effectiveRent) * 0.1 + propertyBoost + transitBoost + (state.location ? 6 : 0));
   const financialScore = clampScore(profile.income * 0.3 + (100 - effectiveRent) * 0.28 + (100 - config.rentSensitivity) * 0.1 + categoryFit * 0.14 + profile.chainFit * 0.1 + budgetSupport * 0.08);
   const growthScore = clampScore(45 + permitBoost + propertyBoost + effectiveOffice(profile) * 0.12 + profile.density * 0.1 + profile.transit * 0.08);
   const riskRaw = clampScore(effectiveRent * 0.34 + competitionPressure * 0.32 + (100 - profile.income) * 0.1 + (100 - profile.transit) * 0.08 + (!state.location ? 6 : 0));
@@ -3674,7 +3665,7 @@ function buildBusinessSuccessModel(profile, recommendations) {
     {
       name: "Demand",
       value: demandScore,
-      why: `Verified Signals / Model Insights from category demand, existing activity, review momentum, demand momentum (${demandSignalLabel}), density, mobility, office, tourism, nightlife, and student signals.${footTrafficApplied ? ` Refined by real venue foot traffic nearby (busy-hours level ${footTraffic.intensity}/100, ${footTraffic.venuesWithData} venues).` : ""}`
+      why: `Verified Signals / Model Insights from category demand, existing activity, review momentum, demand momentum (${demandSignalLabel}), density, mobility, office, tourism, nightlife, and student signals.`
     },
     {
       name: "Customer fit",
@@ -3689,7 +3680,7 @@ function buildBusinessSuccessModel(profile, recommendations) {
     {
       name: "Location quality",
       value: locationScore,
-      why: `Model Insights from mobility access, walkability proxy, street density, office pull, commercial mix, and exact-address context when provided.${footTrafficApplied ? ` Refined by real nearby venue foot traffic.` : ""}`
+      why: "Model Insights from mobility access, walkability proxy, street density, office pull, commercial mix, and exact-address context when provided."
     },
     {
       name: "Financial viability",
@@ -3707,6 +3698,42 @@ function buildBusinessSuccessModel(profile, recommendations) {
       why: "Estimated Factors where higher means safer risk-adjusted conditions after cost pressure, saturation, local friction, mobility weakness, and area-level uncertainty."
     }
   ]};
+}
+
+// Citywide reference max for normalizing MTA monthly (Dec-2024) within-radius
+// ridership to 0-1. NOTE: tune this against real QA ridership numbers — it sets
+// how much MTA volume counts as "max foot traffic."
+const MTA_CITYWIDE_MAX = 1500000;
+const FT_BESTTIME_WEIGHT = 0.65;
+const FT_MTA_WEIGHT = 0.35;
+// Max points the blended foot-traffic signal contributes to Demand. Replaces the
+// old binary MTA "+6" boost; kept light so it refines rather than whipsaws.
+const FT_DEMAND_SCALE = 8;
+
+// ONE blended foot-traffic signal (0-1) for the Demand component: real BestTime
+// venue busyness (65%) + MTA subway ridership (35%), each normalized to 0-1
+// first so MTA's large raw numbers don't swallow BestTime. Falls back to MTA
+// alone when BestTime has no data (so no address loses its foot-traffic signal),
+// and to BestTime alone where there's no subway (e.g. Staten Island). Both
+// inputs are snapshotted/cached, so the same address scores identically run to
+// run. Returns null when there's no live foot-traffic signal at all.
+function blendedFootTraffic(siteIntelResult) {
+  const mta = siteIntelResult?.mta;
+  const ft = siteIntelResult?.footTraffic;
+  const hasMta = Boolean(mta?.available) && Number.isFinite(mta?.totalDecember2024Ridership) && mta.totalDecember2024Ridership > 0;
+  const hasBestTime = Boolean(ft) && Number.isFinite(ft?.intensity) && (ft?.venuesWithData || 0) >= 5;
+  if (!hasMta && !hasBestTime) return null;
+  const mtaNorm = hasMta ? Math.max(0, Math.min(1, mta.totalDecember2024Ridership / MTA_CITYWIDE_MAX)) : null;
+  const btNorm = hasBestTime ? Math.max(0, Math.min(1, ft.intensity / 100)) : null;
+  let value, mode;
+  if (hasBestTime && hasMta) { value = FT_BESTTIME_WEIGHT * btNorm + FT_MTA_WEIGHT * mtaNorm; mode = "blend"; }
+  else if (hasBestTime) { value = btNorm; mode = "besttime-only"; }
+  else { value = mtaNorm; mode = "mta-fallback"; }
+  return {
+    value, mode, mtaNorm, btNorm, hasBestTime, hasMta,
+    btPct: hasBestTime ? ft.intensity : null,
+    ridership: hasMta ? mta.totalDecember2024Ridership : null
+  };
 }
 
 function buildInstitutionalAnalysis(profile, recommendations) {
@@ -3756,10 +3783,18 @@ function buildInstitutionalAnalysis(profile, recommendations) {
   const confidenceScore = clampScore(Math.max(20, completeness * 0.34 + freshness * 0.28 + sourceQuality * 0.38 - demandPenalty));
   const successModel = buildBusinessSuccessModel(profile, recommendations);
   const scores = successModel.scores;
-  if (siteIntelResult?.mta?.available && siteIntelResult.mta.totalDecember2024Ridership > 250000) {
+  // Foot-traffic refinement for Demand: a single blended signal (BestTime 65% +
+  // MTA 35%, MTA-only fallback) REPLACES the old MTA-only "+6" boost — so busy
+  // areas are counted once, not twice. MTA still independently drives transit
+  // access in Location quality (untouched). Both inputs are snapshotted, so the
+  // score is deterministic run-to-run.
+  const ftBlend = blendedFootTraffic(siteIntelResult);
+  if (ftBlend) {
     const demand = scores.find((item) => item.name === "Demand");
-    demand.value = Math.min(100, demand.value + 6);
-    demand.why = `${demand.why} Verified Signals: nearby mobility is strong.`;
+    demand.value = clampScore(demand.value + Math.round(ftBlend.value * FT_DEMAND_SCALE));
+    demand.why = `${demand.why} ${ftBlend.hasBestTime
+      ? `Refined by blended real foot traffic (BestTime ${ftBlend.btPct}/100${ftBlend.hasMta ? " + MTA ridership" : ", no subway nearby"})`
+      : "Refined by MTA subway ridership (no BestTime venues found)"} — foot-traffic index ${Math.round(ftBlend.value * 100)}/100.`;
   }
   if (siteIntelResult?.pluto?.retailArea > 500000) {
     const location = scores.find((item) => item.name === "Location quality");
