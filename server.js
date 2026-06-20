@@ -2107,13 +2107,13 @@ async function pointSnapshot(lng, lat, radiusMeters, business) {
     radiusMeters: Math.round(Math.max(150, Math.min(3000, radiusMeters || 800)))
   };
 
-  const mtaWhere = `within_circle(georeference, ${lat}, ${lng}, ${location.radiusMeters}) AND transit_timestamp between '2024-12-01T00:00:00' and '2025-01-01T00:00:00'`;
+  const mtaWhere = `within_circle(georeference, ${lat}, ${lng}, ${location.radiusMeters}) AND transit_timestamp between '2026-05-01T00:00:00' and '2026-06-01T00:00:00' AND transit_mode='subway'`;
   const [places, mtaRows, hourRows] = await Promise.all([
     googlePlaceSignals("", term, location).catch(integrationFallback("nearby competitors", null)),
-    dataNyJson("wujg-7c2s", { $select: "sum(ridership)", $where: mtaWhere }).catch(integrationFallback("MTA ridership", [])),
+    dataNyJson("5wq4-mkjj", { $select: "sum(ridership)", $where: mtaWhere }).catch(integrationFallback("MTA ridership", [])),
     // Real hour-of-day ridership profile near this point — powers a
     // location-specific foot-traffic-by-hour curve (not a category template).
-    dataNyJson("wujg-7c2s", {
+    dataNyJson("5wq4-mkjj", {
       $select: "date_extract_hh(transit_timestamp) AS hour, sum(ridership) AS ride",
       $where: mtaWhere, $group: "hour", $order: "hour", $limit: "24"
     }).catch(integrationFallback("MTA hourly", []))
@@ -2494,9 +2494,9 @@ function parseStationName(raw) {
 // Stations within 1 mile, with per-station lat/lng + lines + total ridership.
 // Its own endpoint so this heavier query never delays the score gate (display only).
 async function nearbyTransit(lat, lng) {
-  const rows = await dataNyJson("wujg-7c2s", {
+  const rows = await dataNyJson("5wq4-mkjj", {
     $select: "station_complex,station_complex_id,latitude,longitude,sum(ridership)",
-    $where: `within_circle(georeference, ${lat}, ${lng}, 1609) AND transit_timestamp between '2024-12-01T00:00:00' and '2025-01-01T00:00:00'`,
+    $where: `within_circle(georeference, ${lat}, ${lng}, 1609) AND transit_timestamp between '2026-05-01T00:00:00' and '2026-06-01T00:00:00' AND transit_mode='subway'`,
     $group: "station_complex,station_complex_id,latitude,longitude",
     $order: "sum_ridership DESC",
     $limit: "20"
@@ -3285,7 +3285,7 @@ async function siteIntelligence(zip, location = null) {
     : `zipcode='${zip}'`;
 
   const mtaWhere = location?.lat && location?.lng
-    ? `within_circle(georeference, ${location.lat}, ${location.lng}, ${location.radiusMeters || 805}) AND transit_timestamp between '2024-12-01T00:00:00' and '2025-01-01T00:00:00'`
+    ? `within_circle(georeference, ${location.lat}, ${location.lng}, ${location.radiusMeters || 805}) AND transit_timestamp between '2026-05-01T00:00:00' and '2026-06-01T00:00:00' AND transit_mode='subway'`
     : null;
 
   const [
@@ -3324,7 +3324,7 @@ async function siteIntelligence(zip, location = null) {
       $where: `${liquorWhere} AND description NOT IN('Grocery Store','Liquor Store','Drug Store','Wholesale Wine','Wholesale Beer','Off Premises Caterer Establishment','Temporary retail')`
     }).catch(integrationFallback("liquor on-premise", [])),
     mtaWhere
-      ? dataNyJson("wujg-7c2s", {
+      ? dataNyJson("5wq4-mkjj", {
           $select: "station_complex,sum(ridership)",
           $where: mtaWhere,
           $group: "station_complex",
@@ -3471,13 +3471,13 @@ async function siteIntelligence(zip, location = null) {
     },
     mta: {
       available: Boolean(location),
-      totalDecember2024Ridership: Math.round(mtaTotal),
+      monthlyRidership: Math.round(mtaTotal),
       scope: location ? `within ${location.radiusMiles} mile` : "Enter an address to calculate nearby station ridership",
       topStations: mtaRows.map((row) => ({
         station: row.station_complex || "Unknown station",
         ridership: Math.round(typedNumber(row.sum_ridership))
       })),
-      source: "MTA Subway Hourly Ridership, December 2024"
+      source: "MTA Subway Hourly Ridership, May 2026"
     },
     // Real venue foot traffic (BestTime), snapshotted + cache-only so it stays
     // deterministic and adds no latency to the score. Lightly refines Demand &
