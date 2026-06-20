@@ -3628,10 +3628,19 @@ function buildBusinessSuccessModel(profile, recommendations) {
   // so it's removed from the SCORE (kept as a display-only signal) and the
   // remaining demand weights are renormalized (÷0.90) to preserve scale. This
   // removes the 39↔45 non-determinism on the same address.
-  const demandScore = clampScore((profile.density * 0.18 + profile.transit * 0.14 + effectiveOffice(profile) * 0.09 + effectiveNightlife(profile) * 0.07 + effectiveTourist(profile) * 0.05 + profile.student * 0.05 + config.baseDemand * 0.18 + reviewMomentum * 0.14) / 0.9);
+  const demandScoreBase = clampScore((profile.density * 0.18 + profile.transit * 0.14 + effectiveOffice(profile) * 0.09 + effectiveNightlife(profile) * 0.07 + effectiveTourist(profile) * 0.05 + profile.student * 0.05 + config.baseDemand * 0.18 + reviewMomentum * 0.14) / 0.9);
   const customerFitScore = clampScore(profile.income * 0.24 + profile.families * 0.14 + profile.student * 0.08 + effectiveOffice(profile) * 0.12 + profile.localPreference * 0.16 + profile.chainFit * 0.1 + categoryFit * 0.16);
   const competitionScore = clampScore(100 - competitionPressure * 0.78 + (businessResult?.googlePlaces?.avgRating >= 4.5 ? 4 : 0));
-  const locationScore = clampScore(profile.transit * 0.34 + profile.density * 0.22 + effectiveOffice(profile) * 0.12 + (100 - effectiveRent) * 0.1 + propertyBoost + transitBoost + (state.location ? 6 : 0));
+  const locationScoreBase = clampScore(profile.transit * 0.34 + profile.density * 0.22 + effectiveOffice(profile) * 0.12 + (100 - effectiveRent) * 0.1 + propertyBoost + transitBoost + (state.location ? 6 : 0));
+  // Light BestTime refinement: nudge Demand and Location toward REAL venue foot
+  // traffic (snapshotted server-side, deterministic). Neutral at 50; capped at
+  // ±6 Demand / ±4 Location so it refines the MTA/demographic signal rather than
+  // dominating it. Only applies when the venue sample is real (≥5 venues).
+  const footTraffic = siteIntelResult?.footTraffic;
+  const footTrafficApplied = Boolean(footTraffic && Number.isFinite(footTraffic.intensity) && (footTraffic.venuesWithData || 0) >= 5);
+  const footTrafficDelta = footTrafficApplied ? (footTraffic.intensity - 50) / 50 : 0;
+  const demandScore = clampScore(demandScoreBase + footTrafficDelta * 6);
+  const locationScore = clampScore(locationScoreBase + footTrafficDelta * 4);
   const financialScore = clampScore(profile.income * 0.3 + (100 - effectiveRent) * 0.28 + (100 - config.rentSensitivity) * 0.1 + categoryFit * 0.14 + profile.chainFit * 0.1 + budgetSupport * 0.08);
   const growthScore = clampScore(45 + permitBoost + propertyBoost + effectiveOffice(profile) * 0.12 + profile.density * 0.1 + profile.transit * 0.08);
   const riskRaw = clampScore(effectiveRent * 0.34 + competitionPressure * 0.32 + (100 - profile.income) * 0.1 + (100 - profile.transit) * 0.08 + (!state.location ? 6 : 0));
@@ -3665,7 +3674,7 @@ function buildBusinessSuccessModel(profile, recommendations) {
     {
       name: "Demand",
       value: demandScore,
-      why: `Verified Signals / Model Insights from category demand, existing activity, review momentum, demand momentum (${demandSignalLabel}), density, mobility, office, tourism, nightlife, and student signals.`
+      why: `Verified Signals / Model Insights from category demand, existing activity, review momentum, demand momentum (${demandSignalLabel}), density, mobility, office, tourism, nightlife, and student signals.${footTrafficApplied ? ` Refined by real venue foot traffic nearby (busy-hours level ${footTraffic.intensity}/100, ${footTraffic.venuesWithData} venues).` : ""}`
     },
     {
       name: "Customer fit",
@@ -3680,7 +3689,7 @@ function buildBusinessSuccessModel(profile, recommendations) {
     {
       name: "Location quality",
       value: locationScore,
-      why: "Model Insights from mobility access, walkability proxy, street density, office pull, commercial mix, and exact-address context when provided."
+      why: `Model Insights from mobility access, walkability proxy, street density, office pull, commercial mix, and exact-address context when provided.${footTrafficApplied ? ` Refined by real nearby venue foot traffic.` : ""}`
     },
     {
       name: "Financial viability",

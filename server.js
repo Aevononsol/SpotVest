@@ -3209,6 +3209,76 @@ async function besttimeLive(venueRefs) {
   return { available: true, venues: results.length, liveBusyness: live, deltaPct: delta, label };
 }
 
+// ---- BestTime foot-traffic signal for the SCORE (Demand & Location) ----
+// Same area key scheme as /api/area-foot-traffic so the cache is shared.
+function areaKeyFor(zip, location) {
+  if (/^\d{5}$/.test(String(zip || ""))) return String(zip);
+  if (location?.lat && location?.lng) return `${location.lat.toFixed(3)},${location.lng.toFixed(3)}`;
+  return "";
+}
+
+// Core commercial-hours (10a-9p) average busyness, 0-100. Null when the venue
+// sample is too thin to trust, so a weak signal can never move the score.
+function areaFootTrafficIntensity(area) {
+  if (!area || !Array.isArray(area.hourly) || (area.venuesWithData || 0) < 5) return null;
+  const hrs = area.hourly.slice(10, 22).map(Number).filter(Number.isFinite);
+  if (!hrs.length) return null;
+  return Math.max(0, Math.min(100, Math.round(hrs.reduce((s, v) => s + v, 0) / hrs.length)));
+}
+
+const _ftWarming = new Set();
+async function warmAreaFootTraffic(areaKey, location) {
+  if (_ftWarming.has(areaKey)) return;
+  _ftWarming.add(areaKey);
+  try {
+    const hasLoc = location?.lat && location?.lng;
+    const q = hasLoc ? `restaurants near ${location.address || areaKey}` : `restaurants in ${areaKey} New York`;
+    const args = { q, lat: hasLoc ? location.lat : undefined, lng: hasLoc ? location.lng : undefined, radius: 1200, num: 50 };
+    let result = await besttimeAreaForecast({ ...args, fast: true });
+    if (!result.available || (result.venuesWithData || 0) < 25) {
+      const built = await besttimeAreaForecast({ ...args, fast: false });
+      if (built.available && (built.venuesWithData || 0) >= (result.venuesWithData || 0)) result = built;
+    }
+    if (result.available) {
+      besttimeAreaCache.set(areaKey, { at: Date.now(), data: result });
+      writeCache(`ftblend:${areaKey}`, {
+        intensity: areaFootTrafficIntensity(result),
+        venuesWithData: result.venuesWithData || 0,
+        source: "BestTime venue busyness (Google Popular Times)"
+      }, COMPETITOR_SNAPSHOT_TTL_MS);
+    }
+  } catch { /* warm is best-effort */ } finally {
+    _ftWarming.delete(areaKey);
+  }
+}
+
+// Deterministic foot-traffic signal attached to siteIntelligence. Reads ONLY
+// caches (durable write-once snapshot, then the shared 7-day area cache) so it
+// adds no latency or BestTime credits to the score path. For an un-warmed area
+// it returns null this time and fires a one-off background warm, so the snapshot
+// is ready and FROZEN for the next report — the same write-once pattern used for
+// the Google competitor snapshot. Returns { intensity, venuesWithData, source }
+// or null.
+function resolveAreaFootTraffic(zip, location) {
+  if (!besttimeConfigured()) return null;
+  const areaKey = areaKeyFor(zip, location);
+  if (!areaKey) return null;
+  const snap = readCache(`ftblend:${areaKey}`);
+  if (snap) return snap; // frozen, deterministic (intensity may be null = no blend)
+  const hit = besttimeAreaCache.get(areaKey);
+  if (hit && Date.now() - hit.at < BESTTIME_AREA_TTL) {
+    const value = {
+      intensity: areaFootTrafficIntensity(hit.data),
+      venuesWithData: hit.data.venuesWithData || 0,
+      source: "BestTime venue busyness (Google Popular Times)"
+    };
+    writeCache(`ftblend:${areaKey}`, value, COMPETITOR_SNAPSHOT_TTL_MS); // freeze ~1yr
+    return value;
+  }
+  warmAreaFootTraffic(areaKey, location).catch(() => {});
+  return null;
+}
+
 async function siteIntelligence(zip, location = null) {
   const liquorWhere = location?.lat && location?.lng
     ? `within_circle(georeference, ${location.lat}, ${location.lng}, ${location.radiusMeters || 805})`
@@ -3409,6 +3479,10 @@ async function siteIntelligence(zip, location = null) {
       })),
       source: "MTA Subway Hourly Ridership, December 2024"
     },
+    // Real venue foot traffic (BestTime), snapshotted + cache-only so it stays
+    // deterministic and adds no latency to the score. Lightly refines Demand &
+    // Location on the client; null until the area is warmed.
+    footTraffic: resolveAreaFootTraffic(zip, location),
     pluto: {
       summaryAvailable: plutoSummaryAvailable,
       hotelLots: firstCount(plutoHotelRows[0]), // hotel-class buildings nearby — tourist signal
