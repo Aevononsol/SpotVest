@@ -5441,16 +5441,19 @@ createServer(async (request, response) => {
       const q = safeText(url.searchParams.get("q"), 40).toUpperCase().replace(/[^A-Z0-9 ]/g, "").trim();
       if (!q) { sendJson(response, 400, { error: "Provide ?q= (a keyword, e.g. hookah)." }); return; }
       const like = `%${q}%`;
+      const zip = (safeText(url.searchParams.get("zip"), 5) || "").replace(/[^0-9]/g, "");
+      const zipDcwp = zip ? ` AND address_zip='${zip}'` : "";
+      const zipDohmh = zip ? ` AND zipcode='${zip}'` : "";
       try {
         const [dcwp, dohmh] = await Promise.all([
           socrataJson("w7w3-xahh", {
             $select: "business_name,dba_trade_name,business_category,address_building,address_street_name,address_zip,latitude,longitude",
-            $where: `(upper(business_name) like '${like}' OR upper(dba_trade_name) like '${like}' OR upper(business_category) like '${like}' OR upper(detail) like '${like}') AND license_status='Active'`,
+            $where: `(upper(business_name) like '${like}' OR upper(dba_trade_name) like '${like}' OR upper(business_category) like '${like}' OR upper(detail) like '${like}') AND license_status='Active'${zipDcwp}`,
             $limit: "5000"
           }, { timeoutMs: 30000 }).catch(() => []),
           socrataJson("43nn-pn8j", {
             $select: "dba,cuisine_description,building,street,zipcode,latitude,longitude",
-            $where: `upper(dba) like '${like}' OR upper(cuisine_description) like '${like}'`,
+            $where: `(upper(dba) like '${like}' OR upper(cuisine_description) like '${like}')${zipDohmh}`,
             $group: "dba,cuisine_description,building,street,zipcode,latitude,longitude",
             $limit: "5000"
           }, { timeoutMs: 30000 }).catch(() => [])
@@ -5474,7 +5477,7 @@ createServer(async (request, response) => {
           r.latitude, r.longitude, "DOHMH food permit"
         ));
         out.sort((a, b) => a.name.localeCompare(b.name));
-        sendJson(response, 200, { query: q, count: out.length, businesses: out.slice(0, 4000) });
+        sendJson(response, 200, { query: q, zip: zip || null, count: out.length, businesses: out.slice(0, 4000) });
       } catch (error) {
         sendJson(response, 200, { error: error.message });
       }
