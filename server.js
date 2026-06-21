@@ -2164,6 +2164,14 @@ async function googlePlaceSignals(zip, businessInput, location = null) {
       return types.some((t) => allowedTypes.includes(t));
     });
   }
+  // Name-based exclusion for the long-tail Google mislabels its place types
+  // can't catch: hookah/shisha/smoke/vape/cigar lounges are routinely tagged
+  // "cafe", so a coffee search counts them as coffee competitors. Drop the
+  // unambiguous ones by name. (Only for drink/cafe searches; a bar/lounge
+  // search legitimately wants lounges.)
+  if (/\b(coffee|cafe|café|espresso|matcha|tea|bubble|boba|juice|smoothie)\b/.test(String(businessInput || "").toLowerCase())) {
+    places = places.filter((p) => !/\b(hookah|hooka|shisha|sheesha|narghile|smoke ?shop|vape|cigar)\b/i.test(String(p.name || "")));
+  }
 
   const names = places.map((place) => String(place.name || "").toUpperCase());
   const chainCount = names.filter((name) => knownChains.some((chain) => name.includes(chain))).length;
