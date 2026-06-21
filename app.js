@@ -3878,25 +3878,50 @@ function onBlockDensity() {
 function blockWeightFor(cat) {
   return { grabgo:1.0, quick:1.0, retail:0.9, fastcasual:0.85, bar:0.75, casual:0.65, service:0.55, upscale:0.4, targeted:0.3, destination:0.3 }[cat] ?? 0.65;
 }
-// Phase 7: 0..1 "is this block commercially alive?" Prefer the REAL count of
-// active businesses within ~120 m of the exact point (blockBusinessCount) — a
-// police-station / residential stretch reads ~0 = dead. Fall back to BestTime
-// per-street busyness, then the avenue/side-street name heuristic.
-function blockAliveness() {
+// SOFTENED block layer (replaces the old hard multiplicative gate that crashed
+// good blocks whenever the fuzzy block data misread). Returns a BOUNDED,
+// confidence-weighted POINT adjustment to Market Fit in address mode.
+//
+// Each available block signal votes -1 (dead) .. +1 (alive). The nudge scales
+// with (a) how strongly the signals AGREE and (b) how much the block matters
+// for this business type (blockWeightFor). When the real block data is missing
+// or the signals conflict, the swing collapses toward 0 — i.e. it trusts the
+// stable area score instead of guessing. Honest on truly dead blocks, no wild
+// swings on normal ones.
+function blockAdjustment(business) {
   const si = currentSiteIntelResult();
-  // PRIMARY: commercial+retail floor area on the EXACT tax block (PLUTO). ~0 =
-  // a police-station/residential dead block; a real retail block has lots of
-  // commercial sqft. This is the actual block, not a radius that bleeds in
-  // neighbors.
+  const bw = blockWeightFor(businessCategory(business));
+  const clamp1 = (v) => Math.max(-1, Math.min(1, v));
+  // Strong, data-backed votes (the actual block, not a radius that bleeds in
+  // neighbors): PLUTO same-street commercial sqft, ~120m business count, and
+  // BestTime per-street busyness.
+  const hard = [];
   const sqft = si?.blockCommercialArea;
-  if (Number.isFinite(sqft)) return Math.max(0, Math.min(1, sqft / 30000)); // 0 dead .. 30k+ alive
-  // Fallbacks: ~120m business count, then BestTime per-street, then heuristic.
+  if (Number.isFinite(sqft)) hard.push(clamp1((sqft - 15000) / 15000)); // 0 dead .. 30k alive
   const n = si?.blockBusinessCount;
-  if (Number.isFinite(n)) return Math.max(0, Math.min(1, (n - 2) / 16));
+  if (Number.isFinite(n)) hard.push(clamp1((n - 8) / 8));               // 0 dead .. 16 alive
   const bt = streetBusynessFromBestTime(state.location?.address);
-  if (Number.isFinite(bt)) return Math.max(0, Math.min(1, bt / 100));
+  if (Number.isFinite(bt)) hard.push(clamp1((bt - 50) / 50));          // 0 dead .. 100 alive
+  // Weak, name-based corridor hint (avenue vs mid-block side street).
   const c = streetCorridorScore(state.location?.address);
-  return Math.max(0, Math.min(1, 0.55 + c * 0.4));
+  const corridorVote = Number.isFinite(c) ? clamp1((c - 0.5) * 2) : null;
+
+  if (hard.length === 0) {
+    // No real block data — a name guess alone must barely move the score.
+    if (corridorVote === null) return 0;
+    return Math.round(corridorVote * 6 * bw);
+  }
+  // Pool the hard votes plus the corridor as a half-weight member.
+  const votes = hard.slice();
+  if (corridorVote !== null) votes.push(corridorVote * 0.5);
+  const avg = votes.reduce((a, b) => a + b, 0) / votes.length;
+  // Agreement = how few votes point the OPPOSITE way of the average. All
+  // agreeing → full swing; split signals → the swing shrinks toward 0.
+  const dir = Math.sign(avg) || 1;
+  const opposing = votes.filter((v) => Math.sign(v) === -dir).length;
+  const agree = 1 - opposing / votes.length;
+  const MAX = 18; // cap on the swing for the most walk-in-dependent concept
+  return Math.round(avg * MAX * bw * agree);
 }
 
 // Phase 6: same-block DIRECT competition penalty — opening a pizza spot right
@@ -4094,11 +4119,15 @@ function buildInstitutionalAnalysis(profile, recommendations) {
   // block (few/no businesses within ~120m) can't be propped up by a rich ZIP.
   // Gate strength scales by business type (walk-in strongest, destination
   // gentlest). ZIP mode: no gate.
-  let blockAlive = 1;
+  // SOFTENED block layer: instead of multiplying the score down (which wrecked
+  // good blocks when the fuzzy block data misread), apply a BOUNDED, confidence-
+  // weighted nudge. It only moves the score meaningfully when multiple block
+  // signals AGREE, and when the data is missing/uncertain it does ~nothing
+  // (trusts the stable area score). Honest on truly dead blocks, no wild swings.
+  let blockAdj = 0;
   if (state.location?.lat) {
-    blockAlive = blockAliveness();
-    const gateStrength = blockWeightFor(businessCategory(mfBiz)) * 0.55;
-    marketFit = clampScore(marketFit * ((1 - gateStrength) + gateStrength * blockAlive));
+    blockAdj = blockAdjustment(mfBiz);
+    marketFit = clampScore(marketFit + blockAdj);
   }
   const fv = computeFinancialViability(profile, state.business || successModel.business);
   const financialViability = fv.viability;
@@ -4118,9 +4147,10 @@ function buildInstitutionalAnalysis(profile, recommendations) {
       : fv.rentProvided
         ? "the rent and operating costs leave thin margins for what this spot can sell"
         : `based on area rents (≈$${formatInteger(fv.rent)}/mo) — enter your actual rent for an exact read`;
-  } else if (state.location?.lat && blockAlive < 0.3) {
-    // Commercially dead block — almost no businesses on it.
-    problem = "this block has almost no businesses on it — it's effectively a dead block for walk-in trade";
+  } else if (state.location?.lat && blockAdj <= -10) {
+    // The block signals agreed this is a quiet/dead stretch and pulled the
+    // score down meaningfully.
+    problem = "this block reads quiet for walk-in trade — few businesses and low street activity right here";
   } else if (sameBlockN >= 2 && sameBlockPenalty <= -10) {
     // Same-block direct competition is the dominant market problem.
     problem = `you'd be opening right next to ${sameBlockN} of the same business on this block`;
