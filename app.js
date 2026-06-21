@@ -3736,12 +3736,28 @@ function blendedFootTraffic(siteIntelResult) {
   };
 }
 
-// Phase 2: per-business-type Market Fit weighting. Each vector weights the five
-// market sub-signals {foot, comp, demo, night, access} and sums to 1.0, encoding
-// the spec's lead-signal table (cheaper & faster -> foot leads; pricier &
-// destination -> demographics lead; bars -> nightlife; services -> competition).
-function marketFitWeights(business) {
+// Phase 2/3: classify a business into one of the spec's market categories.
+// Shared by the Market Fit weighting (Phase 2) and the Financial Viability
+// cost/revenue model (Phase 3).
+function businessCategory(business) {
   const b = String(business || "").toLowerCase();
+  if (/\b(bar|pub|lounge|night ?club|club|brewery|cocktail|wine bar|speakeasy|tavern)\b/.test(b)) return "bar";
+  if (/\b(coffee|cafe|café|espresso|bubble tea|boba|matcha|juice|smoothie|tea house)\b/.test(b)) return "grabgo";
+  if (/\b(pizza|slice|deli|bodega|bagel|fast food|sandwich|hot ?dog|halal cart|food cart|taco stand)\b/.test(b)) return "quick";
+  if (/\b(daycare|day care|childcare|preschool|grooming|pet|tutor|tutoring|music school|martial arts|dance studio)\b/.test(b)) return "destination";
+  if (/\b(dental|dentist|doctor|medical|clinic|legal|law office|lawyer|accountant|\boffice\b|therapy|optometr|urgent care)\b/.test(b)) return "targeted";
+  if (/\b(nail|salon|barber|gym|fitness|spa|massage|wax|tanning|beauty|pilates|yoga)\b/.test(b)) return "service";
+  if (/\b(upscale|fine dining|steakhouse|omakase|tasting menu|michelin|chef'?s)\b/.test(b)) return "upscale";
+  if (/\b(fast.?casual|chipotle|sweetgreen|cava|poke|bowl)\b/.test(b)) return "fastcasual";
+  if (/\b(retail|shop|store|boutique|clothing|apparel|bookstore|gift|jewelry)\b/.test(b)) return "retail";
+  if (/\b(restaurant|dining|eatery|italian|japanese|sushi|chinese|korean|indian|mexican|thai|greek|mediterranean|ramen|bistro|grill|kitchen|trattoria)\b/.test(b)) return "casual";
+  return "casual";
+}
+
+// Phase 2: Market Fit weights per category (sum 1.0) — spec lead-signal table
+// (cheaper & faster -> foot leads; pricier & destination -> demographics lead;
+// bars -> nightlife; services -> competition).
+function marketFitWeights(business) {
   const W = {
     grabgo:     { foot:0.50, comp:0.25, demo:0.15, night:0.05, access:0.05 },
     quick:      { foot:0.50, comp:0.25, demo:0.15, night:0.05, access:0.05 },
@@ -3754,17 +3770,58 @@ function marketFitWeights(business) {
     targeted:   { foot:0.10, comp:0.20, demo:0.40, night:0.05, access:0.25 },
     destination:{ foot:0.10, comp:0.20, demo:0.40, night:0.05, access:0.25 }
   };
-  if (/\b(bar|pub|lounge|night ?club|club|brewery|cocktail|wine bar|speakeasy|tavern)\b/.test(b)) return W.bar;
-  if (/\b(coffee|cafe|café|espresso|bubble tea|boba|matcha|juice|smoothie|tea house)\b/.test(b)) return W.grabgo;
-  if (/\b(pizza|slice|deli|bodega|bagel|fast food|sandwich|hot ?dog|halal cart|food cart|taco stand)\b/.test(b)) return W.quick;
-  if (/\b(daycare|day care|childcare|preschool|grooming|pet|tutor|tutoring|music school|martial arts|dance studio)\b/.test(b)) return W.destination;
-  if (/\b(dental|dentist|doctor|medical|clinic|legal|law office|lawyer|accountant|\boffice\b|therapy|optometr|urgent care)\b/.test(b)) return W.targeted;
-  if (/\b(nail|salon|barber|gym|fitness|spa|massage|wax|tanning|beauty|pilates|yoga)\b/.test(b)) return W.service;
-  if (/\b(upscale|fine dining|steakhouse|omakase|tasting menu|michelin|chef'?s)\b/.test(b)) return W.upscale;
-  if (/\b(fast.?casual|chipotle|sweetgreen|cava|poke|bowl)\b/.test(b)) return W.fastcasual;
-  if (/\b(retail|shop|store|boutique|clothing|apparel|bookstore|gift|jewelry)\b/.test(b)) return W.retail;
-  if (/\b(restaurant|dining|eatery|italian|japanese|sushi|chinese|korean|indian|mexican|thai|greek|mediterranean|ramen|bistro|grill|kitchen|trattoria)\b/.test(b)) return W.casual;
-  return { foot:0.35, comp:0.30, demo:0.25, night:0.05, access:0.05 }; // balanced fallback
+  return W[businessCategory(business)] || W.casual;
+}
+
+// Phase 3: per-category economics. salesPerSf = monthly $/sqft band; rentCap =
+// healthy rent-to-sales ceiling; labor/cogs = cost ratios; price = avg ticket
+// per customer; capture = share of passersby who buy. Documented industry
+// ranges, tunable.
+const BUSINESS_ECON = {
+  grabgo:     { salesPerSf:[70,125],  rentCap:0.10, labor:0.25, cogs:0.20, price:7,   capture:0.025 },
+  quick:      { salesPerSf:[80,150],  rentCap:0.10, labor:0.25, cogs:0.30, price:14,  capture:0.020 },
+  retail:     { salesPerSf:[45,95],   rentCap:0.12, labor:0.15, cogs:0.50, price:45,  capture:0.015 },
+  fastcasual: { salesPerSf:[90,160],  rentCap:0.10, labor:0.27, cogs:0.28, price:16,  capture:0.018 },
+  casual:     { salesPerSf:[85,145],  rentCap:0.10, labor:0.30, cogs:0.30, price:32,  capture:0.012 },
+  upscale:    { salesPerSf:[120,200], rentCap:0.08, labor:0.32, cogs:0.32, price:80,  capture:0.006 },
+  bar:        { salesPerSf:[110,190], rentCap:0.08, labor:0.25, cogs:0.20, price:30,  capture:0.010 },
+  service:    { salesPerSf:[50,100],  rentCap:0.15, labor:0.35, cogs:0.10, price:45,  capture:0.010 },
+  targeted:   { salesPerSf:[60,120],  rentCap:0.15, labor:0.40, cogs:0.08, price:120, capture:0.004 },
+  destination:{ salesPerSf:[45,90],   rentCap:0.15, labor:0.40, cogs:0.08, price:90,  capture:0.005 }
+};
+const FOOT_TO_PASSERSBY = 12000; // foot index 100 ~ daily passersby on a prime block (tunable)
+
+// Phase 3: Financial Viability from real economics. Revenue = sqft model
+// cross-checked with a foot-traffic-per-head estimate (bounded blend, so the
+// passersby assumption can't run away). Viability is driven by rent as a share
+// of revenue vs the category's healthy cap — so YOUR rent dominates the score —
+// with a small adjustment for tight vs lean cost structures. Uses the entered
+// rent when provided, else an area-estimated rent.
+function computeFinancialViability(profile, business) {
+  const econ = BUSINESS_ECON[businessCategory(business)] || BUSINESS_ECON.casual;
+  const size = 1200;
+  const rentProvided = Number.isFinite(state.actualRentMonthly) && state.actualRentMonthly > 0;
+  const rent = rentProvided ? state.actualRentMonthly : estimateBaselineRent(profile, size);
+  const foot = clampScore(footTrafficScoreFor(profile));
+  const demandScore = clampScore(categoryFitForBusiness(business, profile));
+  const income = safeNumber(profile.income, 50);
+  const lf = Math.max(0.55, Math.min(1.5, (demandScore * 0.45 + foot * 0.35 + income * 0.20) / 60));
+  const revSqft = size * ((econ.salesPerSf[0] + econ.salesPerSf[1]) / 2) * lf;
+  const revHead = (foot / 100) * FOOT_TO_PASSERSBY * econ.capture * econ.price * 30;
+  const revHeadBounded = Math.max(0.5 * revSqft, Math.min(2 * revSqft, revHead));
+  const rev = Math.round(0.5 * revSqft + 0.5 * revHeadBounded);
+  const rentPct = rev > 0 ? rent / rev : 1;
+  const r = econ.rentCap > 0 ? rentPct / econ.rentCap : 2; // 1.0 = exactly at the healthy cap
+  let v;
+  if (r <= 0.5) v = 88;
+  else if (r <= 1.0) v = 88 - ((r - 0.5) / 0.5) * 18;   // 88 -> 70
+  else if (r <= 1.5) v = 70 - ((r - 1.0) / 0.5) * 18;   // 70 -> 52
+  else if (r <= 2.0) v = 52 - ((r - 1.5) / 0.5) * 12;   // 52 -> 40
+  else if (r <= 3.0) v = 40 - ((r - 2.0) / 1.0) * 15;   // 40 -> 25
+  else v = 22;
+  const load = econ.labor + econ.cogs;          // tight gross structure trims; lean adds
+  v += load >= 0.60 ? -5 : load <= 0.35 ? 4 : 0;
+  return { viability: clampScore(v), rev, rent, rentPct, rentCap: econ.rentCap, r, rentProvided };
 }
 
 // Hidden preview switch for the two-score model. OFF by default, so live
@@ -3884,7 +3941,8 @@ function buildInstitutionalAnalysis(profile, recommendations) {
   const marketFit = clampScore(
     mfFoot * mfw.foot + mfComp * mfw.comp + mfDemo * mfw.demo + mfNight * mfw.night + mfAccess * mfw.access
   );
-  const financialViability = clampScore(scoreValue("Financial viability"));
+  const fv = computeFinancialViability(profile, state.business || successModel.business);
+  const financialViability = fv.viability;
   const headlineScore = Math.min(marketFit, financialViability);
   // Verdict from the LOWER of the two scores: 70+ OPEN, 50-69 OPEN WITH
   // CONDITIONS, <50 DO NOT OPEN. A clean OPEN therefore needs BOTH >= 70.
@@ -3896,12 +3954,11 @@ function buildInstitutionalAnalysis(profile, recommendations) {
   // page sticks to this one story.
   let problem;
   if (financialViability <= marketFit) {
-    const q = successModel.rentQuote;
-    problem = (q && q.healthyHigh > 0 && q.ratio > q.healthyHigh)
-      ? `your rent is heavy here (≈${q.ratioPct}% of projected sales vs a healthy ${q.healthyPct})`
-      : q
-        ? "the rent and cost economics are tight for what this spot can sell"
-        : "this area's typical rents run tight for this business — enter your actual rent for an exact read";
+    problem = fv.r > 1.25
+      ? `rent is heavy here (≈${Math.round(fv.rentPct * 100)}% of estimated sales vs a healthy ≤${Math.round(fv.rentCap * 100)}%)`
+      : fv.rentProvided
+        ? "the rent and operating costs leave thin margins for what this spot can sell"
+        : `based on area rents (≈$${formatInteger(fv.rent)}/mo) — enter your actual rent for an exact read`;
   } else {
     // Name the weakest market signal that actually MATTERS for this business
     // type (only signals carrying real weight in marketFitWeights).
