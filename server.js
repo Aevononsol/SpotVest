@@ -3543,6 +3543,28 @@ async function siteIntelligence(zip, location = null) {
     }
   }
 
+  // Phase 7.1: EXACT-BLOCK commercial intensity — sum the retail + commercial
+  // floor area of every nearby PLUTO lot on the SAME tax block as the address.
+  // A police-station / residential block has ~0 commercial area = genuinely
+  // dead for walk-in trade, regardless of how busy neighboring blocks are. This
+  // is the actual block (tax block), not a radius that bleeds in neighbors.
+  let blockCommercialArea = null;
+  if (location?.lat && location?.lng && lotResult?.available && Array.isArray(plutoLotRows) && plutoLotRows.length) {
+    let best = null, bestD = Infinity;
+    for (const row of plutoLotRows) {
+      const la = Number(row.latitude), lo = Number(row.longitude);
+      if (!Number.isFinite(la) || !Number.isFinite(lo)) continue;
+      const d = metersBetween(location.lat, location.lng, la, lo);
+      if (d < bestD) { bestD = d; best = row; }
+    }
+    const targetBlock = best ? Math.round(typedNumber(best.block)) : 0;
+    if (targetBlock) {
+      blockCommercialArea = Math.round(plutoLotRows
+        .filter((r) => Math.round(typedNumber(r.block)) === targetBlock)
+        .reduce((t, r) => t + (typedNumber(r.retailarea) || 0) + (typedNumber(r.comarea) || 0), 0));
+    }
+  }
+
   return {
     zip,
     searchContext: location
@@ -3593,6 +3615,9 @@ async function siteIntelligence(zip, location = null) {
     // Phase 7: active businesses within ~120 m of the exact point (null in ZIP
     // mode). Drives the "dead block" detection in address-mode Market Fit.
     blockBusinessCount,
+    // Phase 7.1: commercial+retail floor area on the EXACT tax block (sqft).
+    // ~0 = a commercially dead block. Primary block-aliveness signal.
+    blockCommercialArea,
     pluto: {
       summaryAvailable: plutoSummaryAvailable,
       hotelLots: firstCount(plutoHotelRows[0]), // hotel-class buildings nearby — tourist signal
