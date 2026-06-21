@@ -3783,7 +3783,7 @@ const BUSINESS_ECON = {
   retail:     { salesPerSf:[45,95],   rentCap:0.12, labor:0.15, cogs:0.50, price:45,  capture:0.015 },
   fastcasual: { salesPerSf:[90,160],  rentCap:0.10, labor:0.27, cogs:0.28, price:16,  capture:0.018 },
   casual:     { salesPerSf:[85,145],  rentCap:0.10, labor:0.30, cogs:0.30, price:32,  capture:0.012 },
-  upscale:    { salesPerSf:[120,200], rentCap:0.08, labor:0.32, cogs:0.32, price:80,  capture:0.006 },
+  upscale:    { salesPerSf:[100,170], rentCap:0.08, labor:0.32, cogs:0.32, price:80,  capture:0.006 },
   bar:        { salesPerSf:[110,190], rentCap:0.08, labor:0.25, cogs:0.20, price:30,  capture:0.010 },
   service:    { salesPerSf:[50,100],  rentCap:0.15, labor:0.35, cogs:0.10, price:45,  capture:0.010 },
   targeted:   { salesPerSf:[60,120],  rentCap:0.15, labor:0.40, cogs:0.08, price:120, capture:0.004 },
