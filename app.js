@@ -3700,10 +3700,10 @@ function buildBusinessSuccessModel(profile, recommendations) {
   ]};
 }
 
-// Citywide reference max for normalizing MTA monthly (May-2026) within-radius
-// ridership to 0-1. NOTE: tune this against real QA ridership numbers — it sets
-// how much MTA volume counts as "max foot traffic."
-const MTA_CITYWIDE_MAX = 1500000;
+// Calibrated from real May-2026 within-0.5mi ridership (admin diagnostic):
+// a strong-transit neighborhood tops out near this; the mega-hubs (Times Sq
+// ~14M, Grand Central ~6.6M, Union Sq ~5.7M) clamp to 1.0, which is correct.
+const MTA_CITYWIDE_MAX = 3000000;
 const FT_BESTTIME_WEIGHT = 0.65;
 const FT_MTA_WEIGHT = 0.35;
 // Max points the blended foot-traffic signal contributes to Demand. Replaces the
