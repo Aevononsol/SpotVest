@@ -1699,6 +1699,90 @@ async function dataNyJson(resource, params, { timeoutMs = 12000 } = {}) {
   return result.data;
 }
 
+// ---- MTA ridership window: a single FROZEN month every analysis queries ----
+// The analysis path NEVER derives "which month" live — it reads this snapshot,
+// so the same address scores identically between refreshes. A scheduled job
+// (once per calendar month) pulls the latest COMPLETE month from the dataset
+// and atomically swaps the reference below. The per-address ridership numbers
+// are still location-specific (within_circle) and can't be pre-computed for
+// every address, but because the window is fixed, the month's data is
+// historical/immutable, and Socrata responses are cached, repeated runs of the
+// same address return the same value.
+const MTA_DATASET_ID = "5wq4-mkjj";
+// Fallback used only until the first successful refresh (or if the dataset is
+// unreachable at boot). Kept current so the app is never wrong by default.
+let mtaWindow = { start: "2026-05-01T00:00:00", end: "2026-06-01T00:00:00", label: "May 2026", refreshedAt: null };
+
+function currentMtaWindow() { return mtaWindow; }
+
+// Build the shared WHERE fragment from a window captured ONCE per analysis, so a
+// mid-analysis refresh can't split a single report across two months.
+function mtaTimeFilter(win = currentMtaWindow()) {
+  return `transit_timestamp between '${win.start}' and '${win.end}' AND transit_mode='subway'`;
+}
+
+// Given the dataset's max timestamp, return the latest COMPLETE calendar month
+// as a [start, end) window. A month counts as complete only if we have data
+// through its final day; otherwise we use the previous month.
+function latestCompleteMonthWindow(maxTimestamp) {
+  const max = new Date(maxTimestamp);
+  if (isNaN(max.getTime())) return null;
+  const y = max.getUTCFullYear(), m = max.getUTCMonth();
+  const lastDayOfMonth = new Date(Date.UTC(y, m + 1, 1) - 86400000);
+  const monthComplete = max >= lastDayOfMonth;             // data through month end?
+  const idx = monthComplete ? m : m - 1;                   // Date.UTC handles rollover
+  const start = new Date(Date.UTC(y, idx, 1));
+  const end = new Date(Date.UTC(y, idx + 1, 1));
+  const fmt = (d) => d.toISOString().slice(0, 19);          // YYYY-MM-DDT00:00:00
+  return {
+    start: fmt(start),
+    end: fmt(end),
+    label: start.toLocaleString("en-US", { month: "long", year: "numeric", timeZone: "UTC" })
+  };
+}
+
+// Refresh the frozen window. Builds the new object FULLY, validates it, then
+// swaps the reference in a single assignment — an in-flight analysis reads
+// either the old or the new object, never a half-updated one (Node is
+// single-threaded and we never mutate mtaWindow in place). On any failure the
+// current window is left untouched.
+async function mtaWindowRefresh() {
+  try {
+    const rows = await dataNyJson(MTA_DATASET_ID, { $select: "max(transit_timestamp) as max" });
+    const maxTs = Array.isArray(rows) ? (rows[0]?.max || rows[0]?.max_transit_timestamp) : null;
+    if (!maxTs) return;
+    const win = latestCompleteMonthWindow(maxTs);
+    if (!win) return;
+    const next = { ...win, refreshedAt: new Date().toISOString(), maxSeen: maxTs };
+    mtaWindow = next;                       // atomic reference swap
+    await writeJsonStore("mta-window", mtaWindow);
+    console.log(`SpotVest MTA window -> ${mtaWindow.label} (data through ${maxTs})`);
+  } catch (error) {
+    console.warn(`[SpotVest] MTA window refresh failed, keeping ${mtaWindow.label}: ${error.message}`);
+  }
+}
+
+// Scheduler: load the last frozen window at boot (survives restarts), then check
+// daily and refresh once per calendar month (the first tick of a new month, or
+// first boot in that month). The only live MTA call off the analysis path.
+function startMtaWindowScheduler() {
+  const tick = async () => {
+    const now = new Date();
+    const last = mtaWindow.refreshedAt ? new Date(mtaWindow.refreshedAt) : null;
+    const newMonth = !last
+      || last.getUTCFullYear() !== now.getUTCFullYear()
+      || last.getUTCMonth() !== now.getUTCMonth();
+    if (newMonth) await mtaWindowRefresh();
+  };
+  readJsonStore("mta-window", null).then((saved) => {
+    if (saved?.start && saved?.end) mtaWindow = saved;
+    setTimeout(tick, 90_000); // shortly after boot
+  }).catch(() => setTimeout(tick, 90_000));
+  const interval = setInterval(tick, 24 * 60 * 60 * 1000); // daily check
+  interval.unref?.();
+  console.log("SpotVest MTA window scheduler enabled");
+}
+
 function firstCount(row) {
   if (!row) return 0;
   const value = Object.values(row)[0];
@@ -2107,13 +2191,13 @@ async function pointSnapshot(lng, lat, radiusMeters, business) {
     radiusMeters: Math.round(Math.max(150, Math.min(3000, radiusMeters || 800)))
   };
 
-  const mtaWhere = `within_circle(georeference, ${lat}, ${lng}, ${location.radiusMeters}) AND transit_timestamp between '2024-12-01T00:00:00' and '2025-01-01T00:00:00'`;
+  const mtaWhere = `within_circle(georeference, ${lat}, ${lng}, ${location.radiusMeters}) AND ${mtaTimeFilter()}`;
   const [places, mtaRows, hourRows] = await Promise.all([
     googlePlaceSignals("", term, location).catch(integrationFallback("nearby competitors", null)),
-    dataNyJson("wujg-7c2s", { $select: "sum(ridership)", $where: mtaWhere }).catch(integrationFallback("MTA ridership", [])),
+    dataNyJson("5wq4-mkjj", { $select: "sum(ridership)", $where: mtaWhere }).catch(integrationFallback("MTA ridership", [])),
     // Real hour-of-day ridership profile near this point — powers a
     // location-specific foot-traffic-by-hour curve (not a category template).
-    dataNyJson("wujg-7c2s", {
+    dataNyJson("5wq4-mkjj", {
       $select: "date_extract_hh(transit_timestamp) AS hour, sum(ridership) AS ride",
       $where: mtaWhere, $group: "hour", $order: "hour", $limit: "24"
     }).catch(integrationFallback("MTA hourly", []))
@@ -2494,9 +2578,9 @@ function parseStationName(raw) {
 // Stations within 1 mile, with per-station lat/lng + lines + total ridership.
 // Its own endpoint so this heavier query never delays the score gate (display only).
 async function nearbyTransit(lat, lng) {
-  const rows = await dataNyJson("wujg-7c2s", {
+  const rows = await dataNyJson("5wq4-mkjj", {
     $select: "station_complex,station_complex_id,latitude,longitude,sum(ridership)",
-    $where: `within_circle(georeference, ${lat}, ${lng}, 1609) AND transit_timestamp between '2024-12-01T00:00:00' and '2025-01-01T00:00:00'`,
+    $where: `within_circle(georeference, ${lat}, ${lng}, 1609) AND ${mtaTimeFilter()}`,
     $group: "station_complex,station_complex_id,latitude,longitude",
     $order: "sum_ridership DESC",
     $limit: "20"
@@ -3209,13 +3293,84 @@ async function besttimeLive(venueRefs) {
   return { available: true, venues: results.length, liveBusyness: live, deltaPct: delta, label };
 }
 
+// ---- BestTime foot-traffic signal for the SCORE (Demand & Location) ----
+// Same area key scheme as /api/area-foot-traffic so the cache is shared.
+function areaKeyFor(zip, location) {
+  if (/^\d{5}$/.test(String(zip || ""))) return String(zip);
+  if (location?.lat && location?.lng) return `${location.lat.toFixed(3)},${location.lng.toFixed(3)}`;
+  return "";
+}
+
+// Core commercial-hours (10a-9p) average busyness, 0-100. Null when the venue
+// sample is too thin to trust, so a weak signal can never move the score.
+function areaFootTrafficIntensity(area) {
+  if (!area || !Array.isArray(area.hourly) || (area.venuesWithData || 0) < 5) return null;
+  const hrs = area.hourly.slice(10, 22).map(Number).filter(Number.isFinite);
+  if (!hrs.length) return null;
+  return Math.max(0, Math.min(100, Math.round(hrs.reduce((s, v) => s + v, 0) / hrs.length)));
+}
+
+const _ftWarming = new Set();
+async function warmAreaFootTraffic(areaKey, location) {
+  if (_ftWarming.has(areaKey)) return;
+  _ftWarming.add(areaKey);
+  try {
+    const hasLoc = location?.lat && location?.lng;
+    const q = hasLoc ? `restaurants near ${location.address || areaKey}` : `restaurants in ${areaKey} New York`;
+    const args = { q, lat: hasLoc ? location.lat : undefined, lng: hasLoc ? location.lng : undefined, radius: 1200, num: 50 };
+    let result = await besttimeAreaForecast({ ...args, fast: true });
+    if (!result.available || (result.venuesWithData || 0) < 25) {
+      const built = await besttimeAreaForecast({ ...args, fast: false });
+      if (built.available && (built.venuesWithData || 0) >= (result.venuesWithData || 0)) result = built;
+    }
+    if (result.available) {
+      besttimeAreaCache.set(areaKey, { at: Date.now(), data: result });
+      writeCache(`ftblend:${areaKey}`, {
+        intensity: areaFootTrafficIntensity(result),
+        venuesWithData: result.venuesWithData || 0,
+        source: "BestTime venue busyness (Google Popular Times)"
+      }, COMPETITOR_SNAPSHOT_TTL_MS);
+    }
+  } catch { /* warm is best-effort */ } finally {
+    _ftWarming.delete(areaKey);
+  }
+}
+
+// Deterministic foot-traffic signal attached to siteIntelligence. Reads ONLY
+// caches (durable write-once snapshot, then the shared 7-day area cache) so it
+// adds no latency or BestTime credits to the score path. For an un-warmed area
+// it returns null this time and fires a one-off background warm, so the snapshot
+// is ready and FROZEN for the next report — the same write-once pattern used for
+// the Google competitor snapshot. Returns { intensity, venuesWithData, source }
+// or null.
+function resolveAreaFootTraffic(zip, location) {
+  if (!besttimeConfigured()) return null;
+  const areaKey = areaKeyFor(zip, location);
+  if (!areaKey) return null;
+  const snap = readCache(`ftblend:${areaKey}`);
+  if (snap) return snap; // frozen, deterministic (intensity may be null = no blend)
+  const hit = besttimeAreaCache.get(areaKey);
+  if (hit && Date.now() - hit.at < BESTTIME_AREA_TTL) {
+    const value = {
+      intensity: areaFootTrafficIntensity(hit.data),
+      venuesWithData: hit.data.venuesWithData || 0,
+      source: "BestTime venue busyness (Google Popular Times)"
+    };
+    writeCache(`ftblend:${areaKey}`, value, COMPETITOR_SNAPSHOT_TTL_MS); // freeze ~1yr
+    return value;
+  }
+  warmAreaFootTraffic(areaKey, location).catch(() => {});
+  return null;
+}
+
 async function siteIntelligence(zip, location = null) {
   const liquorWhere = location?.lat && location?.lng
     ? `within_circle(georeference, ${location.lat}, ${location.lng}, ${location.radiusMeters || 805})`
     : `zipcode='${zip}'`;
 
+  const mtaWin = currentMtaWindow(); // capture once; a mid-analysis refresh can't split this report
   const mtaWhere = location?.lat && location?.lng
-    ? `within_circle(georeference, ${location.lat}, ${location.lng}, ${location.radiusMeters || 805}) AND transit_timestamp between '2024-12-01T00:00:00' and '2025-01-01T00:00:00'`
+    ? `within_circle(georeference, ${location.lat}, ${location.lng}, ${location.radiusMeters || 805}) AND ${mtaTimeFilter(mtaWin)}`
     : null;
 
   const [
@@ -3254,7 +3409,7 @@ async function siteIntelligence(zip, location = null) {
       $where: `${liquorWhere} AND description NOT IN('Grocery Store','Liquor Store','Drug Store','Wholesale Wine','Wholesale Beer','Off Premises Caterer Establishment','Temporary retail')`
     }).catch(integrationFallback("liquor on-premise", [])),
     mtaWhere
-      ? dataNyJson("wujg-7c2s", {
+      ? dataNyJson("5wq4-mkjj", {
           $select: "station_complex,sum(ridership)",
           $where: mtaWhere,
           $group: "station_complex",
@@ -3401,14 +3556,23 @@ async function siteIntelligence(zip, location = null) {
     },
     mta: {
       available: Boolean(location),
+      monthlyRidership: Math.round(mtaTotal),
+      // Transitional alias: lets a server-only test deploy run without breaking
+      // browsers still serving the old cached client (which reads this field).
+      // Remove once the new client cache version is live everywhere.
       totalDecember2024Ridership: Math.round(mtaTotal),
+      month: mtaWin.label,
       scope: location ? `within ${location.radiusMiles} mile` : "Enter an address to calculate nearby station ridership",
       topStations: mtaRows.map((row) => ({
         station: row.station_complex || "Unknown station",
         ridership: Math.round(typedNumber(row.sum_ridership))
       })),
-      source: "MTA Subway Hourly Ridership, December 2024"
+      source: `MTA Subway Hourly Ridership, ${mtaWin.label}`
     },
+    // Real venue foot traffic (BestTime), snapshotted + cache-only so it stays
+    // deterministic and adds no latency to the score. Lightly refines Demand &
+    // Location on the client; null until the area is warmed.
+    footTraffic: resolveAreaFootTraffic(zip, location),
     pluto: {
       summaryAvailable: plutoSummaryAvailable,
       hotelLots: firstCount(plutoHotelRows[0]), // hotel-class buildings nearby — tourist signal
@@ -4018,6 +4182,7 @@ function startAiAgents() {
 loadEnv();
 startSecuritySentinel();
 startAiAgents();
+startMtaWindowScheduler();
 
 createServer(async (request, response) => {
   const url = new URL(request.url || "/", `http://${request.headers.host}`);
@@ -5155,6 +5320,55 @@ createServer(async (request, response) => {
       const q = safeText(url.searchParams.get("q"), 120) || "restaurants in New York City";
       const result = await besttimeAreaForecast({ q });
       sendJson(response, 200, result);
+      return;
+    }
+
+    // MTA ridership window diagnostic. GET reports the current frozen window and
+    // probes the live dataset (confirms sum(ridership) works + returns citywide
+    // and optional per-point ridership for MTA_CITYWIDE_MAX calibration). POST
+    // {action:"refresh"} triggers the monthly scheduler manually, end to end.
+    if (url.pathname === "/api/admin/mta-window") {
+      if (!adminAuthorized(request)) {
+        sendJson(response, 401, { error: "Admin token required." });
+        return;
+      }
+      if (request.method === "POST") {
+        const body = await readRequestJson(request).catch(() => ({}));
+        if (body.action === "refresh") {
+          const before = currentMtaWindow();
+          await mtaWindowRefresh();
+          sendJson(response, 200, { ok: true, before, after: currentMtaWindow() });
+          return;
+        }
+        sendJson(response, 400, { error: "Unknown action." });
+        return;
+      }
+      const win = currentMtaWindow();
+      const lat = Number(url.searchParams.get("lat"));
+      const lng = Number(url.searchParams.get("lng"));
+      const radius = Number(url.searchParams.get("radius")) || 805;
+      const out = { datasetId: MTA_DATASET_ID, window: win };
+      try {
+        const [maxRows, sumRows] = await Promise.all([
+          dataNyJson(MTA_DATASET_ID, { $select: "max(transit_timestamp) as max" }, { timeoutMs: 30000 }),
+          dataNyJson(MTA_DATASET_ID, { $select: "sum(ridership) as total", $where: mtaTimeFilter(win) }, { timeoutMs: 60000 })
+        ]);
+        out.datasetMaxTimestamp = Array.isArray(maxRows) ? (maxRows[0]?.max || null) : null;
+        out.citywideRidershipThisWindow = Array.isArray(sumRows) ? Number(sumRows[0]?.total) : null;
+        out.sumRidershipWorks = Number.isFinite(out.citywideRidershipThisWindow);
+        out.derivedFromMax = out.datasetMaxTimestamp ? latestCompleteMonthWindow(out.datasetMaxTimestamp) : null;
+        if (Number.isFinite(lat) && Number.isFinite(lng)) {
+          const ptRows = await dataNyJson(MTA_DATASET_ID, {
+            $select: "sum(ridership) as total",
+            $where: `within_circle(georeference, ${lat}, ${lng}, ${radius}) AND ${mtaTimeFilter(win)}`
+          }, { timeoutMs: 45000 });
+          out.pointRidership = Array.isArray(ptRows) ? Number(ptRows[0]?.total) : null;
+          out.pointQuery = { lat, lng, radius };
+        }
+      } catch (error) {
+        out.error = error.message;
+      }
+      sendJson(response, 200, out);
       return;
     }
 
