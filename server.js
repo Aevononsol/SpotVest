@@ -1642,6 +1642,21 @@ function withinSearchRadius(record, location) {
   return distanceMiles(location.lat, location.lng, record.lat, record.lng) <= Number(location.radiusMiles || 0.5);
 }
 
+// Normalize a street address to its STREET name only (drops the house number,
+// strips ordinals "4th"->"4", expands E/W/N/S and Ave/St), so two addresses on
+// the same street match regardless of formatting. Used for block-face matching.
+function streetKey(addr) {
+  return String(addr || "").toLowerCase()
+    .split(",")[0]
+    .replace(/^\s*\d+[a-z]?\s+/, "")            // drop leading house number
+    .replace(/(\d+)(st|nd|rd|th)\b/g, "$1")     // 4th -> 4
+    .replace(/\bavenue\b/g, "ave").replace(/\bstreet\b/g, "st")
+    .replace(/\bboulevard\b/g, "blvd").replace(/\bplace\b/g, "pl")
+    .replace(/\beast\b/g, "e").replace(/\bwest\b/g, "w")
+    .replace(/\bnorth\b/g, "n").replace(/\bsouth\b/g, "s")
+    .replace(/[.,]/g, "").replace(/\s+/g, " ").trim();
+}
+
 // SoQL where-clause for a lat/lng bounding box around the search center. A
 // radius search (e.g. 1 mile in the East Village) crosses several zip codes,
 // so filtering city records by a single zipcode badly undercounts competitors
@@ -3543,25 +3558,23 @@ async function siteIntelligence(zip, location = null) {
     }
   }
 
-  // Phase 7.1: EXACT-BLOCK commercial intensity — sum the retail + commercial
-  // floor area of every nearby PLUTO lot on the SAME tax block as the address.
-  // A police-station / residential block has ~0 commercial area = genuinely
-  // dead for walk-in trade, regardless of how busy neighboring blocks are. This
-  // is the actual block (tax block), not a radius that bleeds in neighbors.
+  // Phase 7.2: BLOCK-FACE commercial intensity — sum the retail + commercial
+  // floor area of nearby PLUTO lots ON THE SAME STREET as the address (the dead
+  // side-street frontage), NOT a radius or whole tax block (both bleed in the
+  // busy avenue around the corner). A police-station / residential side street
+  // has ~0 commercial area on its own frontage = genuinely dead for walk-in.
   let blockCommercialArea = null;
-  if (location?.lat && location?.lng && lotResult?.available && Array.isArray(plutoLotRows) && plutoLotRows.length) {
-    let best = null, bestD = Infinity;
-    for (const row of plutoLotRows) {
-      const la = Number(row.latitude), lo = Number(row.longitude);
-      if (!Number.isFinite(la) || !Number.isFinite(lo)) continue;
-      const d = metersBetween(location.lat, location.lng, la, lo);
-      if (d < bestD) { bestD = d; best = row; }
-    }
-    const targetBlock = best ? Math.round(typedNumber(best.block)) : 0;
-    if (targetBlock) {
-      blockCommercialArea = Math.round(plutoLotRows
-        .filter((r) => Math.round(typedNumber(r.block)) === targetBlock)
+  const addrStreet = streetKey(location?.address);
+  if (location?.lat && location?.lng && addrStreet && Array.isArray(plutoLotRows) && plutoLotRows.length) {
+    const sameStreet = plutoLotRows.filter((r) => {
+      const s = streetKey(r.address);
+      return s && (s === addrStreet || s.includes(addrStreet) || addrStreet.includes(s));
+    });
+    if (sameStreet.length) {
+      blockCommercialArea = Math.round(sameStreet
         .reduce((t, r) => t + (typedNumber(r.retailarea) || 0) + (typedNumber(r.comarea) || 0), 0));
+    } else {
+      blockCommercialArea = 0; // address's street not found among nearby commercial lots → dead frontage
     }
   }
 
