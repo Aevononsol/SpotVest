@@ -3849,8 +3849,12 @@ function blockVitality(business) {
 // live reading doesn't erase obvious context; then the block-vitality modifier.
 function marketFootSignal(profile, business) {
   const blend = blendedFootTraffic(currentSiteIntelResult());
-  const context = clampScore(footTrafficScoreFor(profile));
-  let foot = blend ? clampScore(0.65 * (blend.value * 100) + 0.35 * context) : context;
+  // Base = the proven 0-100 pedestrian-context score. The BestTime+MTA blend
+  // REFINES it (±, neutral at 0.5) rather than replacing it — replacing it
+  // deflated the scale and dropped busy corridors (avenue coffee -> 47). Then
+  // the block-vitality modifier.
+  let foot = clampScore(footTrafficScoreFor(profile));
+  if (blend) foot = clampScore(foot + (blend.value - 0.5) * 16); // ±8 refinement
   return clampScore(foot + blockVitality(business));
 }
 
@@ -3998,7 +4002,14 @@ function buildInstitutionalAnalysis(profile, recommendations) {
   const mfw = marketFitWeights(state.business || successModel.business);
   const mfBiz = state.business || successModel.business;
   const mfFoot = marketFootSignal(profile, mfBiz);              // BestTime+MTA blend + block vitality
-  const mfComp = scoreValue("Competition");                      // higher = less saturated
+  let mfComp = scoreValue("Competition");                        // higher = less saturated
+  // Walk-in concepts: dense same-category rivals on a HIGH-FOOT corridor are
+  // partly a foot-traffic POSITIVE, not a death sentence — so a busy competitive
+  // avenue isn't wrongly read as high-risk for coffee/quick/retail. Lift the
+  // saturation floor with foot; quieter blocks keep the full penalty.
+  if (["grabgo", "quick", "retail", "fastcasual"].includes(businessCategory(mfBiz))) {
+    mfComp = clampScore(Math.max(mfComp, Math.min(65, 35 + (mfFoot - 50) * 0.4)));
+  }
   const mfDemo = scoreValue("Customer fit");                     // demographics + spending fit
   const mfNight = clampScore(effectiveNightlife(profile));       // evening/bar activity
   const mfAccess = effectiveTransit(profile);                    // real MTA access (not borough constant)
