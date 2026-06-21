@@ -3384,7 +3384,8 @@ async function siteIntelligence(zip, location = null) {
     plutoSummaryRows,
     plutoLandUseRows,
     plutoLotRows,
-    plutoHotelRows
+    plutoHotelRows,
+    blockBizRows
   ] = await Promise.all([
     socrataJson("qcdj-rwhu", {
       $select: "lic_status,count(*)",
@@ -3455,8 +3456,22 @@ async function siteIntelligence(zip, location = null) {
       : socrataJson("64uk-42ks", {
           $select: "count(*)",
           $where: `zipcode='${zip}' and starts_with(bldgclass,'H')`
-        }, { timeoutMs: 25000 }).catch(integrationFallback("PLUTO hotels", []))
+        }, { timeoutMs: 25000 }).catch(integrationFallback("PLUTO hotels", [])),
+    // Phase 7: "is this block alive?" — count ALL active businesses (any
+    // category) within ~120 m of the exact point. Near-zero = a commercially
+    // dead block (e.g. a police-station / residential stretch), even in a rich
+    // ZIP. Address-mode only.
+    location?.lat && location?.lng
+      ? socrataJson("w7w3-xahh", {
+          $select: "count(*) as n",
+          $where: `${geoBoxWhere("latitude", "longitude", { lat: location.lat, lng: location.lng, radiusMiles: 120 / 1609.344 })} AND license_status='Active'`
+        }).catch(integrationFallback("block business density", []))
+      : Promise.resolve([])
   ]);
+
+  const blockBusinessCount = (location?.lat && location?.lng && Array.isArray(blockBizRows))
+    ? (Number(blockBizRows[0]?.n) || 0)
+    : null;
 
   const sidewalkActive = sidewalkRows
     .filter((row) => String(row.lic_status || "").toLowerCase() === "active")
@@ -3575,6 +3590,9 @@ async function siteIntelligence(zip, location = null) {
     // deterministic and adds no latency to the score. Lightly refines Demand &
     // Location on the client; null until the area is warmed.
     footTraffic: resolveAreaFootTraffic(zip, location),
+    // Phase 7: active businesses within ~120 m of the exact point (null in ZIP
+    // mode). Drives the "dead block" detection in address-mode Market Fit.
+    blockBusinessCount,
     pluto: {
       summaryAvailable: plutoSummaryAvailable,
       hotelLots: firstCount(plutoHotelRows[0]), // hotel-class buildings nearby — tourist signal
