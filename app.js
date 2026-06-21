@@ -3850,14 +3850,12 @@ function buildInstitutionalAnalysis(profile, recommendations) {
   );
   const financialViability = clampScore(scoreValue("Financial viability"));
   const headlineScore = Math.min(marketFit, financialViability);
-  const fitHigh = marketFit >= 58;
-  const viaHigh = financialViability >= 58;
+  // Verdict from the LOWER of the two scores: 70+ OPEN, 50-69 OPEN WITH
+  // CONDITIONS, <50 DO NOT OPEN. A clean OPEN therefore needs BOTH >= 70.
   const verdict = confidenceScore < 45 ? "NEEDS MORE DATA"
-    : (fitHigh && viaHigh) ? "OPEN"
-    : (!fitHigh && !viaHigh) ? "DO NOT OPEN"
-    : "CONDITIONAL";
-  // Words must match numbers: 72+ strong, 58-71 moderate, 45-57 soft, <45 weak.
-  const tierWord = (v) => v >= 72 ? "strong" : v >= 58 ? "moderate" : v >= 45 ? "soft" : "weak";
+    : headlineScore >= 70 ? "OPEN"
+    : headlineScore >= 50 ? "CONDITIONAL"
+    : "DO NOT OPEN";
   // The single biggest problem = the main driver of the LOWER score. The whole
   // page sticks to this one story.
   let problem;
@@ -3876,15 +3874,15 @@ function buildInstitutionalAnalysis(profile, recommendations) {
     ];
     problem = parts.slice().sort((a, b) => a[1] - b[1])[0][0];
   }
+  // Wording matches the band, never overstating: 70+ "strong/clear to open",
+  // 50-69 "workable, with conditions", <50 "too risky".
   const verdictReason = confidenceScore < 45
     ? "Not enough confirmed data yet — run again or add an exact address."
-    : (fitHigh && viaHigh)
-      ? `${tierWord(marketFit)[0].toUpperCase()}${tierWord(marketFit).slice(1)} demand and ${tierWord(financialViability)} economics — workable here.`
-      : (fitHigh && !viaHigh)
-        ? `Demand is ${tierWord(marketFit)}, but ${problem} — profitability is the risk.`
-        : (!fitHigh && viaHigh)
-          ? `Economics are ${tierWord(financialViability)}, but ${problem} — demand is the risk.`
-          : `Weak on both sides — ${problem}.`;
+    : headlineScore >= 70
+      ? "Both demand and economics are strong here — clear to open."
+      : headlineScore >= 50
+        ? `Workable, but with conditions — ${problem}.`
+        : `Too risky as-is — ${problem}.`;
   const twoScore = isTwoScorePreview();
   const failureBase = Math.max(12, Math.min(82, Math.round(84 - opportunityScore * 0.55 + (100 - riskScore) * 0.28 + Math.max(0, 70 - confidenceScore) * 0.25)));
   const revenueBase = {
@@ -4800,12 +4798,12 @@ function sv3OverviewHTML(ctx) {
              ? `<div class="hero-twoscore" style="display:flex;gap:10px;margin:14px 0 4px">
                   <div style="flex:1;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.10);border-radius:14px;padding:12px 14px">
                     <div style="font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--txt-3,#8a96b0)">Market Fit</div>
-                    <div style="font-family:'Sora',sans-serif;font-size:30px;font-weight:800;color:${ctx.marketFit >= 58 ? "#4ADE80" : "#F5B544"}">${ctx.marketFit}<span style="font-size:14px;color:var(--txt-3,#8a96b0)">/100</span></div>
+                    <div style="font-family:'Sora',sans-serif;font-size:30px;font-weight:800;color:${ctx.marketFit >= 70 ? "#4ADE80" : ctx.marketFit >= 50 ? "#F5B544" : "#FF6B6B"}">${ctx.marketFit}<span style="font-size:14px;color:var(--txt-3,#8a96b0)">/100</span></div>
                     <div style="font-size:10.5px;color:var(--txt-3,#8a96b0)">Will customers come?</div>
                   </div>
                   <div style="flex:1;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.10);border-radius:14px;padding:12px 14px">
                     <div style="font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--txt-3,#8a96b0)">Financial Viability</div>
-                    <div style="font-family:'Sora',sans-serif;font-size:30px;font-weight:800;color:${ctx.financialViability >= 58 ? "#4ADE80" : ctx.financialViability >= 45 ? "#F5B544" : "#FF6B6B"}">${ctx.financialViability}<span style="font-size:14px;color:var(--txt-3,#8a96b0)">/100</span></div>
+                    <div style="font-family:'Sora',sans-serif;font-size:30px;font-weight:800;color:${ctx.financialViability >= 70 ? "#4ADE80" : ctx.financialViability >= 50 ? "#F5B544" : "#FF6B6B"}">${ctx.financialViability}<span style="font-size:14px;color:var(--txt-3,#8a96b0)">/100</span></div>
                     <div style="font-size:10.5px;color:var(--txt-3,#8a96b0)">${ctx.rentQuote ? "Can it make money here?" : "Area estimate · add your rent to sharpen"}</div>
                   </div>
                 </div>
