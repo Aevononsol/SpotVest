@@ -3791,6 +3791,69 @@ const BUSINESS_ECON = {
 };
 const FOOT_TO_PASSERSBY = 12000; // foot index 100 ~ daily passersby on a prime block (tunable)
 
+// Phase 5: transit access from REAL MTA ridership when available (so it stops
+// being a borough constant); falls back to the profile value only with no
+// address/MTA.
+function effectiveTransit(profile) {
+  const si = currentSiteIntelResult();
+  if (si?.mta?.available && Number.isFinite(si.mta.monthlyRidership) && si.mta.monthlyRidership > 0) {
+    return clampScore(Math.min(100, (si.mta.monthlyRidership / MTA_CITYWIDE_MAX) * 100));
+  }
+  return clampScore(safeNumber(profile.transit, 50));
+}
+
+// Phase 5: is the storefront on a major corridor/avenue (high walk-in flow) or a
+// quiet mid-block side street? +1 corridor, -0.7 minor side street, 0 unknown.
+function streetCorridorScore(address) {
+  if (!address) return 0;
+  const street = String(address).toLowerCase().split(",")[0];
+  const avenue = /\b(ave|avenue)\b/.test(street)
+    || /\b(broadway|bowery|park ave|lexington|madison|amsterdam|columbus|boulevard|blvd|canal st|houston|delancey|grand st|fordham rd|\d+(?:st|nd|rd|th) ave)\b/.test(street);
+  const majorCross = /\b(14th|23rd|34th|42nd|57th|72nd|79th|86th|96th|110th|116th|125th|145th)\s+(st|street)\b/.test(street);
+  if (avenue || majorCross) return 1;
+  if (/\b\d+(?:st|nd|rd|th)\s+(st|street)\b/.test(street) || /\b(st|street|pl|place|ct|court|lane|ln)\b/.test(street)) return -0.7;
+  return 0;
+}
+
+// Phase 5: count same-category operators within ~95 m of the exact point (gated
+// map records) — a busy on-block cluster signals a live commercial block.
+function onBlockDensity() {
+  const loc = state.location;
+  const br = currentBusinessResult();
+  if (!loc?.lat || !loc?.lng || !Array.isArray(br?.mapRecords)) return null;
+  let n = 0;
+  for (const rec of br.mapRecords) {
+    const lat = Number(rec?.lat), lng = Number(rec?.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+    if (milesBetweenPts(loc.lat, loc.lng, lat, lng) <= 0.06) n++; // ~95 m
+  }
+  return n;
+}
+
+// Phase 5: block-vitality modifier on the foot-traffic signal (avenue/side-street
+// + on-block density), weighted UP for walk-in types and DOWN for destination.
+// Only applies with an exact address; ZIP-mode returns 0 (no block info).
+function blockVitality(business) {
+  if (!state.location?.lat) return 0;
+  const blockWeight = { grabgo:1.0, quick:1.0, retail:0.9, fastcasual:0.8, bar:0.7, casual:0.6, service:0.5, upscale:0.35, targeted:0.2, destination:0.2 }[businessCategory(business)] ?? 0.6;
+  const corridor = streetCorridorScore(state.location.address); // -0.7..+1
+  const dens = onBlockDensity();
+  const densScore = dens == null ? 0 : dens >= 6 ? 1 : dens >= 3 ? 0.5 : dens >= 1 ? 0 : -0.7;
+  const raw = Math.max(-1, Math.min(1, corridor * 0.6 + densScore * 0.4));
+  return Math.round(raw * 15 * blockWeight); // ±~15 for walk-in, less for destination
+}
+
+// Phase 5: the ONE foot-traffic signal used by both Market Fit and Financial
+// Viability. Primary = the BestTime+MTA 65/35 blend (the afternoon work, finally
+// wired in), rescaled 0-100; stabilized by the density/transit context so a thin
+// live reading doesn't erase obvious context; then the block-vitality modifier.
+function marketFootSignal(profile, business) {
+  const blend = blendedFootTraffic(currentSiteIntelResult());
+  const context = clampScore(footTrafficScoreFor(profile));
+  let foot = blend ? clampScore(0.65 * (blend.value * 100) + 0.35 * context) : context;
+  return clampScore(foot + blockVitality(business));
+}
+
 // Phase 3: Financial Viability from real economics. Revenue = sqft model
 // cross-checked with a foot-traffic-per-head estimate (bounded blend, so the
 // passersby assumption can't run away). Viability is driven by rent as a share
@@ -3802,7 +3865,7 @@ function computeFinancialViability(profile, business) {
   const size = 1200;
   const rentProvided = Number.isFinite(state.actualRentMonthly) && state.actualRentMonthly > 0;
   const rent = rentProvided ? state.actualRentMonthly : estimateBaselineRent(profile, size);
-  const foot = clampScore(footTrafficScoreFor(profile));
+  const foot = marketFootSignal(profile, business);
   const demandScore = clampScore(categoryFitForBusiness(business, profile));
   const income = safeNumber(profile.income, 50);
   const lf = Math.max(0.55, Math.min(1.5, (demandScore * 0.45 + foot * 0.35 + income * 0.20) / 60));
@@ -3933,11 +3996,12 @@ function buildInstitutionalAnalysis(profile, recommendations) {
   // Viability = "can it make money here" (rent-burden economics; competition
   // excluded). Headline = the LOWER of the two; verdict from the bands.
   const mfw = marketFitWeights(state.business || successModel.business);
-  const mfFoot = clampScore(footTrafficScoreFor(profile));      // pedestrian + transit flow
+  const mfBiz = state.business || successModel.business;
+  const mfFoot = marketFootSignal(profile, mfBiz);              // BestTime+MTA blend + block vitality
   const mfComp = scoreValue("Competition");                      // higher = less saturated
   const mfDemo = scoreValue("Customer fit");                     // demographics + spending fit
   const mfNight = clampScore(effectiveNightlife(profile));       // evening/bar activity
-  const mfAccess = clampScore(safeNumber(profile.transit, 50));  // can the right people get here
+  const mfAccess = effectiveTransit(profile);                    // real MTA access (not borough constant)
   const marketFit = clampScore(
     mfFoot * mfw.foot + mfComp * mfw.comp + mfDemo * mfw.demo + mfNight * mfw.night + mfAccess * mfw.access
   );
