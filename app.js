@@ -3830,17 +3830,32 @@ function onBlockDensity() {
   return n;
 }
 
-// Phase 5: block-vitality modifier on the foot-traffic signal (avenue/side-street
-// + on-block density), weighted UP for walk-in types and DOWN for destination.
-// Only applies with an exact address; ZIP-mode returns 0 (no block info).
+// Phase 6: BLOCK is the dominant driver when an exact address is given (ZIP
+// searches stay area-level; only address searches get these). Block aliveness =
+// is this a live corridor or a dead mid-block side street, weighted UP for
+// walk-in and DOWN for destination. Strong swing so a dead block can sink the
+// score even in a rich ZIP. ZIP-mode returns 0.
+function blockWeightFor(cat) {
+  return { grabgo:1.0, quick:1.0, retail:0.9, fastcasual:0.85, bar:0.75, casual:0.65, service:0.55, upscale:0.4, targeted:0.3, destination:0.3 }[cat] ?? 0.65;
+}
 function blockVitality(business) {
   if (!state.location?.lat) return 0;
-  const blockWeight = { grabgo:1.0, quick:1.0, retail:0.9, fastcasual:0.8, bar:0.7, casual:0.6, service:0.5, upscale:0.35, targeted:0.2, destination:0.2 }[businessCategory(business)] ?? 0.6;
-  const corridor = streetCorridorScore(state.location.address); // -0.7..+1
-  const dens = onBlockDensity();
-  const densScore = dens == null ? 0 : dens >= 6 ? 1 : dens >= 3 ? 0.5 : dens >= 1 ? 0 : -0.7;
-  const raw = Math.max(-1, Math.min(1, corridor * 0.6 + densScore * 0.4));
-  return Math.round(raw * 15 * blockWeight); // ±~15 for walk-in, less for destination
+  const corridor = streetCorridorScore(state.location.address); // -0.7 dead side street .. +1 corridor
+  return Math.round(corridor * 22 * blockWeightFor(businessCategory(business)));
+}
+
+// Phase 6: same-block DIRECT competition penalty — opening a pizza spot right
+// next to other pizza spots should screen "don't open." Counts same-category
+// operators within ~95 m (your block) and penalizes, escalating with how many.
+// Walk-in clusters (a coffee/quick row) hurt less; destination/service next to
+// the same thing hurts most. Address-mode only.
+function sameBlockCompetitionPenalty(business) {
+  if (!state.location?.lat) return 0;
+  const adj = onBlockDensity() || 0;
+  if (adj <= 0) return 0;
+  const sens = { grabgo:0.55, quick:0.6, retail:0.7, fastcasual:0.7, bar:0.8, casual:0.85, service:1.0, upscale:1.0, targeted:1.0, destination:1.0 }[businessCategory(business)] ?? 0.8;
+  const base = adj >= 3 ? 28 : adj === 2 ? 18 : 10; // 1, 2, 3+ direct rivals on the block
+  return -Math.round(base * sens);
 }
 
 // Phase 5: the ONE foot-traffic signal used by both Market Fit and Financial
@@ -4013,8 +4028,13 @@ function buildInstitutionalAnalysis(profile, recommendations) {
   const mfDemo = scoreValue("Customer fit");                     // demographics + spending fit
   const mfNight = clampScore(effectiveNightlife(profile));       // evening/bar activity
   const mfAccess = effectiveTransit(profile);                    // real MTA access (not borough constant)
+  // Phase 6: same-block direct competition (pizza next to pizza) pulls Market
+  // Fit down hard in address mode — adjacency is worse than area density.
+  const sameBlockPenalty = sameBlockCompetitionPenalty(mfBiz);
+  const sameBlockN = state.location?.lat ? (onBlockDensity() || 0) : 0;
   const marketFit = clampScore(
     mfFoot * mfw.foot + mfComp * mfw.comp + mfDemo * mfw.demo + mfNight * mfw.night + mfAccess * mfw.access
+    + sameBlockPenalty
   );
   const fv = computeFinancialViability(profile, state.business || successModel.business);
   const financialViability = fv.viability;
@@ -4034,6 +4054,9 @@ function buildInstitutionalAnalysis(profile, recommendations) {
       : fv.rentProvided
         ? "the rent and operating costs leave thin margins for what this spot can sell"
         : `based on area rents (≈$${formatInteger(fv.rent)}/mo) — enter your actual rent for an exact read`;
+  } else if (sameBlockN >= 2 && sameBlockPenalty <= -10) {
+    // Same-block direct competition is the dominant market problem.
+    problem = `you'd be opening right next to ${sameBlockN} of the same business on this block`;
   } else {
     // Name the weakest market signal that actually MATTERS for this business
     // type (only signals carrying real weight in marketFitWeights).
