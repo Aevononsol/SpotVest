@@ -2077,12 +2077,21 @@ async function cityMapRecords(zip, business, location = null) {
     dcwpMapRecords(zip, business, location).catch(integrationFallback("license map records", []))
   ]);
   const seen = new Set();
-  return [...restaurants, ...licenses].filter((record) => {
+  let records = [...restaurants, ...licenses].filter((record) => {
     const key = cityRecordKey(record);
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
   });
+  // Long-tail mislabel: a coffee/cafe term ("CAFE","COFFEE") also matches the
+  // registered name of hookah/smoke/vape lounges that call themselves a cafe, so
+  // they wrongly count as coffee competitors on the block. Drop the ones whose
+  // name says so. (Names that are merely "___ Cafe & Lounge" with no hookah word
+  // still can't be told apart in city data — that's the data ceiling.)
+  if (/^(cafe|coffee|tea)$/.test(String(business || "").toLowerCase())) {
+    records = records.filter((r) => !/\b(hookah|hooka|shisha|sheesha|narghile|smoke ?shop|vape|cigar)\b/i.test(String(r.name || "")));
+  }
+  return records;
 }
 
 // Google place types that are clearly NOT the same business as a food/retail
