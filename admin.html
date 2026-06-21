@@ -150,6 +150,18 @@
         </form>
         <p id="block-status" class="launch-status" role="status"></p>
         <pre id="block-result" style="white-space:pre-wrap;word-break:break-word;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--txt-2);background:var(--surface-2);border:1px solid var(--border);border-radius:12px;padding:12px;margin-top:10px;display:none"></pre>
+
+        <div class="launch-section-header" style="margin-top:18px">
+          <h3>Business export</h3>
+          <p>Pull every NYC business matching a keyword/category from the city data (DCWP licenses + DOHMH food permits), merged &amp; de-duplicated — the raw material for SpotVest's own business index. Name-based (NYC has no clean per-concept registration).</p>
+        </div>
+        <form id="admin-bizexport-form" class="admin-token-row">
+          <input id="bizexport-q" placeholder="e.g. hookah" autocomplete="off" />
+          <button type="submit">Pull list</button>
+          <button type="button" id="bizexport-csv" style="background:var(--surface);color:var(--txt);border:1px solid var(--border-strong);box-shadow:none">Download CSV</button>
+        </form>
+        <p id="bizexport-status" class="launch-status" role="status"></p>
+        <pre id="bizexport-result" style="white-space:pre-wrap;word-break:break-word;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--txt-2);background:var(--surface-2);border:1px solid var(--border);border-radius:12px;padding:12px;margin-top:10px;display:none"></pre>
       </section>
 
       <section class="launch-section">
@@ -240,6 +252,6 @@
         </div>
       </section>
     </main>
-    <script type="module" src="/admin.js?v=20260621-blockcheck"></script>
+    <script type="module" src="/admin.js?v=20260621-bizexport"></script>
   </body>
 </html>

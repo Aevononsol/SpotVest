@@ -5429,6 +5429,58 @@ createServer(async (request, response) => {
     // for the BLOCK FACE — the same-street PLUTO lots and their commercial floor
     // area (the "is this block alive?" input) vs the around-the-corner lots that
     // are correctly excluded. Confirms a dead side street reads dead.
+    // Business export: pull every NYC business matching a keyword/category from
+    // the city open data (DCWP licensed businesses + DOHMH food permits),
+    // merged + de-duplicated. Raw material for building SpotVest's own business
+    // index. Name-based, since NYC has no clean per-concept registration.
+    if (url.pathname === "/api/admin/business-export") {
+      if (!adminAuthorized(request)) {
+        sendJson(response, 401, { error: "Admin token required." });
+        return;
+      }
+      const q = safeText(url.searchParams.get("q"), 40).toUpperCase().replace(/[^A-Z0-9 ]/g, "").trim();
+      if (!q) { sendJson(response, 400, { error: "Provide ?q= (a keyword, e.g. hookah)." }); return; }
+      const like = `%${q}%`;
+      try {
+        const [dcwp, dohmh] = await Promise.all([
+          socrataJson("w7w3-xahh", {
+            $select: "business_name,dba_trade_name,business_category,address_building,address_street_name,address_zip,latitude,longitude",
+            $where: `(upper(business_name) like '${like}' OR upper(dba_trade_name) like '${like}' OR upper(business_category) like '${like}' OR upper(detail) like '${like}') AND license_status='Active'`,
+            $limit: "5000"
+          }, { timeoutMs: 30000 }).catch(() => []),
+          socrataJson("43nn-pn8j", {
+            $select: "dba,cuisine_description,building,street,zipcode,latitude,longitude",
+            $where: `upper(dba) like '${like}' OR upper(cuisine_description) like '${like}'`,
+            $group: "dba,cuisine_description,building,street,zipcode,latitude,longitude",
+            $limit: "5000"
+          }, { timeoutMs: 30000 }).catch(() => [])
+        ]);
+        const seen = new Set();
+        const out = [];
+        const add = (name, category, addr, zip, lat, lng, source) => {
+          name = safeText(name, 160); if (!name) return;
+          const key = `${name}|${safeText(addr, 120)}`.toUpperCase().replace(/\s+/g, " ");
+          if (seen.has(key)) return;
+          seen.add(key);
+          out.push({ name, category: safeText(category, 80) || "", address: safeText(addr, 160), zip: safeText(zip, 12), lat: Number(lat) || null, lng: Number(lng) || null, source });
+        };
+        (Array.isArray(dcwp) ? dcwp : []).forEach((r) => add(
+          r.dba_trade_name || r.business_name, r.business_category,
+          cityRecordAddress(r.address_building, r.address_street_name), r.address_zip,
+          r.latitude, r.longitude, "DCWP license"
+        ));
+        (Array.isArray(dohmh) ? dohmh : []).forEach((r) => add(
+          r.dba, r.cuisine_description, cityRecordAddress(r.building, r.street), r.zipcode,
+          r.latitude, r.longitude, "DOHMH food permit"
+        ));
+        out.sort((a, b) => a.name.localeCompare(b.name));
+        sendJson(response, 200, { query: q, count: out.length, businesses: out.slice(0, 4000) });
+      } catch (error) {
+        sendJson(response, 200, { error: error.message });
+      }
+      return;
+    }
+
     if (url.pathname === "/api/admin/block-check") {
       if (!adminAuthorized(request)) {
         sendJson(response, 401, { error: "Admin token required." });
