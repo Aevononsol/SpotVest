@@ -2085,6 +2085,32 @@ async function cityMapRecords(zip, business, location = null) {
   });
 }
 
+// Google place types that are clearly NOT the same business as a food/retail
+// concept — used to drop bodegas/groceries/pharmacies that a keyword search
+// drags in.
+const GOOGLE_NONRETAIL_TYPES = new Set([
+  "grocery_or_supermarket", "supermarket", "convenience_store", "liquor_store",
+  "gas_station", "pharmacy", "drugstore", "department_store", "home_goods_store",
+  "hardware_store", "electronics_store", "bank", "atm", "lodging"
+]);
+// Allowed Google place types per searched category. Null = unknown category
+// (no filter). A place is kept only if its types intersect this set.
+function googleAllowedTypes(businessInput) {
+  const b = String(businessInput || "").toLowerCase();
+  if (/\b(coffee|cafe|café|espresso|matcha|tea|bubble|boba|juice|smoothie)\b/.test(b)) return ["cafe", "bakery"];
+  if (/\b(bar|pub|lounge|night ?club|club|brewery|cocktail|tavern|speakeasy)\b/.test(b)) return ["bar", "night_club"];
+  if (/\b(gym|fitness|yoga|pilates|crossfit|spin)\b/.test(b)) return ["gym"];
+  if (/\b(nail|salon|barber|spa|massage|beauty|wax|hair)\b/.test(b)) return ["hair_care", "beauty_salon", "spa"];
+  if (/\b(pharmacy|drug ?store)\b/.test(b)) return ["pharmacy", "drugstore"];
+  if (/\b(daycare|childcare|preschool|tutor)\b/.test(b)) return ["school", "primary_school"];
+  if (/\b(laundr|wash)\b/.test(b)) return ["laundry"];
+  if (/\b(pizza|deli|bagel|sandwich|taco|burger|restaurant|dining|eatery|ramen|sushi|grill|kitchen|bbq|bistro|fast food|cuisine|italian|chinese|mexican|thai|indian|korean|japanese|greek|mediterranean|halal)\b/.test(b))
+    return ["restaurant", "meal_takeaway", "meal_delivery", "bakery", "cafe", "food"];
+  if (/\b(retail|shop|store|boutique|clothing|apparel|bookstore|gift|jewelry)\b/.test(b))
+    return ["clothing_store", "store", "shoe_store", "book_store", "jewelry_store", "shopping_mall"];
+  return null;
+}
+
 async function googlePlaceSignals(zip, businessInput, location = null) {
   if (!process.env.GOOGLE_PLACES_API_KEY) return null;
 
@@ -2105,7 +2131,7 @@ async function googlePlaceSignals(zip, businessInput, location = null) {
   // its token to activate. This runs once per area then gets snapshot-cached, so
   // the added latency is one-time, not per report.
   const endpointPath = location?.lat ? "nearbysearch" : "textsearch";
-  const places = [];
+  let places = [];
   let pageUrl = url;
   let paged = 0;
   for (let page = 0; page < 3; page++) {
@@ -2123,6 +2149,20 @@ async function googlePlaceSignals(zip, businessInput, location = null) {
     pageUrl = new URL(`https://maps.googleapis.com/maps/api/place/${endpointPath}/json`);
     pageUrl.searchParams.set("pagetoken", token);
     pageUrl.searchParams.set("key", process.env.GOOGLE_PLACES_API_KEY);
+  }
+
+  // Category precision: Google's keyword search returns adjacent businesses
+  // (a "coffee" search pulls in bodegas/grocery stores that sell coffee). Keep
+  // only places whose Google place TYPES match the searched category, so coffee
+  // competitors are coffee shops, not groceries. Unknown categories: no filter.
+  const allowedTypes = googleAllowedTypes(businessInput);
+  if (allowedTypes) {
+    places = places.filter((p) => {
+      const types = Array.isArray(p.types) ? p.types : [];
+      if (!types.length) return true;
+      if (types.some((t) => GOOGLE_NONRETAIL_TYPES.has(t)) && !types.some((t) => allowedTypes.includes(t))) return false;
+      return types.some((t) => allowedTypes.includes(t));
+    });
   }
 
   const names = places.map((place) => String(place.name || "").toUpperCase());
