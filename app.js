@@ -3864,8 +3864,10 @@ function buildInstitutionalAnalysis(profile, recommendations) {
   if (financialViability <= marketFit) {
     const q = successModel.rentQuote;
     problem = (q && q.healthyHigh > 0 && q.ratio > q.healthyHigh)
-      ? `rent is heavy here (≈${q.ratioPct}% of projected sales vs a healthy ${q.healthyPct})`
-      : "the rent and cost economics are tight for what this spot can sell";
+      ? `your rent is heavy here (≈${q.ratioPct}% of projected sales vs a healthy ${q.healthyPct})`
+      : q
+        ? "the rent and cost economics are tight for what this spot can sell"
+        : "this area's typical rents run tight for this business — enter your actual rent for an exact read";
   } else {
     const parts = [
       ["foot traffic and demand are light here", scoreValue("Demand")],
@@ -4804,7 +4806,7 @@ function sv3OverviewHTML(ctx) {
                   <div style="flex:1;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.10);border-radius:14px;padding:12px 14px">
                     <div style="font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--txt-3,#8a96b0)">Financial Viability</div>
                     <div style="font-family:'Sora',sans-serif;font-size:30px;font-weight:800;color:${ctx.financialViability >= 58 ? "#4ADE80" : ctx.financialViability >= 45 ? "#F5B544" : "#FF6B6B"}">${ctx.financialViability}<span style="font-size:14px;color:var(--txt-3,#8a96b0)">/100</span></div>
-                    <div style="font-size:10.5px;color:var(--txt-3,#8a96b0)">Can it make money here?</div>
+                    <div style="font-size:10.5px;color:var(--txt-3,#8a96b0)">${ctx.rentQuote ? "Can it make money here?" : "Area estimate · add your rent to sharpen"}</div>
                   </div>
                 </div>
                 <div class="hero-sub" style="font-size:11px;opacity:.8">PREVIEW · verdict follows the lower of the two · ${escapeText(ctx.business)}</div>`
