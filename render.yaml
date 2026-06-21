@@ -1,0 +1,36 @@
+# Render Blueprint for the SpotVest PREVIEW/staging service.
+# This provisions a SEPARATE service + URL (e.g. spotvest-preview.onrender.com)
+# that deploys from the `preview` branch. It does NOT touch the live
+# spotvest.ai service, which is configured separately in Render.
+#
+# To use: Render dashboard -> New -> Blueprint -> pick this repo -> it reads
+# this file. Then paste the API keys (marked sync:false) so real data flows.
+services:
+  - type: web
+    name: spotvest-preview
+    runtime: node
+    branch: preview
+    plan: free
+    buildCommand: ""
+    startCommand: node server.js
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Ephemeral scratch dir — preview doesn't need a persistent disk.
+      - key: SPOTVEST_DATA_DIR
+        value: /tmp/spotvest-preview-data
+      # Paste the same values as the live service so scores use real data.
+      # Leave any blank and that signal falls back gracefully.
+      - key: GOOGLE_PLACES_API_KEY
+        sync: false
+      - key: NYC_OPEN_DATA_APP_TOKEN
+        sync: false
+      - key: BESTTIME_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: CENSUS_API_KEY
+        sync: false
+      - key: ADMIN_TOKEN
+        sync: false
