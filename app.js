@@ -813,7 +813,7 @@ function fallbackSiteIntelligence() {
     },
     mta: {
       available: false,
-      totalDecember2024Ridership: 0,
+      monthlyRidership: 0,
       scope: state.location ? `within ${state.location.radiusMiles} mile` : "Enter an address to calculate nearby station ridership",
       topStations: [],
       source: "Fallback mobility signal"
@@ -2028,7 +2028,7 @@ function footTrafficScoreFor(profile) {
   const siteIntel = currentSiteIntelResult();
   const businessResult = currentBusinessResult();
   const mobilityScore = siteIntel?.mta?.available
-    ? (siteIntel.mta.totalDecember2024Ridership > 250000 ? 90 : 68)
+    ? (siteIntel.mta.monthlyRidership > 250000 ? 90 : 68)
     : safeNumber(profile.transit, 50);
   const commercialMixScore = siteIntel?.pluto?.retailArea > 500000
     ? 88
@@ -2067,7 +2067,7 @@ function renderFootTrafficIntelligence(profile) {
   const activity = activityLabel(score);
   const walkability = clampScore(safeNumber(profile.density, 50) * 0.46 + safeNumber(profile.transit, 50) * 0.42 + safeNumber(profile.localPreference, 50) * 0.12);
   const transitText = siteIntel?.mta?.available
-    ? `Transit proximity: ${siteIntel.mta.totalDecember2024Ridership > 250000 ? "strong" : "moderate"} nearby mobility signal.`
+    ? `Transit proximity: ${siteIntel.mta.monthlyRidership > 250000 ? "strong" : "moderate"} nearby mobility signal.`
     : `Transit proximity: ${pulseLabel(profile.transit, ["limited", "useful", "strong", "excellent"])} area access.`;
 
   elements.footTrafficScore.textContent = formatScore(score);
@@ -2516,7 +2516,7 @@ function renderSiteIntelligence(data) {
   elements.liquorTypes.innerHTML = miniList(data.liquor.topTypes);
 
   if (data.mta.available) {
-    elements.mtaLevel.textContent = data.mta.totalDecember2024Ridership > 250000 ? "Strong mobility signal" : "Moderate mobility signal";
+    elements.mtaLevel.textContent = data.mta.monthlyRidership > 250000 ? "Strong mobility signal" : "Moderate mobility signal";
     elements.mtaCopy.textContent =
       `Nearby transit activity ${data.mta.scope}. A mobility signal that feeds the Foot Traffic Model.`;
     elements.mtaTypes.innerHTML = data.mta.topStations
@@ -3615,7 +3615,7 @@ function buildBusinessSuccessModel(profile, recommendations) {
   // card stays on the report as display-only; permits still feed growth below.
   const permitBoost = civicResult?.permits?.level === "Heavy" ? 10 : civicResult?.permits?.level === "Active" ? 6 : 2;
   const propertyBoost = siteIntelResult?.pluto?.retailArea > 500000 ? 6 : siteIntelResult?.pluto?.retailArea > 150000 ? 3 : 0;
-  const transitBoost = siteIntelResult?.mta?.available && siteIntelResult.mta.totalDecember2024Ridership > 250000 ? 8 : 0;
+  const transitBoost = siteIntelResult?.mta?.available && siteIntelResult.mta.monthlyRidership > 250000 ? 8 : 0;
   const budgetSupport = budgetSupportScore(config);
   // Quoted monthly rent (optional user input): score the user's ACTUAL deal
   // instead of the area's modeled rent pressure. $4k in a high-rent area is a
@@ -3700,6 +3700,42 @@ function buildBusinessSuccessModel(profile, recommendations) {
   ]};
 }
 
+// Calibrated from real May-2026 within-0.5mi ridership (admin diagnostic):
+// a strong-transit neighborhood tops out near this; the mega-hubs (Times Sq
+// ~14M, Grand Central ~6.6M, Union Sq ~5.7M) clamp to 1.0, which is correct.
+const MTA_CITYWIDE_MAX = 3000000;
+const FT_BESTTIME_WEIGHT = 0.65;
+const FT_MTA_WEIGHT = 0.35;
+// Max points the blended foot-traffic signal contributes to Demand. Replaces the
+// old binary MTA "+6" boost; kept light so it refines rather than whipsaws.
+const FT_DEMAND_SCALE = 8;
+
+// ONE blended foot-traffic signal (0-1) for the Demand component: real BestTime
+// venue busyness (65%) + MTA subway ridership (35%), each normalized to 0-1
+// first so MTA's large raw numbers don't swallow BestTime. Falls back to MTA
+// alone when BestTime has no data (so no address loses its foot-traffic signal),
+// and to BestTime alone where there's no subway (e.g. Staten Island). Both
+// inputs are snapshotted/cached, so the same address scores identically run to
+// run. Returns null when there's no live foot-traffic signal at all.
+function blendedFootTraffic(siteIntelResult) {
+  const mta = siteIntelResult?.mta;
+  const ft = siteIntelResult?.footTraffic;
+  const hasMta = Boolean(mta?.available) && Number.isFinite(mta?.monthlyRidership) && mta.monthlyRidership > 0;
+  const hasBestTime = Boolean(ft) && Number.isFinite(ft?.intensity) && (ft?.venuesWithData || 0) >= 5;
+  if (!hasMta && !hasBestTime) return null;
+  const mtaNorm = hasMta ? Math.max(0, Math.min(1, mta.monthlyRidership / MTA_CITYWIDE_MAX)) : null;
+  const btNorm = hasBestTime ? Math.max(0, Math.min(1, ft.intensity / 100)) : null;
+  let value, mode;
+  if (hasBestTime && hasMta) { value = FT_BESTTIME_WEIGHT * btNorm + FT_MTA_WEIGHT * mtaNorm; mode = "blend"; }
+  else if (hasBestTime) { value = btNorm; mode = "besttime-only"; }
+  else { value = mtaNorm; mode = "mta-fallback"; }
+  return {
+    value, mode, mtaNorm, btNorm, hasBestTime, hasMta,
+    btPct: hasBestTime ? ft.intensity : null,
+    ridership: hasMta ? mta.monthlyRidership : null
+  };
+}
+
 function buildInstitutionalAnalysis(profile, recommendations) {
   const businessResult = currentBusinessResult();
   const civicResult = currentCivicResult();
@@ -3747,10 +3783,18 @@ function buildInstitutionalAnalysis(profile, recommendations) {
   const confidenceScore = clampScore(Math.max(20, completeness * 0.34 + freshness * 0.28 + sourceQuality * 0.38 - demandPenalty));
   const successModel = buildBusinessSuccessModel(profile, recommendations);
   const scores = successModel.scores;
-  if (siteIntelResult?.mta?.available && siteIntelResult.mta.totalDecember2024Ridership > 250000) {
+  // Foot-traffic refinement for Demand: a single blended signal (BestTime 65% +
+  // MTA 35%, MTA-only fallback) REPLACES the old MTA-only "+6" boost — so busy
+  // areas are counted once, not twice. MTA still independently drives transit
+  // access in Location quality (untouched). Both inputs are snapshotted, so the
+  // score is deterministic run-to-run.
+  const ftBlend = blendedFootTraffic(siteIntelResult);
+  if (ftBlend) {
     const demand = scores.find((item) => item.name === "Demand");
-    demand.value = Math.min(100, demand.value + 6);
-    demand.why = `${demand.why} Verified Signals: nearby mobility is strong.`;
+    demand.value = clampScore(demand.value + Math.round(ftBlend.value * FT_DEMAND_SCALE));
+    demand.why = `${demand.why} ${ftBlend.hasBestTime
+      ? `Refined by blended real foot traffic (BestTime ${ftBlend.btPct}/100${ftBlend.hasMta ? " + MTA ridership" : ", no subway nearby"})`
+      : "Refined by MTA subway ridership (no BestTime venues found)"} — foot-traffic index ${Math.round(ftBlend.value * 100)}/100.`;
   }
   if (siteIntelResult?.pluto?.retailArea > 500000) {
     const location = scores.find((item) => item.name === "Location quality");
@@ -4319,7 +4363,7 @@ function sv3NearestTransitCard(ctx) {
     .sort((a, b) => a.mi - b.mi)
     .slice(0, 3);
   if (!near.length) {
-    return `<div class="card"><div class="sub">Nearest transit</div><div class="desc" style="margin-top:6px"><b>No subway station within 1 mile.</b> Foot traffic here isn't subway-fed — weigh walk-up, bus, and vehicle access carefully. This is a real consideration, not a default.</div><div class="src">MTA subway ridership (Dec 2024)</div></div>`;
+    return `<div class="card"><div class="sub">Nearest transit</div><div class="desc" style="margin-top:6px"><b>No subway station within 1 mile.</b> Foot traffic here isn't subway-fed — weigh walk-up, bus, and vehicle access carefully. This is a real consideration, not a default.</div><div class="src">MTA subway ridership (${currentSiteIntelResult()?.mta?.month || "latest complete month"})</div></div>`;
   }
   const maxRide = Math.max(...near.map((s) => s.ridership || 0));
   const rows = near.map((s) => {
@@ -4338,7 +4382,7 @@ function sv3NearestTransitCard(ctx) {
     <div class="sub">Nearest transit · within 1 mile</div>
     <div class="transit-list">${rows}</div>
     <div class="desc" style="margin-top:10px">This block is transit-fed: most visitors arrive via the <b>${escapeText(topLines || "subway")}</b> at <b>${escapeText(top.name)}</b>.</div>
-    <div class="src">MTA subway ridership (Dec 2024) · walk times estimated from distance</div>
+    <div class="src">MTA subway ridership (${currentSiteIntelResult()?.mta?.month || "latest complete month"}) · walk times estimated from distance</div>
   </div>`;
 }
 
@@ -5125,7 +5169,7 @@ function sv3MarketHTML(ctx) {
     <div class="card accent"><div class="sub">${ctx.ftReal ? "Live signal · MTA ridership near this point" : "SpotVest estimate · SpotVest location model"}</div><div class="k" style="margin-top:4px">Foot traffic score</div><div class="big" style="color:var(--teal-bright)">${ctx.ftScore}<span style="font-size:16px;color:var(--txt-3)">/100</span></div><div class="desc">Estimated activity: ${escapeText(ctx.ftActivity)}. ${ctx.ftReal ? "Derived from MTA subway ridership near this location." : "Estimated from area density, transit, and commercial activity."}${ctx.areaBusyness?.available ? ` <b style="color:var(--teal-bright)">Real-world check:</b> nearby venues are busiest around ${escapeText(ctx.areaBusyness.peakLabel || "—")} (live data, below).` : ""}</div></div>
     <div class="duo"><div class="metric"><div class="k">${escapeText(ctx.ftVisitorsLabel || "Est. daily foot traffic")}</div><div class="v" style="font-size:16px">${escapeText(ctx.ftVisitors)}</div><div class="src" style="margin-top:4px">${escapeText(ctx.ftVisitorsTag || "ESTIMATED RANGE")}</div></div><div class="metric"><div class="k">Walkability</div><div class="v">${ctx.ftWalk}<span class="u">/100</span> <span class="src" style="display:inline">PROJECTED</span></div></div></div>
     <div class="card"><div class="statline"><span class="sl">Peak hours</span><span class="sv">${escapeText(ctx.ftPeak)}</span></div><div class="statline"><span class="sl">Weekday / weekend split</span><span class="sv">${escapeText(ctx.ftSplit)}</span></div><div class="src">Projected · SpotVest mobility model (peak hours &amp; split)</div></div>
-    <div class="card"><div class="sub">Foot traffic by hour</div><div class="chart" style="position:relative">${ctx.hourlyReal ? "" : `<span class="peaktag" style="left:34%;top:-2px">Lunch peak</span><span class="peaktag" style="left:72%;top:-2px">Dinner peak</span>`}<svg viewBox="0 0 320 130" style="margin-top:14px"><line class="gl" x1="0" y1="30" x2="320" y2="30"/><line class="gl" x1="0" y1="65" x2="320" y2="65"/><line class="gl" x1="0" y1="100" x2="320" y2="100"/>${ctx.footHourSVG}</svg><div style="display:flex;justify-content:space-between" class="axlab"><span>6a</span><span>9a</span><span>12p</span><span>3p</span><span>6p</span><span>9p</span><span>12a</span></div></div><div class="src">${ctx.hourlySource === "besttime" ? "Live · real venue busyness by hour near this location (Google Popular Times via BestTime)" : ctx.hourlySource === "mta" ? "Live · MTA subway ridership by hour near this location (Dec 2024)" : "Projected · category day-pattern scaled by area foot-traffic"}</div></div>
+    <div class="card"><div class="sub">Foot traffic by hour</div><div class="chart" style="position:relative">${ctx.hourlyReal ? "" : `<span class="peaktag" style="left:34%;top:-2px">Lunch peak</span><span class="peaktag" style="left:72%;top:-2px">Dinner peak</span>`}<svg viewBox="0 0 320 130" style="margin-top:14px"><line class="gl" x1="0" y1="30" x2="320" y2="30"/><line class="gl" x1="0" y1="65" x2="320" y2="65"/><line class="gl" x1="0" y1="100" x2="320" y2="100"/>${ctx.footHourSVG}</svg><div style="display:flex;justify-content:space-between" class="axlab"><span>6a</span><span>9a</span><span>12p</span><span>3p</span><span>6p</span><span>9p</span><span>12a</span></div></div><div class="src">${ctx.hourlySource === "besttime" ? "Live · real venue busyness by hour near this location (Google Popular Times via BestTime)" : ctx.hourlySource === "mta" ? `Live · MTA subway ridership by hour near this location (${currentSiteIntelResult()?.mta?.month || "latest complete month"})` : "Projected · category day-pattern scaled by area foot-traffic"}</div></div>
     <div class="card"><div class="sub">Weekday vs weekend demand</div><div class="chart"><svg viewBox="0 0 320 120"><g>${ctx.weekSVG}</g></svg><div style="display:flex;justify-content:space-between" class="axlab"><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span></div></div><div class="legend-row"><span class="li"><span class="sw" style="background:#3BD6C9"></span>Weekday</span><span class="li"><span class="sw" style="background:#5B8CFF"></span>Weekend</span></div><div class="src">${ctx.weekReal ? "Live · real venue busyness by day (Google Popular Times via BestTime)" : "Projected · SpotVest mobility model"}</div></div>
     <div class="card"><div class="sub">Category saturation nearby</div>${cuisine}<div class="src">Google Places density · ${escapeText(ctx.radiusLabel)}</div></div>
     ${sv3DiningHTML(ctx)}`;
@@ -7366,7 +7410,7 @@ function locationFootTraffic(profile) {
   if (!profile) return null;
   const siteIntel = currentSiteIntelResult();
   const mobilityScore = siteIntel?.mta?.available
-    ? (siteIntel.mta.totalDecember2024Ridership > 250000 ? 90 : 68)
+    ? (siteIntel.mta.monthlyRidership > 250000 ? 90 : 68)
     : safeNumber(profile.transit, 50);
   const commercialMixScore = siteIntel?.pluto?.retailArea > 500000
     ? 88
