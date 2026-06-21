@@ -511,6 +511,38 @@ mtaEls.refreshBtn?.addEventListener("click", async () => {
   }
 });
 
+const blockEls = {
+  form: document.querySelector("#admin-block-form"),
+  address: document.querySelector("#block-address"),
+  status: document.querySelector("#block-status"),
+  result: document.querySelector("#block-result")
+};
+blockEls.form?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (!adminToken()) {
+    blockEls.status.textContent = "Enter the admin token first.";
+    blockEls.status.className = "launch-status launch-status-error";
+    return;
+  }
+  const addr = (blockEls.address?.value || "").trim();
+  if (!addr) return;
+  blockEls.status.textContent = "Checking block…";
+  blockEls.status.className = "launch-status";
+  blockEls.result.style.display = "none";
+  try {
+    const r = await getJson(`/api/admin/block-check?address=${encodeURIComponent(addr)}`);
+    blockEls.status.textContent = r.error
+      ? `Error: ${r.error}`
+      : `${r.verdict} · block-face commercial ${Number(r.blockFaceCommercialSqft).toLocaleString()} sq ft (aliveness ${r.blockAliveness01}) · street "${r.addrStreet}"`;
+    blockEls.status.className = `launch-status ${r.error ? "launch-status-error" : "launch-status-ok"}`;
+    blockEls.result.textContent = JSON.stringify(r, null, 2).slice(0, 6000);
+    blockEls.result.style.display = "block";
+  } catch (error) {
+    blockEls.status.textContent = error.message || "Check failed.";
+    blockEls.status.className = "launch-status launch-status-error";
+  }
+});
+
 document.addEventListener("click", async (event) => {
   const saveButton = event.target.closest("[data-prospect-save]");
   if (saveButton) {
