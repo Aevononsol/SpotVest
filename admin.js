@@ -543,6 +543,63 @@ blockEls.form?.addEventListener("submit", async (event) => {
   }
 });
 
+const bizEls = {
+  form: document.querySelector("#admin-bizexport-form"),
+  q: document.querySelector("#bizexport-q"),
+  status: document.querySelector("#bizexport-status"),
+  result: document.querySelector("#bizexport-result"),
+  csvBtn: document.querySelector("#bizexport-csv")
+};
+let bizExportData = null;
+bizEls.form?.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (!adminToken()) {
+    bizEls.status.textContent = "Enter the admin token first.";
+    bizEls.status.className = "launch-status launch-status-error";
+    return;
+  }
+  const q = (bizEls.q?.value || "").trim();
+  if (!q) return;
+  bizEls.status.textContent = `Pulling "${q}" from city data…`;
+  bizEls.status.className = "launch-status";
+  bizEls.result.style.display = "none";
+  bizExportData = null;
+  try {
+    const r = await getJson(`/api/admin/business-export?q=${encodeURIComponent(q)}`);
+    if (r.error) {
+      bizEls.status.textContent = `Error: ${r.error}`;
+      bizEls.status.className = "launch-status launch-status-error";
+      return;
+    }
+    bizExportData = r;
+    bizEls.status.textContent = `✓ ${r.count} businesses matching "${r.query}". Click Download CSV to save the full list.`;
+    bizEls.status.className = "launch-status launch-status-ok";
+    bizEls.result.textContent = (r.businesses || []).slice(0, 60)
+      .map((b) => `${b.name} — ${b.category || "—"} — ${b.address} ${b.zip} [${b.source}]`).join("\n")
+      + (r.count > 60 ? `\n…and ${r.count - 60} more (in the CSV)` : "");
+    bizEls.result.style.display = "block";
+  } catch (error) {
+    bizEls.status.textContent = error.message || "Pull failed.";
+    bizEls.status.className = "launch-status launch-status-error";
+  }
+});
+bizEls.csvBtn?.addEventListener("click", () => {
+  if (!bizExportData?.businesses?.length) {
+    bizEls.status.textContent = "Pull a list first.";
+    bizEls.status.className = "launch-status launch-status-error";
+    return;
+  }
+  const esc = (v) => `"${String(v ?? "").replaceAll('"', '""')}"`;
+  const rows = [["name", "category", "address", "zip", "lat", "lng", "source"].join(",")]
+    .concat(bizExportData.businesses.map((b) => [b.name, b.category, b.address, b.zip, b.lat, b.lng, b.source].map(esc).join(",")));
+  const blob = new Blob([rows.join("\n")], { type: "text/csv" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `spotvest-${bizExportData.query.toLowerCase().replace(/\s+/g, "-")}-businesses.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(a.href);
+});
+
 document.addEventListener("click", async (event) => {
   const saveButton = event.target.closest("[data-prospect-save]");
   if (saveButton) {
