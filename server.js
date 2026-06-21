@@ -3557,6 +3557,10 @@ async function siteIntelligence(zip, location = null) {
     mta: {
       available: Boolean(location),
       monthlyRidership: Math.round(mtaTotal),
+      // Transitional alias: lets a server-only test deploy run without breaking
+      // browsers still serving the old cached client (which reads this field).
+      // Remove once the new client cache version is live everywhere.
+      totalDecember2024Ridership: Math.round(mtaTotal),
       month: mtaWin.label,
       scope: location ? `within ${location.radiusMiles} mile` : "Enter an address to calculate nearby station ridership",
       topStations: mtaRows.map((row) => ({
@@ -5316,6 +5320,55 @@ createServer(async (request, response) => {
       const q = safeText(url.searchParams.get("q"), 120) || "restaurants in New York City";
       const result = await besttimeAreaForecast({ q });
       sendJson(response, 200, result);
+      return;
+    }
+
+    // MTA ridership window diagnostic. GET reports the current frozen window and
+    // probes the live dataset (confirms sum(ridership) works + returns citywide
+    // and optional per-point ridership for MTA_CITYWIDE_MAX calibration). POST
+    // {action:"refresh"} triggers the monthly scheduler manually, end to end.
+    if (url.pathname === "/api/admin/mta-window") {
+      if (!adminAuthorized(request)) {
+        sendJson(response, 401, { error: "Admin token required." });
+        return;
+      }
+      if (request.method === "POST") {
+        const body = await readRequestJson(request).catch(() => ({}));
+        if (body.action === "refresh") {
+          const before = currentMtaWindow();
+          await mtaWindowRefresh();
+          sendJson(response, 200, { ok: true, before, after: currentMtaWindow() });
+          return;
+        }
+        sendJson(response, 400, { error: "Unknown action." });
+        return;
+      }
+      const win = currentMtaWindow();
+      const lat = Number(url.searchParams.get("lat"));
+      const lng = Number(url.searchParams.get("lng"));
+      const radius = Number(url.searchParams.get("radius")) || 805;
+      const out = { datasetId: MTA_DATASET_ID, window: win };
+      try {
+        const [maxRows, sumRows] = await Promise.all([
+          dataNyJson(MTA_DATASET_ID, { $select: "max(transit_timestamp) as max" }, { timeoutMs: 30000 }),
+          dataNyJson(MTA_DATASET_ID, { $select: "sum(ridership) as total", $where: mtaTimeFilter(win) }, { timeoutMs: 60000 })
+        ]);
+        out.datasetMaxTimestamp = Array.isArray(maxRows) ? (maxRows[0]?.max || null) : null;
+        out.citywideRidershipThisWindow = Array.isArray(sumRows) ? Number(sumRows[0]?.total) : null;
+        out.sumRidershipWorks = Number.isFinite(out.citywideRidershipThisWindow);
+        out.derivedFromMax = out.datasetMaxTimestamp ? latestCompleteMonthWindow(out.datasetMaxTimestamp) : null;
+        if (Number.isFinite(lat) && Number.isFinite(lng)) {
+          const ptRows = await dataNyJson(MTA_DATASET_ID, {
+            $select: "sum(ridership) as total",
+            $where: `within_circle(georeference, ${lat}, ${lng}, ${radius}) AND ${mtaTimeFilter(win)}`
+          }, { timeoutMs: 45000 });
+          out.pointRidership = Array.isArray(ptRows) ? Number(ptRows[0]?.total) : null;
+          out.pointQuery = { lat, lng, radius };
+        }
+      } catch (error) {
+        out.error = error.message;
+      }
+      sendJson(response, 200, out);
       return;
     }
 

@@ -461,6 +461,56 @@ besttimeEls.form?.addEventListener("submit", async (event) => {
   }
 });
 
+const mtaEls = {
+  form: document.querySelector("#admin-mta-form"),
+  status: document.querySelector("#mta-status"),
+  result: document.querySelector("#mta-result"),
+  refreshBtn: document.querySelector("#mta-refresh-btn")
+};
+async function mtaCheck() {
+  if (!adminToken()) {
+    mtaEls.status.textContent = "Enter the admin token first.";
+    mtaEls.status.className = "launch-status launch-status-error";
+    return;
+  }
+  mtaEls.status.textContent = "Querying the MTA dataset…";
+  mtaEls.status.className = "launch-status";
+  mtaEls.result.style.display = "none";
+  try {
+    const r = await getJson("/api/admin/mta-window");
+    mtaEls.status.textContent = r.sumRidershipWorks
+      ? `✓ sum(ridership) works. Frozen window: ${r.window?.label}. Citywide this window: ${Number(r.citywideRidershipThisWindow).toLocaleString()}. Data through ${r.datasetMaxTimestamp}.`
+      : `⚠ sum(ridership) returned no number${r.error ? ` — ${r.error}` : ""}.`;
+    mtaEls.status.className = `launch-status ${r.sumRidershipWorks ? "launch-status-ok" : "launch-status-error"}`;
+    mtaEls.result.textContent = JSON.stringify(r, null, 2).slice(0, 4000);
+    mtaEls.result.style.display = "block";
+  } catch (error) {
+    mtaEls.status.textContent = error.message || "Check failed.";
+    mtaEls.status.className = "launch-status launch-status-error";
+  }
+}
+mtaEls.form?.addEventListener("submit", (event) => { event.preventDefault(); mtaCheck(); });
+mtaEls.refreshBtn?.addEventListener("click", async () => {
+  if (!adminToken()) {
+    mtaEls.status.textContent = "Enter the admin token first.";
+    mtaEls.status.className = "launch-status launch-status-error";
+    return;
+  }
+  if (!confirm("Run the monthly MTA window refresh now?")) return;
+  mtaEls.status.textContent = "Refreshing window…";
+  mtaEls.status.className = "launch-status";
+  try {
+    const r = await postJson("/api/admin/mta-window", { action: "refresh" });
+    mtaEls.status.textContent = `✓ Refreshed. ${r.before?.label} → ${r.after?.label} (refreshed ${r.after?.refreshedAt}).`;
+    mtaEls.status.className = "launch-status launch-status-ok";
+    mtaEls.result.textContent = JSON.stringify(r, null, 2).slice(0, 4000);
+    mtaEls.result.style.display = "block";
+  } catch (error) {
+    mtaEls.status.textContent = error.message || "Refresh failed.";
+    mtaEls.status.className = "launch-status launch-status-error";
+  }
+});
+
 document.addEventListener("click", async (event) => {
   const saveButton = event.target.closest("[data-prospect-save]");
   if (saveButton) {

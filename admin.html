@@ -128,6 +128,20 @@
       </section>
 
       <section class="launch-section">
+        <p class="section-label">Scoring data</p>
+        <div class="launch-section-header">
+          <h3>MTA ridership window</h3>
+          <p>Shows the frozen ridership month every analysis uses, and probes the live dataset to confirm <b>sum(ridership)</b> works and capture citywide volume (for calibrating the normalization max). <b>Check</b> is read-only. <b>Force refresh now</b> runs the monthly scheduler immediately (picks the latest complete month).</p>
+        </div>
+        <form id="admin-mta-form" class="admin-token-row">
+          <button type="submit">Check window</button>
+          <button type="button" id="mta-refresh-btn" style="background:var(--surface);color:var(--txt);border:1px solid var(--border-strong);box-shadow:none">Force refresh now</button>
+        </form>
+        <p id="mta-status" class="launch-status" role="status"></p>
+        <pre id="mta-result" style="white-space:pre-wrap;word-break:break-word;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--txt-2);background:var(--surface-2);border:1px solid var(--border);border-radius:12px;padding:12px;margin-top:10px;display:none"></pre>
+      </section>
+
+      <section class="launch-section">
         <p class="section-label">Email</p>
         <div class="launch-section-header">
           <h3>Email log</h3>
@@ -215,6 +229,6 @@
         </div>
       </section>
     </main>
-    <script type="module" src="/admin.js?v=20260619-tracking"></script>
+    <script type="module" src="/admin.js?v=20260621-mtawindow"></script>
   </body>
 </html>
