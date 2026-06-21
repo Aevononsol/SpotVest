@@ -546,6 +546,7 @@ blockEls.form?.addEventListener("submit", async (event) => {
 const bizEls = {
   form: document.querySelector("#admin-bizexport-form"),
   q: document.querySelector("#bizexport-q"),
+  zip: document.querySelector("#bizexport-zip"),
   status: document.querySelector("#bizexport-status"),
   result: document.querySelector("#bizexport-result"),
   csvBtn: document.querySelector("#bizexport-csv")
@@ -560,19 +561,20 @@ bizEls.form?.addEventListener("submit", async (event) => {
   }
   const q = (bizEls.q?.value || "").trim();
   if (!q) return;
-  bizEls.status.textContent = `Pulling "${q}" from city data…`;
+  const zip = (bizEls.zip?.value || "").replace(/[^0-9]/g, "").slice(0, 5);
+  bizEls.status.textContent = `Pulling "${q}"${zip ? ` in ${zip}` : ""} from city data…`;
   bizEls.status.className = "launch-status";
   bizEls.result.style.display = "none";
   bizExportData = null;
   try {
-    const r = await getJson(`/api/admin/business-export?q=${encodeURIComponent(q)}`);
+    const r = await getJson(`/api/admin/business-export?q=${encodeURIComponent(q)}${zip ? `&zip=${zip}` : ""}`);
     if (r.error) {
       bizEls.status.textContent = `Error: ${r.error}`;
       bizEls.status.className = "launch-status launch-status-error";
       return;
     }
     bizExportData = r;
-    bizEls.status.textContent = `✓ ${r.count} businesses matching "${r.query}". Click Download CSV to save the full list.`;
+    bizEls.status.textContent = `✓ ${r.count} businesses matching "${r.query}"${r.zip ? ` in ${r.zip}` : " citywide"}. Click Download CSV to save the full list.`;
     bizEls.status.className = "launch-status launch-status-ok";
     bizEls.result.textContent = (r.businesses || []).slice(0, 60)
       .map((b) => `${b.name} — ${b.category || "—"} — ${b.address} ${b.zip} [${b.source}]`).join("\n")
@@ -595,7 +597,7 @@ bizEls.csvBtn?.addEventListener("click", () => {
   const blob = new Blob([rows.join("\n")], { type: "text/csv" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = `spotvest-${bizExportData.query.toLowerCase().replace(/\s+/g, "-")}-businesses.csv`;
+  a.download = `spotvest-${bizExportData.query.toLowerCase().replace(/\s+/g, "-")}${bizExportData.zip ? `-${bizExportData.zip}` : ""}-businesses.csv`;
   document.body.appendChild(a); a.click(); a.remove();
   URL.revokeObjectURL(a.href);
 });
