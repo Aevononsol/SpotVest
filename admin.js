@@ -602,6 +602,55 @@ bizEls.csvBtn?.addEventListener("click", () => {
   URL.revokeObjectURL(a.href);
 });
 
+const clearCacheEls = {
+  form: document.querySelector("#admin-clearcache-form"),
+  clearBtn: document.querySelector("#clearcache-btn"),
+  status: document.querySelector("#clearcache-status"),
+  result: document.querySelector("#clearcache-result")
+};
+async function clearCacheCheck() {
+  if (!adminToken()) {
+    clearCacheEls.status.textContent = "Enter the admin token first.";
+    clearCacheEls.status.className = "launch-status launch-status-error";
+    return;
+  }
+  clearCacheEls.status.textContent = "Checking cache…";
+  clearCacheEls.status.className = "launch-status";
+  clearCacheEls.result.style.display = "none";
+  try {
+    const r = await getJson("/api/admin/clear-cache");
+    clearCacheEls.status.textContent = `${r.cacheEntries} cached entries right now. Persisted file ${r.persistedFileExists ? "present" : "absent"}.`;
+    clearCacheEls.status.className = "launch-status launch-status-ok";
+    clearCacheEls.result.textContent = JSON.stringify(r, null, 2).slice(0, 4000);
+    clearCacheEls.result.style.display = "block";
+  } catch (error) {
+    clearCacheEls.status.textContent = error.message || "Check failed.";
+    clearCacheEls.status.className = "launch-status launch-status-error";
+  }
+}
+clearCacheEls.form?.addEventListener("submit", (event) => { event.preventDefault(); clearCacheCheck(); });
+clearCacheEls.clearBtn?.addEventListener("click", async () => {
+  if (!adminToken()) {
+    clearCacheEls.status.textContent = "Enter the admin token first.";
+    clearCacheEls.status.className = "launch-status launch-status-error";
+    return;
+  }
+  if (!confirm("Clear ALL cached data (every frozen snapshot + cached signal)? The next analysis of each address will be slower while it re-resolves fresh. Do this only after deploying new code.")) return;
+  clearCacheEls.status.textContent = "Clearing all cached data…";
+  clearCacheEls.status.className = "launch-status";
+  clearCacheEls.result.style.display = "none";
+  try {
+    const r = await postJson("/api/admin/clear-cache", { action: "clear" });
+    clearCacheEls.status.textContent = `✓ Cleared ${r.clearedEntries} cached entries${r.persistedFileRemoved ? " + deleted the persisted cache file" : ""}. Every address now re-resolves fresh.`;
+    clearCacheEls.status.className = "launch-status launch-status-ok";
+    clearCacheEls.result.textContent = JSON.stringify(r, null, 2).slice(0, 4000);
+    clearCacheEls.result.style.display = "block";
+  } catch (error) {
+    clearCacheEls.status.textContent = error.message || "Clear failed.";
+    clearCacheEls.status.className = "launch-status launch-status-error";
+  }
+});
+
 document.addEventListener("click", async (event) => {
   const saveButton = event.target.closest("[data-prospect-save]");
   if (saveButton) {

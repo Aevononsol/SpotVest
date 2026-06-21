@@ -163,6 +163,17 @@
         </form>
         <p id="bizexport-status" class="launch-status" role="status"></p>
         <pre id="bizexport-result" style="white-space:pre-wrap;word-break:break-word;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--txt-2);background:var(--surface-2);border:1px solid var(--border);border-radius:12px;padding:12px;margin-top:10px;display:none"></pre>
+
+        <div class="launch-section-header" style="margin-top:18px">
+          <h3>Clean start (clear all cached data)</h3>
+          <p>Wipes every frozen snapshot and cached signal (competitor counts, foot traffic, city records, MTA fetches) so the <b>next</b> analysis of each address re-resolves fresh under the current code. <b>Run this AFTER deploying new code</b> — refreshing before a deploy just re-locks the old data. <b>Check</b> is read-only.</p>
+        </div>
+        <form id="admin-clearcache-form" class="admin-token-row">
+          <button type="submit">Check cache</button>
+          <button type="button" id="clearcache-btn" style="background:rgba(255,107,107,.12);color:#FF8585;border:1px solid rgba(255,107,107,.3);box-shadow:none">Clear all cached data</button>
+        </form>
+        <p id="clearcache-status" class="launch-status" role="status"></p>
+        <pre id="clearcache-result" style="white-space:pre-wrap;word-break:break-word;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--txt-2);background:var(--surface-2);border:1px solid var(--border);border-radius:12px;padding:12px;margin-top:10px;display:none"></pre>
       </section>
 
       <section class="launch-section">
@@ -253,6 +264,6 @@
         </div>
       </section>
     </main>
-    <script type="module" src="/admin.js?v=20260621-bizexport-zip"></script>
+    <script type="module" src="/admin.js?v=20260621-clearcache"></script>
   </body>
 </html>
