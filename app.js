@@ -3866,16 +3866,18 @@ function onBlockDensity() {
 function blockWeightFor(cat) {
   return { grabgo:1.0, quick:1.0, retail:0.9, fastcasual:0.85, bar:0.75, casual:0.65, service:0.55, upscale:0.4, targeted:0.3, destination:0.3 }[cat] ?? 0.65;
 }
-function blockVitality(business) {
-  if (!state.location?.lat) return 0;
-  const bw = blockWeightFor(businessCategory(business));
-  // Prefer REAL per-street busyness from BestTime; fall back to the avenue/
-  // side-street heuristic only when BestTime can't see this block.
-  const bt = streetBusynessFromBestTime(state.location.address);
-  const raw = Number.isFinite(bt)
-    ? Math.max(-1, Math.min(1, (bt - 50) / 50))   // measured: 50 = neutral
-    : streetCorridorScore(state.location.address); // heuristic fallback
-  return Math.round(raw * 22 * bw);
+// Phase 7: 0..1 "is this block commercially alive?" Prefer the REAL count of
+// active businesses within ~120 m of the exact point (blockBusinessCount) — a
+// police-station / residential stretch reads ~0 = dead. Fall back to BestTime
+// per-street busyness, then the avenue/side-street name heuristic.
+function blockAliveness() {
+  const si = currentSiteIntelResult();
+  const n = si?.blockBusinessCount;
+  if (Number.isFinite(n)) return Math.max(0, Math.min(1, (n - 2) / 16)); // <=2 dead .. 18+ alive
+  const bt = streetBusynessFromBestTime(state.location?.address);
+  if (Number.isFinite(bt)) return Math.max(0, Math.min(1, bt / 100));
+  const c = streetCorridorScore(state.location?.address); // -0.7..+1
+  return Math.max(0, Math.min(1, 0.55 + c * 0.4));
 }
 
 // Phase 6: same-block DIRECT competition penalty — opening a pizza spot right
@@ -3896,15 +3898,14 @@ function sameBlockCompetitionPenalty(business) {
 // Viability. Primary = the BestTime+MTA 65/35 blend (the afternoon work, finally
 // wired in), rescaled 0-100; stabilized by the density/transit context so a thin
 // live reading doesn't erase obvious context; then the block-vitality modifier.
-function marketFootSignal(profile, business) {
+function marketFootSignal(profile) {
   const blend = blendedFootTraffic(currentSiteIntelResult());
-  // Base = the proven 0-100 pedestrian-context score. The BestTime+MTA blend
-  // REFINES it (±, neutral at 0.5) rather than replacing it — replacing it
-  // deflated the scale and dropped busy corridors (avenue coffee -> 47). Then
-  // the block-vitality modifier.
+  // Area pedestrian-context score, refined ± by the BestTime+MTA blend. The
+  // BLOCK is applied separately as a dominant gate on Market Fit (Phase 7),
+  // not folded in here.
   let foot = clampScore(footTrafficScoreFor(profile));
   if (blend) foot = clampScore(foot + (blend.value - 0.5) * 16); // ±8 refinement
-  return clampScore(foot + blockVitality(business));
+  return foot;
 }
 
 // Phase 3: Financial Viability from real economics. Revenue = sqft model
@@ -4066,10 +4067,20 @@ function buildInstitutionalAnalysis(profile, recommendations) {
   // Fit down hard in address mode — adjacency is worse than area density.
   const sameBlockPenalty = sameBlockCompetitionPenalty(mfBiz);
   const sameBlockN = state.location?.lat ? (onBlockDensity() || 0) : 0;
-  const marketFit = clampScore(
+  let marketFit = clampScore(
     mfFoot * mfw.foot + mfComp * mfw.comp + mfDemo * mfw.demo + mfNight * mfw.night + mfAccess * mfw.access
     + sameBlockPenalty
   );
+  // Phase 7: in ADDRESS mode the BLOCK gates Market Fit — a commercially dead
+  // block (few/no businesses within ~120m) can't be propped up by a rich ZIP.
+  // Gate strength scales by business type (walk-in strongest, destination
+  // gentlest). ZIP mode: no gate.
+  let blockAlive = 1;
+  if (state.location?.lat) {
+    blockAlive = blockAliveness();
+    const gateStrength = blockWeightFor(businessCategory(mfBiz)) * 0.55;
+    marketFit = clampScore(marketFit * ((1 - gateStrength) + gateStrength * blockAlive));
+  }
   const fv = computeFinancialViability(profile, state.business || successModel.business);
   const financialViability = fv.viability;
   const headlineScore = Math.min(marketFit, financialViability);
@@ -4088,6 +4099,9 @@ function buildInstitutionalAnalysis(profile, recommendations) {
       : fv.rentProvided
         ? "the rent and operating costs leave thin margins for what this spot can sell"
         : `based on area rents (≈$${formatInteger(fv.rent)}/mo) — enter your actual rent for an exact read`;
+  } else if (state.location?.lat && blockAlive < 0.3) {
+    // Commercially dead block — almost no businesses on it.
+    problem = "this block has almost no businesses on it — it's effectively a dead block for walk-in trade";
   } else if (sameBlockN >= 2 && sameBlockPenalty <= -10) {
     // Same-block direct competition is the dominant market problem.
     problem = `you'd be opening right next to ${sameBlockN} of the same business on this block`;
