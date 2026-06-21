@@ -3872,11 +3872,18 @@ function blockWeightFor(cat) {
 // per-street busyness, then the avenue/side-street name heuristic.
 function blockAliveness() {
   const si = currentSiteIntelResult();
+  // PRIMARY: commercial+retail floor area on the EXACT tax block (PLUTO). ~0 =
+  // a police-station/residential dead block; a real retail block has lots of
+  // commercial sqft. This is the actual block, not a radius that bleeds in
+  // neighbors.
+  const sqft = si?.blockCommercialArea;
+  if (Number.isFinite(sqft)) return Math.max(0, Math.min(1, sqft / 30000)); // 0 dead .. 30k+ alive
+  // Fallbacks: ~120m business count, then BestTime per-street, then heuristic.
   const n = si?.blockBusinessCount;
-  if (Number.isFinite(n)) return Math.max(0, Math.min(1, (n - 2) / 16)); // <=2 dead .. 18+ alive
+  if (Number.isFinite(n)) return Math.max(0, Math.min(1, (n - 2) / 16));
   const bt = streetBusynessFromBestTime(state.location?.address);
   if (Number.isFinite(bt)) return Math.max(0, Math.min(1, bt / 100));
-  const c = streetCorridorScore(state.location?.address); // -0.7..+1
+  const c = streetCorridorScore(state.location?.address);
   return Math.max(0, Math.min(1, 0.55 + c * 0.4));
 }
 
