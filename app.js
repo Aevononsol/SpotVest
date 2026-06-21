@@ -3736,6 +3736,19 @@ function blendedFootTraffic(siteIntelResult) {
   };
 }
 
+// Hidden preview switch for the two-score model. OFF by default, so live
+// customers see the unchanged single-score report. Visiting ?preview=2 turns it
+// on and remembers it; ?preview=0 turns it off. Only people with the secret link
+// ever see the new version.
+function isTwoScorePreview() {
+  try {
+    const p = new URLSearchParams(location.search).get("preview");
+    if (p === "2") { localStorage.setItem("sv_preview", "2"); return true; }
+    if (p === "0" || p === "off") { localStorage.removeItem("sv_preview"); return false; }
+    return localStorage.getItem("sv_preview") === "2";
+  } catch { return false; }
+}
+
 function buildInstitutionalAnalysis(profile, recommendations) {
   const businessResult = currentBusinessResult();
   const civicResult = currentCivicResult();
@@ -3825,6 +3838,31 @@ function buildInstitutionalAnalysis(profile, recommendations) {
     : opportunityScore >= 75 && confidenceScore >= 70
       ? "OPEN"
       : "CONDITIONAL";
+  // ===== Two-score model (hidden preview, gated by isTwoScorePreview) =====
+  // Market Fit = "will customers come" (Demand carries foot traffic + nightlife;
+  // plus Competition and demographics). Financial Viability = "can it make money
+  // here" (rent-burden-aware economics; competition EXCLUDED — it's a Market Fit
+  // signal). Headline = the LOWER of the two; verdict from the matrix.
+  const marketFit = clampScore(
+    scoreValue("Demand") * 0.45 +
+    scoreValue("Competition") * 0.30 +
+    scoreValue("Customer fit") * 0.25
+  );
+  const financialViability = clampScore(scoreValue("Financial viability"));
+  const headlineScore = Math.min(marketFit, financialViability);
+  const fitHigh = marketFit >= 58;
+  const viaHigh = financialViability >= 58;
+  const verdict = confidenceScore < 45 ? "NEEDS MORE DATA"
+    : (fitHigh && viaHigh) ? "OPEN"
+    : (!fitHigh && !viaHigh) ? "DO NOT OPEN"
+    : "CONDITIONAL";
+  const verdictReason = confidenceScore < 45
+    ? "Not enough confirmed data yet — run again or add an exact address."
+    : (fitHigh && viaHigh) ? "Strong customer demand and workable economics here."
+    : (fitHigh && !viaHigh) ? "Strong demand, but rent and cost burden may make profitability difficult here."
+    : (!fitHigh && viaHigh) ? "Affordable to operate, but customer demand here looks slow."
+    : "Weak demand and tough economics — high risk.";
+  const twoScore = isTwoScorePreview();
   const failureBase = Math.max(12, Math.min(82, Math.round(84 - opportunityScore * 0.55 + (100 - riskScore) * 0.28 + Math.max(0, 70 - confidenceScore) * 0.25)));
   const revenueBase = {
     restaurant: 165000,
@@ -3937,12 +3975,20 @@ function buildInstitutionalAnalysis(profile, recommendations) {
     },
     scores,
     opportunityScore,
-    successProbability: opportunityScore,
+    // Two-score model (only overrides the headline when the hidden preview is on).
+    twoScore,
+    marketFit,
+    financialViability,
+    verdict,
+    verdictReason,
+    successProbability: twoScore ? headlineScore : opportunityScore,
     confidenceScore,
     rentQuote: successModel.rentQuote || null,
-    decision,
-    decisionCopy: decisionCopyFor(decision, opportunityScore, confidenceScore, riskScore),
-    summary: `${titleCase(successModel.business)} has a ${formatScore(opportunityScore)} viability screen in this area. ${decisionCopyFor(decision, opportunityScore, confidenceScore, riskScore)}`,
+    decision: twoScore ? verdict : decision,
+    decisionCopy: twoScore ? verdictReason : decisionCopyFor(decision, opportunityScore, confidenceScore, riskScore),
+    summary: twoScore
+      ? `${titleCase(successModel.business)} — Market Fit ${marketFit}/100, Financial Viability ${financialViability}/100. ${verdictReason}`
+      : `${titleCase(successModel.business)} has a ${formatScore(opportunityScore)} viability screen in this area. ${decisionCopyFor(decision, opportunityScore, confidenceScore, riskScore)}`,
     topRecommendation: {
       name: titleCase(successModel.business),
       score: opportunityScore
@@ -4727,10 +4773,24 @@ function sv3OverviewHTML(ctx) {
         : `ZIP AREA · ${escapeText(state.zip || "")}`}</div>
       ${ctx.scoreReady
         ? `<div class="hero-status"><span class="hdot"></span>${escapeText(sv3HeroStatus(ctx.decision))}</div>
-           <div class="hero-score">${ctx.score}<span class="of">/100</span></div>
-           <div class="hero-sub">Success probability · ${escapeText(ctx.business)}</div>
+           ${ctx.twoScore
+             ? `<div class="hero-twoscore" style="display:flex;gap:10px;margin:14px 0 4px">
+                  <div style="flex:1;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.10);border-radius:14px;padding:12px 14px">
+                    <div style="font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--txt-3,#8a96b0)">Market Fit</div>
+                    <div style="font-family:'Sora',sans-serif;font-size:30px;font-weight:800;color:${ctx.marketFit >= 58 ? "#4ADE80" : "#F5B544"}">${ctx.marketFit}<span style="font-size:14px;color:var(--txt-3,#8a96b0)">/100</span></div>
+                    <div style="font-size:10.5px;color:var(--txt-3,#8a96b0)">Will customers come?</div>
+                  </div>
+                  <div style="flex:1;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.10);border-radius:14px;padding:12px 14px">
+                    <div style="font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--txt-3,#8a96b0)">Financial Viability</div>
+                    <div style="font-family:'Sora',sans-serif;font-size:30px;font-weight:800;color:${ctx.financialViability >= 58 ? "#4ADE80" : ctx.financialViability >= 45 ? "#F5B544" : "#FF6B6B"}">${ctx.financialViability}<span style="font-size:14px;color:var(--txt-3,#8a96b0)">/100</span></div>
+                    <div style="font-size:10.5px;color:var(--txt-3,#8a96b0)">Can it make money here?</div>
+                  </div>
+                </div>
+                <div class="hero-sub" style="font-size:11px;opacity:.8">PREVIEW · verdict follows the lower of the two · ${escapeText(ctx.business)}</div>`
+             : `<div class="hero-score">${ctx.score}<span class="of">/100</span></div>
+                <div class="hero-sub">Success probability · ${escapeText(ctx.business)}</div>`}
            <div class="hero-ev"><span class="k">Evidence</span><span class="bar"><i style="width:${sv3Pct(ctx.confidence)}%"></i></span><span class="v">${ctx.confidence}/100 · ${escapeText(ctx.confidenceLabel)}</span></div>
-           <div class="vsub">${escapeText(ctx.decisionCopy)}</div>
+           <div class="vsub">${escapeText(ctx.twoScore ? (ctx.verdictReason || ctx.decisionCopy) : ctx.decisionCopy)}</div>
            ${sv3CostMarketSplit(ctx)}
            ${sv3IsZipCenterSearch() ? `<div class="vsub" style="margin-top:7px">Area-level result for the whole ZIP. An exact address can score differently — a busy area can contain quiet blocks (and the other way around). Run a street address for a block-level verdict.</div>` : ""}`
         : ctx.scoreUnavailable
@@ -4771,7 +4831,7 @@ function sv3OverviewHTML(ctx) {
     </div>
     ${/CONDITIONAL/i.test(ctx.decision) ? `<div class="section-label"><span class="n">!</span> Conditions to open</div><div class="card accent"><div class="sub">This location works for ${escapeText(ctx.business.toLowerCase())} only if</div><ul class="bullets">${(ctx.conditions || []).slice(0, 5).map(sv3SplitLabel).join("") || "<li>Verify site economics before committing.</li>"}</ul></div>` : ""}
     <div class="duo">
-      <div class="metric"><div class="k">Viability score</div><div class="v">${ctx.score}<span class="u">/100</span></div></div>
+      <div class="metric"><div class="k">${ctx.twoScore ? "Headline · lower of the two" : "Viability score"}</div><div class="v">${ctx.score}<span class="u">/100</span></div></div>
       <div class="metric good"><div class="k">Evidence confidence</div><div class="v">${ctx.confidence}<span class="u">/100·${escapeText(ctx.confidenceLabel)}</span></div></div>
     </div>
     <div class="section-label">Signals in this report</div>
@@ -5557,6 +5617,7 @@ function renderSpotVestV3(profile, recommendations, analysis) {
     scoreUnavailable: state.scoreUnavailable === true, // real signals couldn't be confirmed
     profile, scores: analysis.scores, strongScores, decision: analysis.decision, decisionCopy: decision.copy,
     decisionNext: decision.next, business, score: Number(score), confidence: Number(confidence),
+    twoScore: analysis.twoScore, marketFit: analysis.marketFit, financialViability: analysis.financialViability, verdictReason: analysis.verdictReason,
     rentQuote: analysis.rentQuote || null,
     confidenceLabel: analysis.confidenceScore >= 80 ? "HIGH" : analysis.confidenceScore >= 60 ? "GOOD" : "REVIEW",
     bottomLine, signalPills, summary: analysis.summary,
