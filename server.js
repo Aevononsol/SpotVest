@@ -5357,6 +5357,25 @@ createServer(async (request, response) => {
         out.citywideRidershipThisWindow = Array.isArray(sumRows) ? Number(sumRows[0]?.total) : null;
         out.sumRidershipWorks = Number.isFinite(out.citywideRidershipThisWindow);
         out.derivedFromMax = out.datasetMaxTimestamp ? latestCompleteMonthWindow(out.datasetMaxTimestamp) : null;
+        // Reference points (busy -> quiet) so one click returns the within-radius
+        // monthly ridership distribution used to calibrate MTA_CITYWIDE_MAX.
+        const refPoints = [
+          { name: "Times Square (42 St)", lat: 40.7560, lng: -73.9865 },
+          { name: "Grand Central (42 St)", lat: 40.7527, lng: -73.9772 },
+          { name: "Union Square (14 St)", lat: 40.7359, lng: -73.9911 },
+          { name: "Atlantic Av-Barclays (BK)", lat: 40.6840, lng: -73.9772 },
+          { name: "Fordham Rd (BX)", lat: 40.8610, lng: -73.8900 },
+          { name: "St. George Ferry (SI, no subway)", lat: 40.6437, lng: -74.0739 }
+        ];
+        out.referencePoints = await Promise.all(refPoints.map(async (p) => {
+          try {
+            const rows = await dataNyJson(MTA_DATASET_ID, {
+              $select: "sum(ridership) as total",
+              $where: `within_circle(georeference, ${p.lat}, ${p.lng}, 805) AND ${mtaTimeFilter(win)}`
+            }, { timeoutMs: 45000 });
+            return { name: p.name, ridership: Array.isArray(rows) ? Number(rows[0]?.total) || 0 : null };
+          } catch { return { name: p.name, ridership: null }; }
+        }));
         if (Number.isFinite(lat) && Number.isFinite(lng)) {
           const ptRows = await dataNyJson(MTA_DATASET_ID, {
             $select: "sum(ridership) as total",
