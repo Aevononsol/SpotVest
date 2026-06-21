@@ -3815,7 +3815,35 @@ function streetCorridorScore(address) {
   return 0;
 }
 
-// Phase 5: count same-category operators within ~95 m of the exact point (gated
+// Phase 6: REAL per-street busyness from BestTime (snapshotted in
+// siteIntelResult.footTraffic.blocks) — measured, not guessed. Returns the
+// street's busyness 0-100, or null when BestTime has no read for that street
+// (then the caller falls back to the avenue/side-street heuristic).
+function normalizeStreetName(s) {
+  return String(s || "").toLowerCase()
+    .replace(/^\d+\s+/, "")            // drop leading house number
+    .replace(/\bavenue\b/g, "ave")
+    .replace(/\bstreet\b/g, "st")
+    .replace(/\bboulevard\b/g, "blvd")
+    .replace(/\beast\b/g, "e").replace(/\bwest\b/g, "w")
+    .replace(/\bnorth\b/g, "n").replace(/\bsouth\b/g, "s")
+    .replace(/[.,]/g, "").replace(/\s+/g, " ").trim();
+}
+function streetBusynessFromBestTime(address) {
+  const ft = currentSiteIntelResult()?.footTraffic;
+  if (!ft || !Array.isArray(ft.blocks) || !ft.blocks.length || !address) return null;
+  const target = normalizeStreetName(String(address).split(",")[0]);
+  if (!target) return null;
+  for (const b of ft.blocks) {
+    const bs = normalizeStreetName(b.street);
+    if (bs && (bs === target || target.includes(bs) || bs.includes(target))) {
+      const v = Number(b.busyness);
+      if (Number.isFinite(v)) return v;
+    }
+  }
+  return null;
+}
+
 // map records) — a busy on-block cluster signals a live commercial block.
 function onBlockDensity() {
   const loc = state.location;
@@ -3840,8 +3868,14 @@ function blockWeightFor(cat) {
 }
 function blockVitality(business) {
   if (!state.location?.lat) return 0;
-  const corridor = streetCorridorScore(state.location.address); // -0.7 dead side street .. +1 corridor
-  return Math.round(corridor * 22 * blockWeightFor(businessCategory(business)));
+  const bw = blockWeightFor(businessCategory(business));
+  // Prefer REAL per-street busyness from BestTime; fall back to the avenue/
+  // side-street heuristic only when BestTime can't see this block.
+  const bt = streetBusynessFromBestTime(state.location.address);
+  const raw = Number.isFinite(bt)
+    ? Math.max(-1, Math.min(1, (bt - 50) / 50))   // measured: 50 = neutral
+    : streetCorridorScore(state.location.address); // heuristic fallback
+  return Math.round(raw * 22 * bw);
 }
 
 // Phase 6: same-block DIRECT competition penalty — opening a pizza spot right

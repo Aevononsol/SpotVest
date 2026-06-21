@@ -3328,6 +3328,7 @@ async function warmAreaFootTraffic(areaKey, location) {
       writeCache(`ftblend:${areaKey}`, {
         intensity: areaFootTrafficIntensity(result),
         venuesWithData: result.venuesWithData || 0,
+        blocks: (result.blocks || []).slice(0, 12).map((b) => ({ street: b.street, busyness: b.busyness })),
         source: "BestTime venue busyness (Google Popular Times)"
       }, COMPETITOR_SNAPSHOT_TTL_MS);
     }
@@ -3354,6 +3355,7 @@ function resolveAreaFootTraffic(zip, location) {
     const value = {
       intensity: areaFootTrafficIntensity(hit.data),
       venuesWithData: hit.data.venuesWithData || 0,
+      blocks: (hit.data.blocks || []).slice(0, 12).map((b) => ({ street: b.street, busyness: b.busyness })),
       source: "BestTime venue busyness (Google Popular Times)"
     };
     writeCache(`ftblend:${areaKey}`, value, COMPETITOR_SNAPSHOT_TTL_MS); // freeze ~1yr
