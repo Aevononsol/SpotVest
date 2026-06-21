@@ -139,6 +139,17 @@
         </form>
         <p id="mta-status" class="launch-status" role="status"></p>
         <pre id="mta-result" style="white-space:pre-wrap;word-break:break-word;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--txt-2);background:var(--surface-2);border:1px solid var(--border);border-radius:12px;padding:12px;margin-top:10px;display:none"></pre>
+
+        <div class="launch-section-header" style="margin-top:18px">
+          <h3>Block check</h3>
+          <p>Type an exact address to see what the engine reads for its <b>block face</b>: the same-street lots and their commercial floor area (the "is this block alive?" input), and the around-the-corner lots that are correctly excluded. Confirms a dead side street reads dead.</p>
+        </div>
+        <form id="admin-block-form" class="admin-token-row">
+          <input id="block-address" placeholder="e.g. 99 E 4th St, New York, NY 10003" autocomplete="off" />
+          <button type="submit">Check block</button>
+        </form>
+        <p id="block-status" class="launch-status" role="status"></p>
+        <pre id="block-result" style="white-space:pre-wrap;word-break:break-word;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--txt-2);background:var(--surface-2);border:1px solid var(--border);border-radius:12px;padding:12px;margin-top:10px;display:none"></pre>
       </section>
 
       <section class="launch-section">
@@ -229,6 +240,6 @@
         </div>
       </section>
     </main>
-    <script type="module" src="/admin.js?v=20260621-mtawindow"></script>
+    <script type="module" src="/admin.js?v=20260621-blockcheck"></script>
   </body>
 </html>

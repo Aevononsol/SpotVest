@@ -5385,6 +5385,50 @@ createServer(async (request, response) => {
     // probes the live dataset (confirms sum(ridership) works + returns citywide
     // and optional per-point ridership for MTA_CITYWIDE_MAX calibration). POST
     // {action:"refresh"} triggers the monthly scheduler manually, end to end.
+    // Block-check diagnostic: for an exact address, show what the engine sees
+    // for the BLOCK FACE — the same-street PLUTO lots and their commercial floor
+    // area (the "is this block alive?" input) vs the around-the-corner lots that
+    // are correctly excluded. Confirms a dead side street reads dead.
+    if (url.pathname === "/api/admin/block-check") {
+      if (!adminAuthorized(request)) {
+        sendJson(response, 401, { error: "Admin token required." });
+        return;
+      }
+      const address = safeText(url.searchParams.get("address"), 200);
+      if (!address) { sendJson(response, 400, { error: "Provide ?address=" }); return; }
+      try {
+        const geo = await geocodeAddress(address);
+        const addrStreet = streetKey(geo.address);
+        const lots = await socrataJson("64uk-42ks", {
+          $select: "address,latitude,longitude,retailarea,comarea,bldgclass",
+          $where: `latitude > ${geo.lat - 0.0007} AND latitude < ${geo.lat + 0.0007} AND longitude > ${geo.lng - 0.0009} AND longitude < ${geo.lng + 0.0009}`,
+          $limit: "40"
+        }).catch(() => []);
+        const matches = (s) => s && (s === addrStreet || s.includes(addrStreet) || addrStreet.includes(s));
+        const enriched = (Array.isArray(lots) ? lots : []).map((r) => ({
+          address: r.address,
+          street: streetKey(r.address),
+          sameStreet: matches(streetKey(r.address)),
+          commercialSqft: Math.round((Number(r.retailarea) || 0) + (Number(r.comarea) || 0)),
+          bldgClass: r.bldgclass || null
+        }));
+        const sameStreetLots = enriched.filter((l) => l.sameStreet);
+        const blockCommercialArea = sameStreetLots.reduce((t, l) => t + l.commercialSqft, 0);
+        sendJson(response, 200, {
+          geocoded: geo.address,
+          addrStreet,
+          blockFaceCommercialSqft: blockCommercialArea,
+          blockAliveness01: Number(Math.max(0, Math.min(1, blockCommercialArea / 30000)).toFixed(2)),
+          verdict: blockCommercialArea < 4000 ? "DEAD block face (low/no commercial frontage)" : blockCommercialArea < 15000 ? "QUIET block face" : "LIVE block face",
+          sameStreetLots: sameStreetLots.slice(0, 15),
+          excludedAroundCorner: enriched.filter((l) => !l.sameStreet).slice(0, 15)
+        });
+      } catch (error) {
+        sendJson(response, 200, { error: error.message });
+      }
+      return;
+    }
+
     if (url.pathname === "/api/admin/mta-window") {
       if (!adminAuthorized(request)) {
         sendJson(response, 401, { error: "Admin token required." });
