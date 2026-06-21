@@ -3821,13 +3821,20 @@ function streetCorridorScore(address) {
 // (then the caller falls back to the avenue/side-street heuristic).
 function normalizeStreetName(s) {
   return String(s || "").toLowerCase()
-    .replace(/^\d+\s+/, "")            // drop leading house number
+    .split(",")[0]
+    .replace(/^\s*\d+[a-z]?\s+/, "")             // drop leading house number
+    .replace(/(\d+)(st|nd|rd|th)\b/g, "$1")      // 4th -> 4 (so E 4th St == EAST 4 STREET)
     .replace(/\bavenue\b/g, "ave")
     .replace(/\bstreet\b/g, "st")
-    .replace(/\bboulevard\b/g, "blvd")
+    .replace(/\bboulevard\b/g, "blvd").replace(/\bplace\b/g, "pl")
     .replace(/\beast\b/g, "e").replace(/\bwest\b/g, "w")
     .replace(/\bnorth\b/g, "n").replace(/\bsouth\b/g, "s")
     .replace(/[.,]/g, "").replace(/\s+/g, " ").trim();
+}
+// Do two addresses sit on the SAME street (block face)?
+function sameStreet(a, b) {
+  const x = normalizeStreetName(a), y = normalizeStreetName(b);
+  return Boolean(x && y && (x === y || x.includes(y) || y.includes(x)));
 }
 function streetBusynessFromBestTime(address) {
   const ft = currentSiteIntelResult()?.footTraffic;
@@ -3844,7 +3851,10 @@ function streetBusynessFromBestTime(address) {
   return null;
 }
 
-// map records) — a busy on-block cluster signals a live commercial block.
+// Phase 7.2: same-category operators on the SAME STREET (block face) as the
+// address, within ~95 m — NOT a radius (a radius reaches around the corner onto
+// the busy avenue and miscounts those as "on your block"). So a grocery on 2nd
+// Ave no longer counts as "on this E 4th St block."
 function onBlockDensity() {
   const loc = state.location;
   const br = currentBusinessResult();
@@ -3853,7 +3863,9 @@ function onBlockDensity() {
   for (const rec of br.mapRecords) {
     const lat = Number(rec?.lat), lng = Number(rec?.lng);
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
-    if (milesBetweenPts(loc.lat, loc.lng, lat, lng) <= 0.06) n++; // ~95 m
+    if (milesBetweenPts(loc.lat, loc.lng, lat, lng) > 0.06) continue; // ~95 m
+    if (loc.address && rec.address && !sameStreet(loc.address, rec.address)) continue; // same block face only
+    n++;
   }
   return n;
 }
