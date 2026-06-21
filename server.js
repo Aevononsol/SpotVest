@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-import { mkdir, readFile, writeFile, stat } from "node:fs/promises";
+import { mkdir, readFile, writeFile, stat, rm } from "node:fs/promises";
 import { existsSync, readFileSync } from "node:fs";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -5602,6 +5602,42 @@ createServer(async (request, response) => {
         out.error = error.message;
       }
       sendJson(response, 200, out);
+      return;
+    }
+
+    if (url.pathname === "/api/admin/clear-cache") {
+      if (!adminAuthorized(request)) {
+        sendJson(response, 401, { error: "Admin token required." });
+        return;
+      }
+      if (request.method !== "POST") {
+        // GET = status only (how many entries are cached right now).
+        sendJson(response, 200, {
+          cacheEntries: responseCache.size,
+          persistedFile: SIGNAL_CACHE_FILE,
+          persistedFileExists: existsSync(SIGNAL_CACHE_FILE),
+          hint: "POST {\"action\":\"clear\"} to wipe all cached signals/snapshots for a clean start. Do this AFTER deploying new code."
+        });
+        return;
+      }
+      const body = await readRequestJson(request).catch(() => ({}));
+      if (body.action !== "clear") {
+        sendJson(response, 400, { error: "Unknown action. POST {\"action\":\"clear\"}." });
+        return;
+      }
+      const cleared = responseCache.size;
+      responseCache.clear();
+      let fileRemoved = false;
+      try {
+        await rm(SIGNAL_CACHE_FILE, { force: true });
+        fileRemoved = true;
+      } catch { /* file may not exist / disk read-only — non-fatal */ }
+      sendJson(response, 200, {
+        ok: true,
+        clearedEntries: cleared,
+        persistedFileRemoved: fileRemoved,
+        note: "All cached signals and frozen snapshots cleared. The next analysis of each address re-resolves fresh under the current code."
+      });
       return;
     }
 
