@@ -3736,6 +3736,37 @@ function blendedFootTraffic(siteIntelResult) {
   };
 }
 
+// Phase 2: per-business-type Market Fit weighting. Each vector weights the five
+// market sub-signals {foot, comp, demo, night, access} and sums to 1.0, encoding
+// the spec's lead-signal table (cheaper & faster -> foot leads; pricier &
+// destination -> demographics lead; bars -> nightlife; services -> competition).
+function marketFitWeights(business) {
+  const b = String(business || "").toLowerCase();
+  const W = {
+    grabgo:     { foot:0.50, comp:0.25, demo:0.15, night:0.05, access:0.05 },
+    quick:      { foot:0.50, comp:0.25, demo:0.15, night:0.05, access:0.05 },
+    retail:     { foot:0.45, comp:0.25, demo:0.20, night:0.00, access:0.10 },
+    fastcasual: { foot:0.40, comp:0.20, demo:0.25, night:0.05, access:0.10 },
+    casual:     { foot:0.25, comp:0.25, demo:0.35, night:0.05, access:0.10 },
+    upscale:    { foot:0.10, comp:0.20, demo:0.40, night:0.05, access:0.25 },
+    bar:        { foot:0.10, comp:0.25, demo:0.20, night:0.40, access:0.05 },
+    service:    { foot:0.25, comp:0.40, demo:0.25, night:0.00, access:0.10 },
+    targeted:   { foot:0.10, comp:0.20, demo:0.40, night:0.05, access:0.25 },
+    destination:{ foot:0.10, comp:0.20, demo:0.40, night:0.05, access:0.25 }
+  };
+  if (/\b(bar|pub|lounge|night ?club|club|brewery|cocktail|wine bar|speakeasy|tavern)\b/.test(b)) return W.bar;
+  if (/\b(coffee|cafe|café|espresso|bubble tea|boba|matcha|juice|smoothie|tea house)\b/.test(b)) return W.grabgo;
+  if (/\b(pizza|slice|deli|bodega|bagel|fast food|sandwich|hot ?dog|halal cart|food cart|taco stand)\b/.test(b)) return W.quick;
+  if (/\b(daycare|day care|childcare|preschool|grooming|pet|tutor|tutoring|music school|martial arts|dance studio)\b/.test(b)) return W.destination;
+  if (/\b(dental|dentist|doctor|medical|clinic|legal|law office|lawyer|accountant|\boffice\b|therapy|optometr|urgent care)\b/.test(b)) return W.targeted;
+  if (/\b(nail|salon|barber|gym|fitness|spa|massage|wax|tanning|beauty|pilates|yoga)\b/.test(b)) return W.service;
+  if (/\b(upscale|fine dining|steakhouse|omakase|tasting menu|michelin|chef'?s)\b/.test(b)) return W.upscale;
+  if (/\b(fast.?casual|chipotle|sweetgreen|cava|poke|bowl)\b/.test(b)) return W.fastcasual;
+  if (/\b(retail|shop|store|boutique|clothing|apparel|bookstore|gift|jewelry)\b/.test(b)) return W.retail;
+  if (/\b(restaurant|dining|eatery|italian|japanese|sushi|chinese|korean|indian|mexican|thai|greek|mediterranean|ramen|bistro|grill|kitchen|trattoria)\b/.test(b)) return W.casual;
+  return { foot:0.35, comp:0.30, demo:0.25, night:0.05, access:0.05 }; // balanced fallback
+}
+
 // Hidden preview switch for the two-score model. OFF by default, so live
 // customers see the unchanged single-score report. Visiting ?preview=2 turns it
 // on and remembers it; ?preview=0 turns it off. Only people with the secret link
@@ -3839,14 +3870,19 @@ function buildInstitutionalAnalysis(profile, recommendations) {
       ? "OPEN"
       : "CONDITIONAL";
   // ===== Two-score model (hidden preview, gated by isTwoScorePreview) =====
-  // Market Fit = "will customers come" (Demand carries foot traffic + nightlife;
-  // plus Competition and demographics). Financial Viability = "can it make money
-  // here" (rent-burden-aware economics; competition EXCLUDED — it's a Market Fit
-  // signal). Headline = the LOWER of the two; verdict from the matrix.
+  // Market Fit = "will customers come". Phase 2: the lead signal varies BY
+  // BUSINESS TYPE (coffee leans on foot traffic, upscale on demographics, bars
+  // on nightlife, services on competition) per marketFitWeights(). Financial
+  // Viability = "can it make money here" (rent-burden economics; competition
+  // excluded). Headline = the LOWER of the two; verdict from the bands.
+  const mfw = marketFitWeights(state.business || successModel.business);
+  const mfFoot = clampScore(footTrafficScoreFor(profile));      // pedestrian + transit flow
+  const mfComp = scoreValue("Competition");                      // higher = less saturated
+  const mfDemo = scoreValue("Customer fit");                     // demographics + spending fit
+  const mfNight = clampScore(effectiveNightlife(profile));       // evening/bar activity
+  const mfAccess = clampScore(safeNumber(profile.transit, 50));  // can the right people get here
   const marketFit = clampScore(
-    scoreValue("Demand") * 0.45 +
-    scoreValue("Competition") * 0.30 +
-    scoreValue("Customer fit") * 0.25
+    mfFoot * mfw.foot + mfComp * mfw.comp + mfDemo * mfw.demo + mfNight * mfw.night + mfAccess * mfw.access
   );
   const financialViability = clampScore(scoreValue("Financial viability"));
   const headlineScore = Math.min(marketFit, financialViability);
@@ -3867,12 +3903,17 @@ function buildInstitutionalAnalysis(profile, recommendations) {
         ? "the rent and cost economics are tight for what this spot can sell"
         : "this area's typical rents run tight for this business — enter your actual rent for an exact read";
   } else {
-    const parts = [
-      ["foot traffic and demand are light here", scoreValue("Demand")],
-      ["competition is heavy — direct rivals are thick here", scoreValue("Competition")],
-      ["the local customer base is a weak match for this concept", scoreValue("Customer fit")]
-    ];
-    problem = parts.slice().sort((a, b) => a[1] - b[1])[0][0];
+    // Name the weakest market signal that actually MATTERS for this business
+    // type (only signals carrying real weight in marketFitWeights).
+    const cand = [
+      ["foot traffic is light here for a walk-in concept", mfFoot, mfw.foot],
+      ["competition is heavy — direct rivals are thick here", mfComp, mfw.comp],
+      ["the local customer base is a weak match for this concept", mfDemo, mfw.demo],
+      ["the evening/nightlife activity this needs is thin here", mfNight, mfw.night],
+      ["this spot is hard for the right customers to get to", mfAccess, mfw.access]
+    ].filter((c) => c[2] >= 0.15);
+    problem = (cand.length ? cand : [["customer demand here looks slow", 0, 1]])
+      .slice().sort((a, b) => a[1] - b[1])[0][0];
   }
   // Wording matches the band, never overstating: 70+ "strong/clear to open",
   // 50-69 "workable, with conditions", <50 "too risky".
