@@ -3856,12 +3856,33 @@ function buildInstitutionalAnalysis(profile, recommendations) {
     : (fitHigh && viaHigh) ? "OPEN"
     : (!fitHigh && !viaHigh) ? "DO NOT OPEN"
     : "CONDITIONAL";
+  // Words must match numbers: 72+ strong, 58-71 moderate, 45-57 soft, <45 weak.
+  const tierWord = (v) => v >= 72 ? "strong" : v >= 58 ? "moderate" : v >= 45 ? "soft" : "weak";
+  // The single biggest problem = the main driver of the LOWER score. The whole
+  // page sticks to this one story.
+  let problem;
+  if (financialViability <= marketFit) {
+    const q = successModel.rentQuote;
+    problem = (q && q.healthyHigh > 0 && q.ratio > q.healthyHigh)
+      ? `rent is heavy here (≈${q.ratioPct}% of projected sales vs a healthy ${q.healthyPct})`
+      : "the rent and cost economics are tight for what this spot can sell";
+  } else {
+    const parts = [
+      ["foot traffic and demand are light here", scoreValue("Demand")],
+      ["competition is heavy — direct rivals are thick here", scoreValue("Competition")],
+      ["the local customer base is a weak match for this concept", scoreValue("Customer fit")]
+    ];
+    problem = parts.slice().sort((a, b) => a[1] - b[1])[0][0];
+  }
   const verdictReason = confidenceScore < 45
     ? "Not enough confirmed data yet — run again or add an exact address."
-    : (fitHigh && viaHigh) ? "Strong customer demand and workable economics here."
-    : (fitHigh && !viaHigh) ? "Strong demand, but rent and cost burden may make profitability difficult here."
-    : (!fitHigh && viaHigh) ? "Affordable to operate, but customer demand here looks slow."
-    : "Weak demand and tough economics — high risk.";
+    : (fitHigh && viaHigh)
+      ? `${tierWord(marketFit)[0].toUpperCase()}${tierWord(marketFit).slice(1)} demand and ${tierWord(financialViability)} economics — workable here.`
+      : (fitHigh && !viaHigh)
+        ? `Demand is ${tierWord(marketFit)}, but ${problem} — profitability is the risk.`
+        : (!fitHigh && viaHigh)
+          ? `Economics are ${tierWord(financialViability)}, but ${problem} — demand is the risk.`
+          : `Weak on both sides — ${problem}.`;
   const twoScore = isTwoScorePreview();
   const failureBase = Math.max(12, Math.min(82, Math.round(84 - opportunityScore * 0.55 + (100 - riskScore) * 0.28 + Math.max(0, 70 - confidenceScore) * 0.25)));
   const revenueBase = {
@@ -4791,7 +4812,7 @@ function sv3OverviewHTML(ctx) {
                 <div class="hero-sub">Success probability · ${escapeText(ctx.business)}</div>`}
            <div class="hero-ev"><span class="k">Evidence</span><span class="bar"><i style="width:${sv3Pct(ctx.confidence)}%"></i></span><span class="v">${ctx.confidence}/100 · ${escapeText(ctx.confidenceLabel)}</span></div>
            <div class="vsub">${escapeText(ctx.twoScore ? (ctx.verdictReason || ctx.decisionCopy) : ctx.decisionCopy)}</div>
-           ${sv3CostMarketSplit(ctx)}
+           ${ctx.twoScore ? "" : sv3CostMarketSplit(ctx)}
            ${sv3IsZipCenterSearch() ? `<div class="vsub" style="margin-top:7px">Area-level result for the whole ZIP. An exact address can score differently — a busy area can contain quiet blocks (and the other way around). Run a street address for a block-level verdict.</div>` : ""}`
         : ctx.scoreUnavailable
           ? `<div class="hero-status"><span class="hdot"></span>Data unavailable</div>
@@ -5430,7 +5451,10 @@ function renderSpotVestV3(profile, recommendations, analysis) {
   // higher than the current business (computed in computeRealAlternatives).
   const altTop = (Array.isArray(state.realAlternatives) && state.realAlternatives[0]) || null;
   const revRange = sv3ElText("revenue-projection") || elements.revenueProjection?.textContent || "";
-  const bottomLine = `${escapeText(decision.copy)} ${competitionCount > 0 ? `There are about <b>${formatInteger(competitionCount)}</b> directly comparable operators nearby, so differentiation and site economics decide the outcome.` : "Competitive density is light, so demand proof and the exact block decide the outcome."}${altTop ? ` If the numbers don't hold, <b>${escapeText(altTop.name.toLowerCase())}</b> screens higher here (${altTop.score}/100 vs ${Number(score)}/100) — see Better alternatives.` : ""}`;
+  // In two-score mode the page tells ONE story: lead with the same verdict
+  // reason shown up top, so the bottom line can't contradict the two scores.
+  const leadCopy = analysis.twoScore ? (analysis.verdictReason || decision.copy) : decision.copy;
+  const bottomLine = `${escapeText(leadCopy)} ${competitionCount > 0 ? `There are about <b>${formatInteger(competitionCount)}</b> directly comparable operators nearby, so differentiation and site economics decide the outcome.` : "Competitive density is light, so demand proof and the exact block decide the outcome."}${altTop ? ` If the numbers don't hold, <b>${escapeText(altTop.name.toLowerCase())}</b> screens higher here (${altTop.score}/100 vs ${Number(score)}/100) — see Better alternatives.` : ""}`;
 
   // signal pills
   const signalPills = [
