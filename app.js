@@ -8626,11 +8626,15 @@ function renderAccountStatus(account) {
       ? `<div class="card sv3-account-card">
           <div class="sub">Account</div>
           <div class="acct-email">${escapeText(account.email)}</div>
-          <div class="acct-actions${isSubscriber ? " three" : ""}">
+          <div class="acct-actions${(1 + (isSubscriber ? 1 : 0) + (sv3VipActive() ? 1 : 0) + 1) === 3 ? " three" : ""}">
             <button type="button" id="sv3-rate" class="acct-tile">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.9-5.2-2.8-5.2 2.8 1-5.9L3.5 9.7l5.9-.9L12 3.5z"/></svg>
               <span>Rate SpotVest</span>
             </button>
+            ${sv3VipActive() ? `<button type="button" id="sv3-share-invite" class="acct-tile">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></svg>
+              <span>Copy invite link</span>
+            </button>` : ""}
             ${isSubscriber ? `<button type="button" id="sv3-manage-sub" class="acct-tile">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="6" width="18" height="13" rx="2.5"/><path d="M3 10.5h18"/><path d="M7 15.5h4"/></svg>
               <span>Subscription</span>
