@@ -8616,6 +8616,10 @@ function renderAccountStatus(account) {
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.9-5.2-2.8-5.2 2.8 1-5.9L3.5 9.7l5.9-.9L12 3.5z"/></svg>
               <span>Rate SpotVest</span>
             </button>
+            <button type="button" id="sv3-share-invite" class="acct-tile">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><path d="M8.6 13.5l6.8 4M15.4 6.5l-6.8 4"/></svg>
+              <span>Copy invite link</span>
+            </button>
           </div>
         </div>`
       : account
@@ -8646,6 +8650,18 @@ function renderAccountStatus(account) {
         const nameInput = document.querySelector("#sv3-review-name");
         if (nameInput && !nameInput.value && account?.name) nameInput.value = account.name;
         card.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    });
+    appFoot.querySelector("#sv3-share-invite")?.addEventListener("click", async () => {
+      const code = sv3VipCode();
+      if (!code) return;
+      const link = `${window.location.origin}/?vip=${encodeURIComponent(code)}`;
+      try {
+        await navigator.clipboard.writeText(link);
+        sv3PaywallToast("Invite link copied — paste it to share full access.");
+      } catch {
+        // Clipboard blocked (older browser / no HTTPS) — show the link to copy by hand.
+        window.prompt("Copy this invite link to share full access:", link);
       }
     });
     appFoot.querySelector("#sv3-manage-sub")?.addEventListener("click", async () => {
