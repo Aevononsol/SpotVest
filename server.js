@@ -4991,35 +4991,45 @@ createServer(async (request, response) => {
         sendJson(response, 429, { error: "Too many attempts. Please wait a minute." });
         return;
       }
+      const body = await readRequestJson(request);
       const account = await authAccount(request);
-      if (!account?.emailVerifiedAt) {
-        sendJson(response, 401, { error: "Sign in with a verified account to leave a review." });
+      // A review may come from a signed-in verified account OR from someone on a
+      // valid VIP invite link (full-access link, no account). Moderation
+      // (pending -> approved) is the spam gate either way.
+      const vipConfigured = process.env.SPOTVEST_VIP_CODE || "";
+      const vipOk = Boolean(vipConfigured) && safeText(body.vip, 120) === vipConfigured;
+      if (!account?.emailVerifiedAt && !vipOk) {
+        sendJson(response, 401, { error: "Sign in with a verified account (or use your invite link) to leave a review." });
         return;
       }
-      // Any signed-in, email-verified account can leave a review. Whether the
-      // account is a paying customer only controls the "Verified customer"
-      // badge below (kept honest), not permission to review. Moderation
-      // (pending -> approved) is the spam gate.
-      const purchaseLedger = await readJsonStore("purchases", []);
-      const isOwner = normalizeEmail(account.email) === normalizeEmail(ownerAccountEmail());
-      const isCustomer = purchaseLedger.some((purchase) => purchase.accountId === account.id);
-      const body = await readRequestJson(request);
+      const purchaseLedger = account ? await readJsonStore("purchases", []) : [];
+      const isOwner = Boolean(account) && normalizeEmail(account.email) === normalizeEmail(ownerAccountEmail());
+      const isCustomer = Boolean(account) && purchaseLedger.some((purchase) => purchase.accountId === account.id);
       const rating = Math.max(1, Math.min(5, Math.round(Number(body.rating) || 0)));
       const text = safeText(body.text, 600);
+      const submittedName = safeText(body.name, 80);
       if (!Number(body.rating) || text.length < 10) {
         sendJson(response, 400, { error: "Pick a star rating and write at least a sentence." });
         return;
       }
+      // VIP-link reviewers have no account, so a name is required from them.
+      if (!account && !submittedName) {
+        sendJson(response, 400, { error: "Please add your name." });
+        return;
+      }
       const reviews = await readJsonStore("reviews", []);
-      // One review per account; resubmitting replaces it and returns it to
-      // the moderation queue.
-      const remaining = reviews.filter((review) => review.accountId !== account.id);
+      // One review per account; resubmitting replaces it and returns it to the
+      // moderation queue. VIP-link reviews have no account id, so each is kept
+      // (moderation is the control there).
+      const remaining = account ? reviews.filter((review) => review.accountId !== account.id) : reviews.slice();
+      const reviewerEmail = account ? account.email : "VIP invite link";
       const review = {
         id: leadId("review"),
-        accountId: account.id,
-        name: safeText(body.name, 80) || account.name || account.email.split("@")[0],
+        accountId: account ? account.id : null,
+        source: account ? "account" : "vip-invite",
+        name: submittedName || account?.name || (account ? account.email.split("@")[0] : "Guest"),
         role: safeText(body.role, 120),
-        picture: safeText(account.picture, 300),
+        picture: account ? safeText(account.picture, 300) : "",
         verifiedCustomer: isOwner || isCustomer,
         rating,
         text,
@@ -5030,8 +5040,8 @@ createServer(async (request, response) => {
       await writeJsonStore("reviews", remaining.slice(0, 2000));
       notifyOwner(
         `SpotVest review pending: ${rating}/5 from ${review.name}`,
-        `${rating}/5 — ${review.name}${review.role ? ` (${review.role})` : ""} <${account.email}>\n\n${text}\n\nApprove or remove it in the owner console.`,
-        account.email
+        `${rating}/5 — ${review.name}${review.role ? ` (${review.role})` : ""} <${reviewerEmail}>\n\n${text}\n\nApprove or remove it in the owner console.`,
+        account ? account.email : undefined
       );
       sendJson(response, 200, { ok: true, message: "Thanks! Your review will appear on the site after a quick check." });
       return;

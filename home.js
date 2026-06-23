@@ -589,7 +589,8 @@
           rating,
           name: form.elements.name.value.trim(),
           role: form.elements.role.value.trim(),
-          text: form.elements.text.value.trim()
+          text: form.elements.text.value.trim(),
+          vip: (() => { try { return localStorage.getItem("spotvestVip") || ""; } catch { return ""; } })()
         })
       });
       const result = await response.json().catch(() => ({}));
