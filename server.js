@@ -4996,16 +4996,13 @@ createServer(async (request, response) => {
         sendJson(response, 401, { error: "Sign in with a verified account to leave a review." });
         return;
       }
-      // Reviews are customer-only: an account must carry a real purchase or
-      // subscription (which required a card) before it can review. That's
-      // what makes "create many emails, write fake reviews" expensive.
+      // Any signed-in, email-verified account can leave a review. Whether the
+      // account is a paying customer only controls the "Verified customer"
+      // badge below (kept honest), not permission to review. Moderation
+      // (pending -> approved) is the spam gate.
       const purchaseLedger = await readJsonStore("purchases", []);
       const isOwner = normalizeEmail(account.email) === normalizeEmail(ownerAccountEmail());
       const isCustomer = purchaseLedger.some((purchase) => purchase.accountId === account.id);
-      if (!isOwner && !isCustomer) {
-        sendJson(response, 403, { error: "Reviews are open to SpotVest customers — start your free trial first." });
-        return;
-      }
       const body = await readRequestJson(request);
       const rating = Math.max(1, Math.min(5, Math.round(Number(body.rating) || 0)));
       const text = safeText(body.text, 600);
@@ -5023,7 +5020,7 @@ createServer(async (request, response) => {
         name: safeText(body.name, 80) || account.name || account.email.split("@")[0],
         role: safeText(body.role, 120),
         picture: safeText(account.picture, 300),
-        verifiedCustomer: true,
+        verifiedCustomer: isOwner || isCustomer,
         rating,
         text,
         status: "pending",
