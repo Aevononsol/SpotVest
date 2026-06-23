@@ -8608,7 +8608,16 @@ function renderAccountStatus(account) {
   if (appFoot) {
     const isSubscriber = sv3Purchase()?.product === "pro-monthly";
     appFoot.innerHTML = !account && sv3VipActive()
-      ? `<div class="card sv3-account-card"><div class="sub">VIP access</div><div class="acct-email">Invite link active — full access on this device, no account needed.</div></div>`
+      ? `<div class="card sv3-account-card">
+          <div class="sub">VIP access</div>
+          <div class="acct-email">Invite link active — full access on this device, no account needed.</div>
+          <div class="acct-actions">
+            <button type="button" id="sv3-rate" class="acct-tile">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.9-5.2-2.8-5.2 2.8 1-5.9L3.5 9.7l5.9-.9L12 3.5z"/></svg>
+              <span>Rate SpotVest</span>
+            </button>
+          </div>
+        </div>`
       : account
       ? `<div class="card sv3-account-card">
           <div class="sub">Account</div>
@@ -9798,7 +9807,8 @@ document.querySelectorAll("[data-checkout-product]").forEach((button) => {
           rating,
           name: (document.querySelector("#sv3-review-name")?.value || "").trim(),
           role: (document.querySelector("#sv3-review-role")?.value || "").trim(),
-          text: (document.querySelector("#sv3-review-text")?.value || "").trim()
+          text: (document.querySelector("#sv3-review-text")?.value || "").trim(),
+          vip: sv3VipCode()
         })
       });
       const result = await response.json().catch(() => ({}));
