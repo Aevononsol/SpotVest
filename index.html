@@ -439,7 +439,7 @@
               <form id="login-form" class="launch-form">
                 <strong>Sign in</strong>
                 <input name="email" type="email" placeholder="Email" autocomplete="email" required />
-                <input name="password" type="password" placeholder="Password" autocomplete="current-password" required />
+                <input name="password" type="password" placeholder="Password" autocomplete="current-password" maxlength="128" required />
                 <button type="submit">Sign in</button>
                 <button type="button" id="forgot-password-link" class="account-link">Forgot password? We'll email you a reset link.</button>
                 <p id="login-status" class="launch-status" role="status"></p>
@@ -461,7 +461,7 @@
                   <option value="pro-monthly">SpotVest Pro — $29/month</option>
                   <option value="team-enterprise">Team / Enterprise</option>
                 </select>
-                <input name="password" type="password" placeholder="Password" autocomplete="new-password" required minlength="10" />
+                <input name="password" type="password" placeholder="Password" autocomplete="new-password" required minlength="10" maxlength="128" />
                 <button type="submit">Create account</button>
                 <p id="signup-status" class="launch-status" role="status"></p>
               </form>
@@ -476,7 +476,7 @@
               <form id="password-reset-complete-form" class="launch-form" hidden>
                 <strong>Choose new password</strong>
                 <input name="token" type="hidden" />
-                <input name="password" type="password" placeholder="New password" autocomplete="new-password" required minlength="10" />
+                <input name="password" type="password" placeholder="New password" autocomplete="new-password" required minlength="10" maxlength="128" />
                 <button type="submit">Update password</button>
                 <p id="password-reset-complete-status" class="launch-status" role="status"></p>
               </form>
@@ -504,8 +504,8 @@
               </form>
               <form id="change-password-form" class="launch-form account-private">
                 <strong>Change password</strong>
-                <input name="currentPassword" type="password" placeholder="Current password" autocomplete="current-password" required />
-                <input name="newPassword" type="password" placeholder="New password" autocomplete="new-password" required minlength="10" />
+                <input name="currentPassword" type="password" placeholder="Current password" autocomplete="current-password" maxlength="128" required />
+                <input name="newPassword" type="password" placeholder="New password" autocomplete="new-password" required minlength="10" maxlength="128" />
                 <button type="submit">Change password</button>
                 <p id="change-password-status" class="launch-status" role="status"></p>
               </form>

@@ -75,7 +75,7 @@
 
       <form id="auth-login" class="show" novalidate>
         <input class="input" name="email" type="email" placeholder="Email" autocomplete="email" required />
-        <input class="input" name="password" type="password" placeholder="Password" autocomplete="current-password" required />
+        <input class="input" name="password" type="password" placeholder="Password" autocomplete="current-password" maxlength="128" required />
         <button class="btn" type="submit">Sign in</button>
         <div class="aux"><span></span><button type="button" id="forgot-link">Forgot password?</button></div>
       </form>
@@ -83,7 +83,7 @@
       <form id="auth-signup" novalidate>
         <input class="input" name="name" placeholder="Your name" autocomplete="name" />
         <input class="input" name="email" type="email" placeholder="Email" autocomplete="email" required />
-        <input class="input" name="password" type="password" placeholder="Password (10+ characters, letters and numbers)" autocomplete="new-password" required />
+        <input class="input" name="password" type="password" placeholder="Password (10+ characters, letters and numbers)" autocomplete="new-password" minlength="10" maxlength="128" required />
         <button class="btn" type="submit">Create account</button>
       </form>
 
@@ -94,7 +94,7 @@
       </form>
 
       <form id="auth-reset-complete" novalidate>
-        <input class="input" name="password" type="password" placeholder="New password (10+ characters, letters and numbers)" autocomplete="new-password" required />
+        <input class="input" name="password" type="password" placeholder="New password (10+ characters, letters and numbers)" autocomplete="new-password" minlength="10" maxlength="128" required />
         <button class="btn" type="submit">Set new password</button>
       </form>
 

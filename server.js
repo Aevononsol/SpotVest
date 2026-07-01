@@ -1151,9 +1151,13 @@ function verificationToken() {
   return randomBytes(24).toString("hex");
 }
 
+// Passwords are capped at 128 chars: real passwords never approach this, and
+// it stops absurdly long inputs from burning scrypt CPU on every attempt.
+const PASSWORD_MAX = 128;
+
 function passwordMeetsPolicy(password) {
   const value = String(password || "");
-  return value.length >= 10 && /[A-Za-z]/.test(value) && /\d/.test(value);
+  return value.length >= 10 && value.length <= PASSWORD_MAX && /[A-Za-z]/.test(value) && /\d/.test(value);
 }
 
 function cookieHeader(name, value, options = {}) {
@@ -1254,6 +1258,20 @@ async function removeSession(request) {
   await writeJsonStore(
     "sessions",
     sessions.filter((session) => session.tokenHash !== tokenHash && session.token !== token)
+  );
+}
+
+// Drop every session for an account — used after a password change/reset so a
+// stolen or stale login can't outlive the credential change. Pass keepTokenHash
+// to spare one device (the one initiating a signed-in password change) from
+// being logged out.
+async function invalidateAccountSessions(accountIdValue, keepTokenHash = null) {
+  const sessions = await readJsonStore("sessions", []);
+  await writeJsonStore(
+    "sessions",
+    sessions.filter((session) =>
+      session.accountId !== accountIdValue ||
+      (keepTokenHash && session.tokenHash === keepTokenHash))
   );
 }
 
@@ -4400,7 +4418,7 @@ createServer(async (request, response) => {
         return;
       }
       if (!passwordMeetsPolicy(password)) {
-        sendJson(response, 400, { error: "Use at least 10 characters with letters and numbers." });
+        sendJson(response, 400, { error: "Use 10–128 characters with letters and numbers." });
         return;
       }
       const accounts = await readJsonStore("accounts", []);
@@ -4566,6 +4584,13 @@ createServer(async (request, response) => {
       const body = await readRequestJson(request);
       const email = normalizeEmail(body.email);
       const password = String(body.password || "");
+      // Reject over-long inputs before hashing — a real password is never this
+      // long, so this only rejects abuse, and it skips the scrypt cost. Same
+      // generic message as a bad password so it stays non-enumerating.
+      if (password.length > PASSWORD_MAX) {
+        sendJson(response, 401, { error: "Email or password is incorrect." });
+        return;
+      }
       const accounts = await readJsonStore("accounts", []);
       const account = accounts.find((candidate) => candidate.email === email);
       if (!account || !verifyPassword(password, account.passwordHash)) {
@@ -4635,11 +4660,13 @@ createServer(async (request, response) => {
         return;
       }
       if (!passwordMeetsPolicy(nextPassword)) {
-        sendJson(response, 400, { error: "Use at least 10 characters with letters and numbers." });
+        sendJson(response, 400, { error: "Use 10–128 characters with letters and numbers." });
         return;
       }
       const updated = await updateAccountRecord(account.id, () => ({ passwordHash: hashPassword(nextPassword) }));
-      sendJson(response, 200, { ok: true, account: publicAccount(updated), message: "Password updated." });
+      // Log every other device out; keep the one that just changed the password.
+      await invalidateAccountSessions(account.id, hashToken(authTokenFromRequest(request)));
+      sendJson(response, 200, { ok: true, account: publicAccount(updated), message: "Password updated. Other devices have been signed out." });
       return;
     }
 
@@ -4731,7 +4758,7 @@ createServer(async (request, response) => {
       const token = safeText(body.token, 200);
       const password = String(body.password || "");
       if (!passwordMeetsPolicy(password)) {
-        sendJson(response, 400, { error: "Use at least 10 characters with letters and numbers." });
+        sendJson(response, 400, { error: "Use 10–128 characters with letters and numbers." });
         return;
       }
       const accounts = await readJsonStore("accounts", []);
@@ -4754,6 +4781,9 @@ createServer(async (request, response) => {
         updatedAt: new Date().toISOString()
       };
       await writeJsonStore("accounts", accounts);
+      // Reset happens without an active session, so kill every existing session
+      // for this account — a stolen or stale login can't survive the reset.
+      await invalidateAccountSessions(accounts[index].id);
       sendJson(response, 200, { ok: true, message: "Password reset complete. You can sign in now." });
       return;
     }
