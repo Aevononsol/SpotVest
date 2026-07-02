@@ -33,6 +33,11 @@ const contentTypes = {
   ".ico": "image/x-icon"
 };
 
+// Static serving is allowlisted: only root-level files with a known asset
+// extension are public. These files live in the same directory but must never
+// be served (source/config that share a servable extension).
+const STATIC_DENY = new Set(["server.js", "package.json", "package-lock.json"]);
+
 const allowedKeyNames = [
   "CENSUS_API_KEY",
   "GOOGLE_PLACES_API_KEY",
@@ -422,8 +427,23 @@ function applySecurityHeaders(response) {
 }
 
 function clientIp(request) {
-  const forwarded = String(request.headers["x-forwarded-for"] || "").split(",")[0].trim();
-  return forwarded || request.socket?.remoteAddress || "unknown";
+  // Behind Render's single proxy, the trustworthy client IP is the entry the
+  // proxy APPENDS — i.e. the rightmost value. Taking the leftmost lets a client
+  // spoof X-Forwarded-For and rotate it per request to defeat every rate limit.
+  const hops = String(request.headers["x-forwarded-for"] || "")
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  return hops[hops.length - 1] || request.socket?.remoteAddress || "unknown";
+}
+
+// Timing-safe string comparison over fixed-size digests, so neither content nor
+// length leaks through response timing. Used for shared-secret checks (admin
+// token, VIP code) where the input is attacker-controlled.
+function constantTimeEqual(a, b) {
+  const ah = createHash("sha256").update(String(a ?? "")).digest();
+  const bh = createHash("sha256").update(String(b ?? "")).digest();
+  return timingSafeEqual(ah, bh);
 }
 
 function safeText(value, max = 2000) {
@@ -479,6 +499,20 @@ async function writeJsonStore(name, value) {
   await writeFile(filePath, JSON.stringify(value, null, 2), "utf8");
 }
 
+// Every other lead field is length-capped; reportContext was stored raw, so a
+// caller could persist a ~100KB object per lead and bloat the store. Keep it an
+// object but bound its serialized size, dropping it if it's oversized.
+function boundedContext(value) {
+  if (!value || typeof value !== "object") return null;
+  try {
+    const json = JSON.stringify(value);
+    if (!json || json.length > 8000) return null;
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
+}
+
 async function appendLead(type, payload, request) {
   const leads = await readJsonStore("leads", []);
   const clean = {
@@ -496,7 +530,7 @@ async function appendLead(type, payload, request) {
     package: safeText(payload.package || payload.plan, 120),
     message: safeText(payload.message || payload.notes, 2000),
     assignedAgent: safeText(payload.assignedAgent, 80),
-    reportContext: payload.reportContext && typeof payload.reportContext === "object" ? payload.reportContext : null,
+    reportContext: boundedContext(payload.reportContext),
     ip: clientIp(request),
     userAgent: safeText(request.headers["user-agent"], 260),
     createdAt: new Date().toISOString(),
@@ -827,9 +861,7 @@ function adminAuthorized(request) {
   // compared in constant time.
   const provided = String(request.headers.authorization || "").replace(/^Bearer\s+/i, "");
   if (!provided) return false;
-  const a = Buffer.from(provided);
-  const b = Buffer.from(String(configured));
-  return a.length === b.length && timingSafeEqual(a, b);
+  return constantTimeEqual(provided, configured);
 }
 
 function checkoutUrlFor(plan) {
@@ -1139,12 +1171,20 @@ function verifyPassword(password, stored) {
   return storedBuffer.length === hash.length && timingSafeEqual(storedBuffer, hash);
 }
 
+// A real password hash used as a constant-work decoy: verifying against it when
+// no account (or no password) matches keeps login timing uniform, so response
+// time can't reveal whether an email is registered.
+const DECOY_PASSWORD_HASH = hashPassword(randomBytes(18).toString("hex"));
+
 function sessionToken() {
   return randomBytes(24).toString("hex");
 }
 
 function hashToken(token) {
-  return scryptSync(String(token), "areaintel-token-v1", 64).toString("hex");
+  // Session/reset/verification tokens are 24 random bytes (~192 bits), so they
+  // need no slow KDF — a fast digest is enough to store them hashed at rest.
+  // scrypt here would block the event loop on every authenticated request.
+  return createHash("sha256").update(`areaintel-token-v1:${String(token)}`).digest("hex");
 }
 
 function verificationToken() {
@@ -1239,13 +1279,11 @@ async function authAccount(request) {
   const sessions = await readJsonStore("sessions", []);
   const tokenHash = hashToken(token);
   const now = Date.now();
-  const session = sessions.find((candidate) => {
-    if (candidate.tokenHash && candidate.tokenHash === tokenHash) return true;
-    return candidate.token && candidate.token === token;
-  });
+  const session = sessions.find((candidate) => candidate.tokenHash === tokenHash);
   if (!session) return null;
+  // Missing/unparseable expiry is treated as expired rather than eternal.
   const expires = Date.parse(session.expiresAt || "");
-  if (Number.isFinite(expires) && expires <= now) return null;
+  if (!Number.isFinite(expires) || expires <= now) return null;
   const accounts = await readJsonStore("accounts", []);
   return accounts.find((account) => account.id === session.accountId) || null;
 }
@@ -4037,15 +4075,26 @@ async function sendFile(response, pathname, request) {
           ? "admin.html"
           : pathname.slice(1);
   const normalized = normalize(requested);
+  const extension = extname(normalized);
 
-  if (normalized.startsWith("..") || normalized.includes("/.env")) {
+  // Allowlist: only root-level files (no subdirectories — API routes are handled
+  // before this, and every real asset sits at the root) with a known static
+  // extension, excluding source/config. This blocks traversal, dotfiles
+  // (.env, .git/*), server source (services/*), and app source/config
+  // (server.js, package.json) that would otherwise be served in full.
+  const servable =
+    !normalized.startsWith("..") &&
+    !normalized.startsWith(".") &&
+    !normalized.includes("/") &&
+    Object.prototype.hasOwnProperty.call(contentTypes, extension) &&
+    !STATIC_DENY.has(normalized);
+  if (!servable) {
     response.writeHead(403);
     response.end("Forbidden");
     return;
   }
 
   const filePath = join(root, normalized);
-  const extension = extname(filePath);
   const asset = await loadStaticAsset(filePath, extension);
 
   // HTML always revalidates — it carries the versioned (?v=) links to JS/CSS,
@@ -4498,7 +4547,7 @@ createServer(async (request, response) => {
       }
       const code = safeText(url.searchParams.get("code"), 120);
       const configured = process.env.SPOTVEST_VIP_CODE || "";
-      sendJson(response, 200, { ok: Boolean(configured) && code === configured });
+      sendJson(response, 200, { ok: Boolean(configured) && constantTimeEqual(code, configured) });
       return;
     }
 
@@ -4593,7 +4642,11 @@ createServer(async (request, response) => {
       }
       const accounts = await readJsonStore("accounts", []);
       const account = accounts.find((candidate) => candidate.email === email);
-      if (!account || !verifyPassword(password, account.passwordHash)) {
+      // Always run one scrypt verification (against a decoy hash when the email
+      // is unknown or is a password-less Google account) so response timing is
+      // uniform and can't be used to enumerate registered emails.
+      const passwordOk = verifyPassword(password, account?.passwordHash || DECOY_PASSWORD_HASH);
+      if (!account || !account.passwordHash || !passwordOk) {
         sendJson(response, 401, { error: "Email or password is incorrect." });
         return;
       }
@@ -4696,6 +4749,10 @@ createServer(async (request, response) => {
     }
 
     if (url.pathname === "/api/verify-email") {
+      if (rateLimited(`verify-email:${clientIp(request)}`, 20, 60_000)) {
+        sendJson(response, 429, { error: "Too many attempts. Please wait a minute." });
+        return;
+      }
       const token = safeText(url.searchParams.get("token"), 200);
       const accounts = await readJsonStore("accounts", []);
       const tokenHash = hashToken(token);
@@ -4754,6 +4811,10 @@ createServer(async (request, response) => {
     }
 
     if (url.pathname === "/api/password-reset/complete" && request.method === "POST") {
+      if (rateLimited(`reset-complete:${clientIp(request)}`, 10, 60_000)) {
+        sendJson(response, 429, { error: "Too many attempts. Please wait a minute." });
+        return;
+      }
       const body = await readRequestJson(request);
       const token = safeText(body.token, 200);
       const password = String(body.password || "");
@@ -4789,6 +4850,10 @@ createServer(async (request, response) => {
     }
 
     if (url.pathname === "/api/contact" && request.method === "POST") {
+      if (rateLimited(`contact:${clientIp(request)}`, 5, 60_000)) {
+        sendJson(response, 429, { error: "Too many messages. Please wait a minute and try again." });
+        return;
+      }
       const body = await readRequestJson(request);
       if (!safeText(body.email, 180) && !safeText(body.phone, 80)) {
         sendJson(response, 400, { error: "Provide an email or phone so SpotVest can follow up." });
@@ -4945,6 +5010,12 @@ createServer(async (request, response) => {
     }
 
     if (url.pathname === "/api/analysis-run" && request.method === "POST") {
+      // Throttle before touching the VIP path so a wrong code can't be used as
+      // an unlimited true/false oracle to guess SPOTVEST_VIP_CODE.
+      if (rateLimited(`analysis-run:${clientIp(request)}`, 30, 60_000)) {
+        sendJson(response, 429, { error: "Too many attempts. Please wait a minute." });
+        return;
+      }
       // CoStar-style fair use: each account gets a daily analysis allowance
       // no real person exceeds. A whole company funneling through one shared
       // subscription hits the wall before lunch — that's the design.
@@ -4953,7 +5024,7 @@ createServer(async (request, response) => {
       // requirement and the meter entirely.
       const meterBody = await readRequestJson(request).catch(() => ({}));
       const vipConfigured = process.env.SPOTVEST_VIP_CODE || "";
-      if (vipConfigured && safeText(meterBody.vip, 120) === vipConfigured) {
+      if (vipConfigured && constantTimeEqual(safeText(meterBody.vip, 120), vipConfigured)) {
         sendJson(response, 200, { ok: true, vip: true, used: 0, limit: DAILY_ANALYSIS_LIMIT, left: DAILY_ANALYSIS_LIMIT });
         return;
       }
@@ -5027,7 +5098,7 @@ createServer(async (request, response) => {
       // valid VIP invite link (full-access link, no account). Moderation
       // (pending -> approved) is the spam gate either way.
       const vipConfigured = process.env.SPOTVEST_VIP_CODE || "";
-      const vipOk = Boolean(vipConfigured) && safeText(body.vip, 120) === vipConfigured;
+      const vipOk = Boolean(vipConfigured) && constantTimeEqual(safeText(body.vip, 120), vipConfigured);
       if (!account?.emailVerifiedAt && !vipOk) {
         sendJson(response, 401, { error: "Sign in with a verified account (or use your invite link) to leave a review." });
         return;
@@ -5057,7 +5128,7 @@ createServer(async (request, response) => {
         id: leadId("review"),
         accountId: account ? account.id : null,
         source: account ? "account" : "vip-invite",
-        name: submittedName || account?.name || (account ? account.email.split("@")[0] : "Guest"),
+        name: submittedName || account?.name || "Verified customer",
         role: safeText(body.role, 120),
         picture: account ? safeText(account.picture, 300) : "",
         verifiedCustomer: isOwner || isCustomer,
@@ -5067,7 +5138,11 @@ createServer(async (request, response) => {
         createdAt: new Date().toISOString()
       };
       remaining.unshift(review);
-      await writeJsonStore("reviews", remaining.slice(0, 2000));
+      // Never let a flood of pending reviews evict already-approved (published)
+      // ones: keep every approved review, then fill the cap with newest others.
+      const approvedReviews = remaining.filter((r) => r.status === "approved");
+      const otherReviews = remaining.filter((r) => r.status !== "approved");
+      await writeJsonStore("reviews", approvedReviews.concat(otherReviews).slice(0, 2000));
       notifyOwner(
         `SpotVest review pending: ${rating}/5 from ${review.name}`,
         `${rating}/5 — ${review.name}${review.role ? ` (${review.role})` : ""} <${reviewerEmail}>\n\n${text}\n\nApprove or remove it in the owner console.`,
@@ -5225,6 +5300,10 @@ createServer(async (request, response) => {
     }
 
     if (url.pathname === "/api/report-request" && request.method === "POST") {
+      if (rateLimited(`report-request:${clientIp(request)}`, 5, 60_000)) {
+        sendJson(response, 429, { error: "Too many requests. Please wait a minute and try again." });
+        return;
+      }
       const body = await readRequestJson(request);
       if (!safeText(body.email, 180)) {
         sendJson(response, 400, { error: "Provide an email for the report request." });
@@ -5256,6 +5335,10 @@ createServer(async (request, response) => {
     }
 
     if (url.pathname === "/api/advisor-request" && request.method === "POST") {
+      if (rateLimited(`advisor-request:${clientIp(request)}`, 5, 60_000)) {
+        sendJson(response, 429, { error: "Too many requests. Please wait a minute and try again." });
+        return;
+      }
       const body = await readRequestJson(request);
       if (!safeText(body.email, 180)) {
         sendJson(response, 400, { error: "Provide an email so SpotVest can follow up." });
@@ -5929,6 +6012,12 @@ createServer(async (request, response) => {
         sendJson(response, 403, {
           error: "API keys must be managed in the hosting platform environment variables."
         });
+        return;
+      }
+      // Even on a non-prod box this rewrites .env / process.env, so require the
+      // admin token — never leave it unauthenticated.
+      if (!adminAuthorized(request)) {
+        sendJson(response, 401, { error: "Admin authorization required." });
         return;
       }
 
