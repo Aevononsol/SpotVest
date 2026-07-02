@@ -2964,6 +2964,7 @@ async function renderSiteIntelCheck() {
     params.set("radius", state.location.radiusMiles);
     params.set("address", state.location.address);
   }
+  sv3EntitlementParams(params);
 
   try {
     const data = await fetchJsonWithTimeout(`/api/site-intelligence?${params.toString()}`, {
@@ -3060,7 +3061,7 @@ async function spotvestQuickAnalysis({ zip, business, lat, lng, address, radiusM
       search.set("radius", state.location.radiusMiles);
       search.set("address", state.location.address);
     }
-    return search;
+    return sv3EntitlementParams(search);
   };
   const get = async (url) => {
     const response = await fetch(url);
@@ -4785,7 +4786,8 @@ async function sv3LoadVacantSpaces(zip) {
   if (sv3VacantSpaces && sv3VacantSpaces.key === zip) return; // loading or loaded
   sv3VacantSpaces = { key: zip, loading: true, data: null };
   try {
-    const res = await fetch(`/api/vacant-storefronts?zip=${encodeURIComponent(zip)}`);
+    const vacantParams = sv3EntitlementParams(new URLSearchParams({ zip }));
+    const res = await fetch(`/api/vacant-storefronts?${vacantParams.toString()}`);
     const data = res.ok ? await res.json() : { available: false };
     sv3VacantSpaces = { key: zip, loading: false, data };
   } catch {
@@ -9364,6 +9366,18 @@ function sv3CreditsLeft() {
 function sv3PassActive() {
   const purchase = sv3Purchase();
   return Boolean(purchase?.passExpiresAt && Date.parse(purchase.passExpiresAt) > Date.now());
+}
+
+// Attach the caller's entitlement credential (VIP code / purchase code) to a
+// query so the server can return subscriber-only data (owner-of-record, ACRIS
+// deeds). The server re-verifies both against its store/secret — this only
+// tells it which credential to check, it grants nothing on its own.
+function sv3EntitlementParams(search) {
+  const vip = sv3VipCode();
+  if (vip) search.set("vip", vip);
+  const code = sv3Purchase()?.code;
+  if (code) search.set("code", code);
+  return search;
 }
 
 function sv3ReportUnlocked() {
