@@ -963,6 +963,30 @@ function passActive(purchase) {
   return Boolean(purchase?.passExpiresAt && Date.parse(purchase.passExpiresAt) > Date.now());
 }
 
+// Server-side entitlement for gated report data (owner-of-record name + ACRIS
+// deed links — the subscriber tease). Verified against the store/secret, never
+// trusting the client: true for a valid VIP code, a purchase code on an active
+// pass, a signed-in subscriber with an active pass, or the owner account.
+async function reportEntitled(request, url) {
+  const vipConfigured = process.env.SPOTVEST_VIP_CODE || "";
+  const vip = safeText(url.searchParams.get("vip"), 120);
+  if (vipConfigured && constantTimeEqual(vip, vipConfigured)) return true;
+
+  const purchases = await readJsonStore("purchases", []);
+  const code = normalizePurchaseCode(url.searchParams.get("code") || "");
+  if (code) {
+    const purchase = purchases.find((candidate) => candidate.code === code);
+    if (purchase && passActive(purchase)) return true;
+  }
+
+  const account = await authAccount(request);
+  if (account) {
+    if (normalizeEmail(account.email) === normalizeEmail(ownerAccountEmail())) return true;
+    if (purchases.some((p) => p.accountId === account.id && passActive(p))) return true;
+  }
+  return false;
+}
+
 // Stripe's 2025 API moved current_period_end from the subscription to its
 // items; older accounts still have it top-level. Read every location, with
 // trial_end as the final fallback.
@@ -2871,7 +2895,7 @@ function sfBoroughCode(value) {
   return null;
 }
 
-async function vacantStorefronts(zip) {
+async function vacantStorefronts(zip, entitled = false) {
   const f = await storefrontFieldMap();
   if (!f.zip || !f.address || !(f.vacantDec || f.vacantJun)) {
     throw new Error("storefront registry: schema not recognized");
@@ -3031,9 +3055,15 @@ async function vacantStorefronts(zip) {
       ownerLookup = `PLUTO lookup failed: ${String(error?.message || error).slice(0, 120)}`;
     }
   }
+  // Owner-of-record name + ACRIS deed link are subscriber-only. Withhold them
+  // from unentitled callers server-side (the client can only mask, not protect).
+  if (!entitled) {
+    top.forEach((v) => { v.ownerName = null; v.acrisUrl = null; });
+  }
   return {
     available: true,
     zip,
+    ownerGated: !entitled,
     totalStorefronts: latest.size,
     vacantCount: vacancies.length,
     latestFilingYear: latestYear || null,
@@ -6186,7 +6216,16 @@ createServer(async (request, response) => {
           }
         : null;
 
-      sendJson(response, 200, await siteIntelligence(zip, location));
+      const siteResult = await siteIntelligence(zip, location);
+      // Owner-of-record name + ACRIS deed link are subscriber-only; strip them
+      // server-side for unentitled callers (fresh object per request, so this
+      // never affects another user). The client can only mask, not protect.
+      if (siteResult?.lot?.available && !(await reportEntitled(request, url))) {
+        siteResult.lot.ownerName = null;
+        siteResult.lot.acrisUrl = null;
+        siteResult.ownerGated = true;
+      }
+      sendJson(response, 200, siteResult);
       return;
     }
 
@@ -6231,7 +6270,8 @@ createServer(async (request, response) => {
         return;
       }
       try {
-        sendJson(response, 200, await vacantStorefronts(zip));
+        const entitled = await reportEntitled(request, url);
+        sendJson(response, 200, await vacantStorefronts(zip, entitled));
       } catch (error) {
         console.error("vacant storefronts failed:", error?.message || error);
         sendJson(response, 200, { available: false, zip });
