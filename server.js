@@ -3477,6 +3477,17 @@ function areaKeyFor(zip, location) {
   return "";
 }
 
+// ONE stable BestTime search per area, keyed by ZIP, so every address in a ZIP
+// reuses the SAME venue collection — built once, cached, and shared across all
+// reports and users. A per-address (or lat/lng) query fragments into a fresh,
+// never-reused build that returns nothing on the first hit, which is what
+// silently killed foot traffic in every report.
+function areaBusynessQuery(areaKey) {
+  return /^\d{5}$/.test(String(areaKey))
+    ? `restaurants in ${areaKey} New York`
+    : `restaurants near ${areaKey}`;
+}
+
 // Core commercial-hours (10a-9p) average busyness, 0-100. Null when the venue
 // sample is too thin to trust, so a weak signal can never move the score.
 function areaFootTrafficIntensity(area) {
@@ -3491,11 +3502,11 @@ async function warmAreaFootTraffic(areaKey, location) {
   if (_ftWarming.has(areaKey)) return;
   _ftWarming.add(areaKey);
   try {
-    const hasLoc = location?.lat && location?.lng;
-    const q = hasLoc ? `restaurants near ${location.address || areaKey}` : `restaurants in ${areaKey} New York`;
-    const args = { q, lat: hasLoc ? location.lat : undefined, lng: hasLoc ? location.lng : undefined, radius: 1200, num: 50 };
+    // Stable per-ZIP query (no per-address lat/lng), so the collection is reused
+    // and cached instead of rebuilt fresh for every address.
+    const args = { q: areaBusynessQuery(areaKey), num: 20 };
     let result = await besttimeAreaForecast({ ...args, fast: true });
-    if (!result.available || (result.venuesWithData || 0) < 25) {
+    if (!result.available || (result.venuesWithData || 0) < 8) {
       const built = await besttimeAreaForecast({ ...args, fast: false });
       if (built.available && (built.venuesWithData || 0) >= (result.venuesWithData || 0)) result = built;
     }
@@ -6375,11 +6386,12 @@ createServer(async (request, response) => {
         sendJson(response, 200, clean({ ...hit.data, cached: true }));
         return;
       }
-      const hasLoc = Number.isFinite(lat) && Number.isFinite(lng);
-      const q = address ? `restaurants near ${address}` : `restaurants in ${zip} New York`;
-      const NUM = 50;            // pull a wider sample of venues
-      const TARGET = 25;         // build more if the cheap read returns a thin sample
-      const args = { q, lat: hasLoc ? lat : undefined, lng: hasLoc ? lng : undefined, radius: 1200, num: NUM };
+      // Stable per-ZIP query (ignore the exact address / lat-lng) so every
+      // address in a ZIP shares one collection — the same query the score path
+      // warms, so a build by either side serves both. A per-address query made
+      // every report a fresh, never-reused build that returned nothing.
+      const args = { q: areaBusynessQuery(areaKey), num: 20 };
+      const TARGET = 8;          // fast read of ~15+ venues is plenty; only build if thin
       try {
         // Cheap read first (cached venues, no new credits). If the area is new or
         // the sample is thin, forecast it once (spends credits, slower) to widen
