@@ -3243,16 +3243,34 @@ const BESTTIME_LIVE_TTL = 12 * 60 * 1000;
 // venue object shape can vary, so we scan each venue for any 24-length hourly
 // busyness array (0-100%, 100 = the venue's weekly peak) and average across
 // venues to get an AREA busyness curve. Returns a `sample` for diagnostics.
-async function besttimeJson(url, { method = "GET", timeoutMs = 15000 } = {}) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const response = await fetch(url, { method, signal: controller.signal });
-    const data = await response.json().catch(() => ({}));
-    return { ok: response.ok, status: response.status, data };
-  } finally {
-    clearTimeout(timer);
+async function besttimeJson(url, { method = "GET", timeoutMs = 15000, retries = 2 } = {}) {
+  // BestTime's gateway throws intermittent 5xx (mostly 502) and the occasional
+  // network blip. Retry those with backoff so one hiccup doesn't wipe the
+  // foot-traffic signal — a failed request forecasts nothing, so retrying a 5xx
+  // spends no extra credits. 4xx are returned as-is (a retry won't fix them).
+  let lastError = null;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    if (attempt > 0) await new Promise((r) => setTimeout(r, 600 * 2 ** (attempt - 1))); // 600ms, 1200ms
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(url, { method, signal: controller.signal });
+      const data = await response.json().catch(() => ({}));
+      if (response.status >= 500 && attempt < retries) {
+        lastError = { ok: false, status: response.status, data };
+        continue; // transient server error — back off and retry
+      }
+      return { ok: response.ok, status: response.status, data };
+    } catch (error) {
+      lastError = error; // network/timeout — retry unless this was the last attempt
+      if (attempt >= retries) throw error;
+    } finally {
+      clearTimeout(timer);
+    }
   }
+  // Retries exhausted on 5xx: surface the last server response so the caller
+  // still reports the real status (e.g. "BestTime 502").
+  return lastError;
 }
 
 async function besttimeAreaForecast({ q, lat, lng, radius, num = 20, fast = true } = {}) {
