@@ -3986,17 +3986,16 @@ function computeFinancialViability(profile, business) {
   return { viability: clampScore(v), rev, rent, rentPct, rentCap: econ.rentCap, r, rentProvided };
 }
 
-// Hidden preview switch for the two-score model. OFF by default, so live
-// customers see the unchanged single-score report. Visiting ?preview=2 turns it
-// on and remembers it; ?preview=0 turns it off. Only people with the secret link
-// ever see the new version.
+// The two-score model is now LIVE for everyone (launched). It stays on by
+// default; ?preview=0 (or ?preview=off) opts a browser back to the old
+// single-score report for comparison/rollback, and ?preview=2 re-enables it.
 function isTwoScorePreview() {
   try {
     const p = new URLSearchParams(location.search).get("preview");
-    if (p === "2") { localStorage.setItem("sv_preview", "2"); return true; }
-    if (p === "0" || p === "off") { localStorage.removeItem("sv_preview"); return false; }
-    return localStorage.getItem("sv_preview") === "2";
-  } catch { return false; }
+    if (p === "0" || p === "off") { localStorage.setItem("sv_preview", "0"); return false; }
+    if (p === "2") { localStorage.removeItem("sv_preview"); return true; }
+    return localStorage.getItem("sv_preview") !== "0";
+  } catch { return true; }
 }
 
 function buildInstitutionalAnalysis(profile, recommendations) {
