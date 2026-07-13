@@ -6595,7 +6595,11 @@ function initSpotVestV3Controls() {
       if (refs.stepnote) refs.stepnote.textContent = "Enter a NYC ZIP code or a street address, then run the analysis.";
       return;
     }
-    if (storedAccount() && !(await meterAnalysis())) return;
+    // Fair-use metering is for SUBSCRIPTION sharing, so only meter pass
+    // holders. Free signed-in users get the same unmetered previews anonymous
+    // users get (the paywall + per-IP rate limit are their gate) — otherwise
+    // signing in made the free experience strictly worse.
+    if (storedAccount() && sv3PassActive() && !(await meterAnalysis())) return;
     if (/^\d{5}$/.test(addressValue)) {
       // They typed a ZIP into the address box — treat it as a ZIP search.
       if (refs.zip) refs.zip.value = addressValue;
