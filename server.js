@@ -499,6 +499,19 @@ async function writeJsonStore(name, value) {
   await writeFile(filePath, JSON.stringify(value, null, 2), "utf8");
 }
 
+// Serialize read-modify-write on a store so concurrent requests can't clobber
+// each other — the JSON stores have no transactions, so two handlers that both
+// read → mutate → write would lose one update (bypassed daily limit,
+// double-recorded purchase, un-consumed credit). Each store name gets its own
+// promise chain; callers do their read+write inside the callback.
+const _storeLocks = new Map();
+function withStoreLock(name, fn) {
+  const prev = _storeLocks.get(name) || Promise.resolve();
+  const run = prev.then(fn, fn); // run regardless of the previous holder's outcome
+  _storeLocks.set(name, run.then(() => {}, () => {})); // never let a rejection break the chain
+  return run;
+}
+
 // Every other lead field is length-capped; reportContext was stored raw, so a
 // caller could persist a ~100KB object per lead and bloat the store. Keep it an
 // object but bound its serialized size, dropping it if it's oversized.
@@ -1024,22 +1037,29 @@ async function reconcileSubscriptionAccess(subscriptionOrId) {
   }
   const subId = String(subscription?.id || "");
   if (!subId) return;
-  const purchases = await readJsonStore("purchases", []);
-  let dirty = false;
-  for (const purchase of purchases) {
-    if (purchase.subscriptionId !== subId) continue;
-    const next = entitlementEndFor(purchase, subscription);
-    if (next !== purchase.passExpiresAt) {
-      purchase.passExpiresAt = next;
-      dirty = true;
+  // Serialized with recordPaidCheckout / report-unlock so a reconcile can't
+  // clobber a purchase written concurrently by a checkout webhook.
+  await withStoreLock("purchases", async () => {
+    const purchases = await readJsonStore("purchases", []);
+    let dirty = false;
+    for (const purchase of purchases) {
+      if (purchase.subscriptionId !== subId) continue;
+      const next = entitlementEndFor(purchase, subscription);
+      if (next !== purchase.passExpiresAt) {
+        purchase.passExpiresAt = next;
+        dirty = true;
+      }
     }
-  }
-  if (dirty) await writeJsonStore("purchases", purchases);
+    if (dirty) await writeJsonStore("purchases", purchases);
+  });
 }
 
 // Idempotent by Stripe session id: the webhook and the success-page confirm
 // can both fire for the same payment and must not double-credit.
 async function recordPaidCheckout(session) {
+  return withStoreLock("purchases", () => recordPaidCheckoutLocked(session));
+}
+async function recordPaidCheckoutLocked(session) {
   const purchases = await readJsonStore("purchases", []);
   const existing = purchases.find((purchase) => purchase.sessionId === session.id);
   if (existing) return existing;
@@ -5128,24 +5148,32 @@ createServer(async (request, response) => {
       // ET, matching what an NYC customer expects (UTC reset landed at 8 PM).
       const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
       const isOwner = normalizeEmail(account.email) === normalizeEmail(ownerAccountEmail());
-      const usage = await readJsonStore("usage", []);
-      let entry = usage.find((candidate) => candidate.accountId === account.id && candidate.date === today);
-      if (!entry) {
-        entry = { accountId: account.id, date: today, count: 0 };
-        usage.unshift(entry);
-      }
-      if (!isOwner && entry.count >= DAILY_ANALYSIS_LIMIT) {
+      // Serialized so two concurrent runs can't both read the same count and
+      // both pass the limit (bypass) or clobber each other's increment (loss).
+      const meter = await withStoreLock("usage", async () => {
+        const usage = await readJsonStore("usage", []);
+        let entry = usage.find((candidate) => candidate.accountId === account.id && candidate.date === today);
+        if (!entry) {
+          entry = { accountId: account.id, date: today, count: 0 };
+          usage.unshift(entry);
+        }
+        if (!isOwner && entry.count >= DAILY_ANALYSIS_LIMIT) {
+          return { blocked: true, used: entry.count };
+        }
+        entry.count += 1;
+        // Keep only today's rows: yesterday's counts are dead weight.
+        await writeJsonStore("usage", usage.filter((candidate) => candidate.date === today).slice(0, 10000));
+        return { blocked: false, used: entry.count };
+      });
+      if (meter.blocked) {
         sendJson(response, 429, {
           error: `Daily fair-use limit reached (${DAILY_ANALYSIS_LIMIT} reports). It resets at midnight — if your team needs more, ask us about team seats.`,
-          used: entry.count,
+          used: meter.used,
           limit: DAILY_ANALYSIS_LIMIT
         });
         return;
       }
-      entry.count += 1;
-      // Keep only today's rows: yesterday's counts are dead weight.
-      await writeJsonStore("usage", usage.filter((candidate) => candidate.date === today).slice(0, 10000));
-      sendJson(response, 200, { ok: true, used: entry.count, limit: DAILY_ANALYSIS_LIMIT, left: Math.max(0, DAILY_ANALYSIS_LIMIT - entry.count) });
+      sendJson(response, 200, { ok: true, used: meter.used, limit: DAILY_ANALYSIS_LIMIT, left: Math.max(0, DAILY_ANALYSIS_LIMIT - meter.used) });
       return;
     }
 
@@ -5306,32 +5334,30 @@ createServer(async (request, response) => {
         sendJson(response, 400, { error: "A purchase code and a report are required." });
         return;
       }
-      const purchases = await readJsonStore("purchases", []);
-      const purchase = purchases.find((candidate) => candidate.code === code);
-      if (!purchase) {
-        sendJson(response, 404, { error: "That code was not found. Check it against your purchase confirmation." });
-        return;
-      }
-      const alreadyUnlocked = (purchase.unlockedReports || []).some((entry) => entry.key === reportKey);
-      if (!alreadyUnlocked) {
-        const creditsLeft = (Number(purchase.credits) || 0) - (Number(purchase.creditsUsed) || 0);
-        const onPass = passActive(purchase);
-        if (!onPass && creditsLeft <= 0) {
-          const expired = purchase.passExpiresAt && !onPass;
-          sendJson(response, 402, {
-            error: expired ? "This Pro Pass has expired." : "No report credits left on this code.",
-            purchase: publicPurchase(purchase)
-          });
-          return;
+      // Serialized so a credit is never consumed twice (or lost) by concurrent
+      // unlocks / a webhook writing purchases at the same moment.
+      const outcome = await withStoreLock("purchases", async () => {
+        const purchases = await readJsonStore("purchases", []);
+        const purchase = purchases.find((candidate) => candidate.code === code);
+        if (!purchase) return { status: 404, body: { error: "That code was not found. Check it against your purchase confirmation." } };
+        const alreadyUnlocked = (purchase.unlockedReports || []).some((entry) => entry.key === reportKey);
+        if (!alreadyUnlocked) {
+          const creditsLeft = (Number(purchase.credits) || 0) - (Number(purchase.creditsUsed) || 0);
+          const onPass = passActive(purchase);
+          if (!onPass && creditsLeft <= 0) {
+            const expired = purchase.passExpiresAt && !onPass;
+            return { status: 402, body: { error: expired ? "This Pro Pass has expired." : "No report credits left on this code.", purchase: publicPurchase(purchase) } };
+          }
+          purchase.unlockedReports = purchase.unlockedReports || [];
+          purchase.unlockedReports.push({ key: reportKey, label: safeText(body.reportLabel, 220), at: new Date().toISOString() });
+          // Pass unlocks are free while the pass is active; credits only burn
+          // on credit-based purchases.
+          if (!onPass) purchase.creditsUsed = (Number(purchase.creditsUsed) || 0) + 1;
+          await writeJsonStore("purchases", purchases);
         }
-        purchase.unlockedReports = purchase.unlockedReports || [];
-        purchase.unlockedReports.push({ key: reportKey, label: safeText(body.reportLabel, 220), at: new Date().toISOString() });
-        // Pass unlocks are free while the pass is active; credits only burn
-        // on credit-based purchases.
-        if (!onPass) purchase.creditsUsed = (Number(purchase.creditsUsed) || 0) + 1;
-        await writeJsonStore("purchases", purchases);
-      }
-      sendJson(response, 200, { ok: true, purchase: publicPurchase(purchase) });
+        return { status: 200, body: { ok: true, purchase: publicPurchase(purchase) } };
+      });
+      sendJson(response, outcome.status, outcome.body);
       return;
     }
 
