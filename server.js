@@ -976,12 +976,23 @@ function passActive(purchase) {
   return Boolean(purchase?.passExpiresAt && Date.parse(purchase.passExpiresAt) > Date.now());
 }
 
+// Master switch for invite-link (VIP) FREE access. When OFF, every VIP code is
+// treated as unconfigured, so invite links grant nothing and those visitors hit
+// the paywall like everyone else. Nothing is deleted and SPOTVEST_VIP_CODE stays
+// set — to bring free invite access back, set SPOTVEST_VIP_ENABLED=true in Render
+// (no redeploy) or flip this default. Every VIP check reads vipCode(), so this
+// one switch covers vip-check, the analysis meter, reviews, and gated data.
+const VIP_ACCESS_ENABLED = String(process.env.SPOTVEST_VIP_ENABLED ?? "false").toLowerCase() === "true";
+function vipCode() {
+  return VIP_ACCESS_ENABLED ? (process.env.SPOTVEST_VIP_CODE || "") : "";
+}
+
 // Server-side entitlement for gated report data (owner-of-record name + ACRIS
 // deed links — the subscriber tease). Verified against the store/secret, never
 // trusting the client: true for a valid VIP code, a purchase code on an active
 // pass, a signed-in subscriber with an active pass, or the owner account.
 async function reportEntitled(request, url) {
-  const vipConfigured = process.env.SPOTVEST_VIP_CODE || "";
+  const vipConfigured = vipCode();
   const vip = safeText(url.searchParams.get("vip"), 120);
   if (vipConfigured && constantTimeEqual(vip, vipConfigured)) return true;
 
@@ -4648,7 +4659,7 @@ createServer(async (request, response) => {
         return;
       }
       const code = safeText(url.searchParams.get("code"), 120);
-      const configured = process.env.SPOTVEST_VIP_CODE || "";
+      const configured = vipCode();
       sendJson(response, 200, { ok: Boolean(configured) && constantTimeEqual(code, configured) });
       return;
     }
@@ -5134,7 +5145,7 @@ createServer(async (request, response) => {
       // VIP invite link (SPOTVEST_VIP_CODE): trusted people skip the account
       // requirement and the meter entirely.
       const meterBody = await readRequestJson(request).catch(() => ({}));
-      const vipConfigured = process.env.SPOTVEST_VIP_CODE || "";
+      const vipConfigured = vipCode();
       if (vipConfigured && constantTimeEqual(safeText(meterBody.vip, 120), vipConfigured)) {
         sendJson(response, 200, { ok: true, vip: true, used: 0, limit: DAILY_ANALYSIS_LIMIT, left: DAILY_ANALYSIS_LIMIT });
         return;
@@ -5216,7 +5227,7 @@ createServer(async (request, response) => {
       // A review may come from a signed-in verified account OR from someone on a
       // valid VIP invite link (full-access link, no account). Moderation
       // (pending -> approved) is the spam gate either way.
-      const vipConfigured = process.env.SPOTVEST_VIP_CODE || "";
+      const vipConfigured = vipCode();
       const vipOk = Boolean(vipConfigured) && constantTimeEqual(safeText(body.vip, 120), vipConfigured);
       if (!account?.emailVerifiedAt && !vipOk) {
         sendJson(response, 401, { error: "Sign in with a verified account (or use your invite link) to leave a review." });
