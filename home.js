@@ -184,7 +184,7 @@
 
   function updateReadout(d) {
     const r = document.getElementById("readout"), t = document.getElementById("readoutTxt"), ic = r.querySelector("i");
-    if (layer === "foot") { ic.className = "ti ti-walk"; t.textContent = `Peak footfall ${d.footfall.toLocaleString()}/day · top ${d.footPct}%`; }
+    if (layer === "foot") { ic.className = "ti ti-walk"; t.textContent = `Peak footfall ${Number(d.footfall || 0).toLocaleString()}/day · top ${d.footPct ?? 0}%`; }
     else if (layer === "comp") { const n = d.competitors.filter((c) => (mapBiz === "all" || c.business === mapBiz) && c.inRadius).length; const lbl = mapBiz === "all" ? "competitor" : mapBiz + " competitor"; ic.className = "ti ti-building-store"; t.textContent = `${n} ${lbl}${n === 1 ? "" : "s"} within ${(CONFIG.RADIUS_METERS / 1609).toFixed(1)} mi`; }
     else { ic.className = "ti ti-trending-up"; t.textContent = `Unmet demand index ${d.demand}/100`; }
   }
