@@ -1600,8 +1600,20 @@ function writeCache(key, value, ttlMs) {
   if (!ttlMs || ttlMs <= 0) return;
   if (responseCache.size > 600) {
     const now = Date.now();
+    // Drop expired entries first.
     for (const [cacheKey, cached] of responseCache) {
-      if (cached.expiresAt <= now || responseCache.size > 450) responseCache.delete(cacheKey);
+      if (cached.expiresAt <= now) responseCache.delete(cacheKey);
+    }
+    // Still over budget? Evict SOONEST-to-expire first, so the long-lived
+    // write-once determinism snapshots (365-day competitor / foot-traffic)
+    // survive — the old insertion-order sweep evicted them first, breaking the
+    // "same address -> same score" guarantee they exist to provide.
+    if (responseCache.size > 450) {
+      const bySoonest = [...responseCache.entries()].sort((a, b) => a[1].expiresAt - b[1].expiresAt);
+      for (const [cacheKey] of bySoonest) {
+        if (responseCache.size <= 450) break;
+        responseCache.delete(cacheKey);
+      }
     }
   }
   responseCache.set(key, {
@@ -2415,8 +2427,13 @@ async function businessCount(zip, businessInput, location = null) {
     const existing = forceRefresh ? null : readCache(snapKey);
     if (existing) {
       googleSignal = existing;
-    } else {
+    } else if ((googlePlaces.count || 0) > 0) {
+      // Only freeze a NON-empty count for a year. A transient 0 (ZERO_RESULTS,
+      // or every result dropped by the type/name filter this run) must not lock
+      // "0 competitors" for 365 days; a short TTL lets it re-resolve.
       writeCache(snapKey, googlePlaces, COMPETITOR_SNAPSHOT_TTL_MS);
+    } else {
+      writeCache(snapKey, googlePlaces, 6 * 60 * 60 * 1000);
     }
   }
   const countedOpenDataTotal = restaurantCount + dcwpCount;
@@ -3512,12 +3529,16 @@ async function warmAreaFootTraffic(areaKey, location) {
     }
     if (result.available) {
       besttimeAreaCache.set(areaKey, { at: Date.now(), data: result });
+      const intensity = areaFootTrafficIntensity(result);
+      // Only FREEZE (~1yr) a trustworthy sample. A thin/partial read (fewer
+      // than 5 venues -> intensity null) gets a short TTL so it re-warms
+      // instead of permanently excluding the ZIP from the foot-traffic blend.
       writeCache(`ftblend:${areaKey}`, {
-        intensity: areaFootTrafficIntensity(result),
+        intensity,
         venuesWithData: result.venuesWithData || 0,
         blocks: (result.blocks || []).slice(0, 12).map((b) => ({ street: b.street, busyness: b.busyness })),
         source: "BestTime venue busyness (Google Popular Times)"
-      }, COMPETITOR_SNAPSHOT_TTL_MS);
+      }, intensity !== null ? COMPETITOR_SNAPSHOT_TTL_MS : 6 * 60 * 60 * 1000);
     }
   } catch { /* warm is best-effort */ } finally {
     _ftWarming.delete(areaKey);
@@ -3545,7 +3566,9 @@ function resolveAreaFootTraffic(zip, location) {
       blocks: (hit.data.blocks || []).slice(0, 12).map((b) => ({ street: b.street, busyness: b.busyness })),
       source: "BestTime venue busyness (Google Popular Times)"
     };
-    writeCache(`ftblend:${areaKey}`, value, COMPETITOR_SNAPSHOT_TTL_MS); // freeze ~1yr
+    // Freeze ~1yr only when the sample is trustworthy; a thin read (intensity
+    // null) gets a short TTL so it re-warms instead of locking "no blend".
+    writeCache(`ftblend:${areaKey}`, value, value.intensity !== null ? COMPETITOR_SNAPSHOT_TTL_MS : 6 * 60 * 60 * 1000);
     return value;
   }
   warmAreaFootTraffic(areaKey, location).catch(() => {});
@@ -5052,16 +5075,25 @@ createServer(async (request, response) => {
       }
       let event = {};
       try { event = JSON.parse(payload); } catch { /* leave empty */ }
-      if (event.type === "checkout.session.completed" && event.data?.object?.payment_status === "paid") {
-        await recordPaidCheckout(event.data.object);
+      const obj = event.data?.object;
+      // Trial subscriptions complete with payment_status "no_payment_required"
+      // (not "paid"), so gate on the SAME condition the confirm endpoint uses —
+      // otherwise a trial whose success-page redirect is lost is never recorded,
+      // leaving a real subscriber with no entitlement and defeating the
+      // one-free-trial guard.
+      if (event.type === "checkout.session.completed" &&
+          (obj?.payment_status === "paid" || (obj?.mode === "subscription" && obj?.status === "complete"))) {
+        await recordPaidCheckout(obj);
       } else if (["customer.subscription.updated", "customer.subscription.deleted"].includes(event.type)) {
         // Cancellation, trial-cancel (cancel_at_period_end), or status change:
         // re-sync the stored entitlement so access ends when the subscription
         // does — not whenever the original window happened to be set to.
-        if (event.data?.object) await reconcileSubscriptionAccess(event.data.object);
+        if (obj) await reconcileSubscriptionAccess(obj);
       } else if (event.type === "invoice.payment_failed") {
         // A failed renewal moves the subscription to past_due/unpaid → revoke.
-        const sub = event.data?.object?.subscription;
+        // The 2025 Stripe API moved the id off invoice.subscription into
+        // invoice.parent.subscription_details.subscription; read both.
+        const sub = obj?.subscription || obj?.parent?.subscription_details?.subscription;
         if (sub) await reconcileSubscriptionAccess(String(sub));
       }
       sendJson(response, 200, { received: true });
@@ -5198,10 +5230,14 @@ createServer(async (request, response) => {
       };
       remaining.unshift(review);
       // Never let a flood of pending reviews evict already-approved (published)
-      // ones: keep every approved review, then fill the cap with newest others.
+      // ones, and never silently drop the just-submitted review: keep the newest
+      // approved and newest others independently so both are represented even
+      // past the cap.
+      const CAP = 2000;
       const approvedReviews = remaining.filter((r) => r.status === "approved");
       const otherReviews = remaining.filter((r) => r.status !== "approved");
-      await writeJsonStore("reviews", approvedReviews.concat(otherReviews).slice(0, 2000));
+      const otherKeep = Math.max(CAP - approvedReviews.length, 200);
+      await writeJsonStore("reviews", approvedReviews.slice(0, CAP).concat(otherReviews.slice(0, otherKeep)));
       notifyOwner(
         `SpotVest review pending: ${rating}/5 from ${review.name}`,
         `${rating}/5 — ${review.name}${review.role ? ` (${review.role})` : ""} <${reviewerEmail}>\n\n${text}\n\nApprove or remove it in the owner console.`,

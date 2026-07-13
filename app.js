@@ -3742,10 +3742,16 @@ function blendedFootTraffic(siteIntelResult) {
 // cost/revenue model (Phase 3).
 function businessCategory(business) {
   const b = String(business || "").toLowerCase();
-  if (/\b(bar|pub|lounge|night ?club|club|brewery|cocktail|wine bar|speakeasy|tavern)\b/.test(b)) return "bar";
+  // "bar"/"club" only mean nightlife when NOT a food/drink compound — "juice
+  // bar", "coffee bar", "sushi bar", "salad bar", "health club" are NOT bars.
+  const nightlife = /\b(pub|lounge|night ?club|nightclub|brewery|cocktail|speakeasy|tavern|wine bar|sports bar|dive bar|beer bar|tiki bar|hookah bar)\b/.test(b)
+    || (/\bbar\b/.test(b) && !/\b(juice|coffee|espresso|smoothie|salad|sushi|snack|oxygen|milk|health|cereal|tapas|noodle|ramen|taco|tea|matcha|boba|poke|acai|yogurt|candy)\b/.test(b));
+  if (nightlife) return "bar";
   if (/\b(coffee|cafe|café|espresso|bubble tea|boba|matcha|juice|smoothie|tea house)\b/.test(b)) return "grabgo";
   if (/\b(pizza|slice|deli|bodega|bagel|fast food|sandwich|hot ?dog|halal cart|food cart|taco stand)\b/.test(b)) return "quick";
-  if (/\b(daycare|day care|childcare|preschool|grooming|pet|tutor|tutoring|music school|martial arts|dance studio)\b/.test(b)) return "destination";
+  // "pet grooming"/"pet daycare" already match via grooming/daycare below; bare
+  // "pet" was wrongly pulling "pet store/shop" (walk-in retail) in here.
+  if (/\b(daycare|day care|childcare|preschool|grooming|tutor|tutoring|music school|martial arts|dance studio)\b/.test(b)) return "destination";
   if (/\b(dental|dentist|doctor|medical|clinic|legal|law office|lawyer|accountant|\boffice\b|therapy|optometr|urgent care)\b/.test(b)) return "targeted";
   if (/\b(nail|salon|barber|gym|fitness|spa|massage|wax|tanning|beauty|pilates|yoga)\b/.test(b)) return "service";
   if (/\b(upscale|fine dining|steakhouse|omakase|tasting menu|michelin|chef'?s)\b/.test(b)) return "upscale";
@@ -3904,8 +3910,11 @@ function blockAdjustment(business) {
   const bt = streetBusynessFromBestTime(state.location?.address);
   if (Number.isFinite(bt)) hard.push(clamp1((bt - 50) / 50));          // 0 dead .. 100 alive
   // Weak, name-based corridor hint (avenue vs mid-block side street).
+  // streetCorridorScore already returns a signed vote: +1 avenue, -0.7 side
+  // street, 0 = UNKNOWN. Treat unknown as no vote (null) — the old
+  // (c-0.5)*2 mapped unknown to a full -1 "dead block" penalty.
   const c = streetCorridorScore(state.location?.address);
-  const corridorVote = Number.isFinite(c) ? clamp1((c - 0.5) * 2) : null;
+  const corridorVote = c === 0 ? null : clamp1(c);
 
   if (hard.length === 0) {
     // No real block data — a name guess alone must barely move the score.
@@ -7426,7 +7435,8 @@ async function renderLiveAreaReport(zip) {
   } catch (error) {
     logIntegrationError("market demographics fallback", error, { zip });
     if (requestId === state.areaRequestId) {
-      elements.evidence.innerHTML += "<li>Market demographics lookup was unavailable; showing local profile assumptions.</li>";
+      const note = "<li>Market demographics lookup was unavailable; showing local profile assumptions.</li>";
+      if (!elements.evidence.innerHTML.includes(note)) elements.evidence.innerHTML += note;
     }
   } finally {
     if (requestId === state.areaRequestId && state.zip === zip) {
@@ -9380,11 +9390,19 @@ function sv3EntitlementParams(search) {
 }
 
 function sv3ReportUnlocked() {
-  // Access follows the live entitlement only: a VIP code or an active
-  // subscription/pass. Reports do NOT stay unlocked after the subscription
-  // ends or is cancelled — opening a report once no longer grants it forever.
+  // Access follows the live entitlement: a VIP code or an active
+  // subscription/pass. Subscription reports do NOT stay unlocked after the
+  // pass ends — opening one while subscribed doesn't grant it forever.
   if (sv3VipActive()) return true;
-  return sv3PassActive();
+  if (sv3PassActive()) return true;
+  // Credit (non-subscription) purchases DO unlock a specific report
+  // permanently — the customer spent a credit on THAT report. Without this a
+  // credit is burned server-side with the report still showing as locked.
+  const p = sv3Purchase();
+  if (p && !p.passExpiresAt && Array.isArray(p.unlockedReports) && p.unlockedReports.includes(sv3ReportKey())) {
+    return true;
+  }
+  return false;
 }
 
 // Crisp stroked padlock (matches the app's icon style) — the emoji lock
