@@ -5928,6 +5928,45 @@ createServer(async (request, response) => {
       return;
     }
 
+    if (url.pathname === "/api/admin/usage") {
+      if (!adminAuthorized(request)) {
+        sendJson(response, 401, { error: "Admin token required." });
+        return;
+      }
+      // Read-only "who ran reports today" breakdown. Joins the usage counter to
+      // account emails so each run is attributable. The store only keeps today's
+      // rows, so this is today's activity.
+      const [usage, accounts, purchases] = await Promise.all([
+        readJsonStore("usage", []),
+        readJsonStore("accounts", []),
+        readJsonStore("purchases", [])
+      ]);
+      const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+      const acctById = new Map(accounts.map((a) => [a.id, a]));
+      const hasActivePass = (accountId) => purchases.some((p) => p.accountId === accountId && p.passExpiresAt && Date.parse(p.passExpiresAt) > Date.now());
+      const rows = usage
+        .filter((row) => row.date === today && (Number(row.count) || 0) > 0)
+        .map((row) => {
+          const account = acctById.get(row.accountId);
+          const email = account ? account.email : null;
+          const isOwner = email && normalizeEmail(email) === normalizeEmail(ownerAccountEmail());
+          return {
+            accountId: row.accountId,
+            email: email || "(deleted account)",
+            count: Number(row.count) || 0,
+            plan: isOwner ? "owner" : hasActivePass(row.accountId) ? "subscriber" : "free"
+          };
+        })
+        .sort((a, b) => b.count - a.count);
+      sendJson(response, 200, {
+        date: today,
+        totalReports: rows.reduce((sum, row) => sum + row.count, 0),
+        accounts: rows.length,
+        rows
+      });
+      return;
+    }
+
     if (url.pathname === "/api/admin/purchases") {
       if (!adminAuthorized(request)) {
         sendJson(response, 401, { error: "Admin token required." });

@@ -4,6 +4,7 @@ const adminEls = {
   status: document.querySelector("#admin-status"),
   leads: document.querySelector("#admin-leads"),
   accounts: document.querySelector("#admin-accounts"),
+  usage: document.querySelector("#admin-usage"),
   purchases: document.querySelector("#admin-purchases"),
   emails: document.querySelector("#admin-emails"),
   tasks: document.querySelector("#admin-tasks"),
@@ -75,6 +76,25 @@ function renderLeads(leads) {
       </small>
     </div>
   `).join("") : '<p class="launch-status">No leads yet.</p>';
+}
+
+function renderUsage(result) {
+  if (!adminEls.usage) return;
+  const rows = result.rows || [];
+  const planTag = (plan) => plan === "owner"
+    ? '<span style="color:var(--teal-bright)">owner</span>'
+    : plan === "subscriber"
+      ? '<span style="color:var(--teal-bright)">subscriber</span>'
+      : '<span style="color:#FF8585">free</span>';
+  adminEls.usage.innerHTML = rows.length ? [
+    `<p class="launch-status launch-status-ok">${result.totalReports} report run${result.totalReports === 1 ? "" : "s"} today across ${result.accounts} account${result.accounts === 1 ? "" : "s"} (${escapeText(result.date)})</p>`,
+    ...rows.map((row) => `
+      <div class="admin-row">
+        <strong>${escapeText(row.email)} · ${row.count} run${row.count === 1 ? "" : "s"}</strong>
+        <span>${planTag(row.plan)}</span>
+      </div>
+    `)
+  ].join("") : `<p class="launch-status">No reports run today${result.date ? ` (${escapeText(result.date)})` : ""}.</p>`;
 }
 
 function renderAccounts(result) {
@@ -172,16 +192,18 @@ async function loadAdmin() {
   setStatus("Loading admin operations...");
 
   try {
-    const [leadsResult, tasksResult, agentsResult, runsResult, accountsResult, purchasesResult, emailsResult] = await Promise.all([
+    const [leadsResult, tasksResult, agentsResult, runsResult, accountsResult, purchasesResult, emailsResult, usageResult] = await Promise.all([
       getJson("/api/admin/leads"),
       getJson("/api/admin/agent-tasks"),
       getJson("/api/admin/agents"),
       getJson("/api/admin/agent-runs"),
       getJson("/api/admin/accounts"),
       getJson("/api/admin/purchases"),
-      getJson("/api/admin/emails")
+      getJson("/api/admin/emails"),
+      getJson("/api/admin/usage")
     ]);
     renderAccounts(accountsResult);
+    renderUsage(usageResult);
     renderPurchases(purchasesResult);
     renderEmails(emailsResult);
     renderLeads(leadsResult.leads || []);
