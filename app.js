@@ -6570,13 +6570,23 @@ function initSpotVestV3Controls() {
         body: JSON.stringify({ vip: sv3VipCode() })
       });
       const result = await response.json().catch(() => ({}));
+      if (response.status === 402 || response.status === 401) {
+        // Paid-only wall: signed-out (401) or free/non-subscribed (402).
+        const msg = result.error || (response.status === 401
+          ? "Sign in and start a subscription to run reports."
+          : "Start a subscription to run reports.");
+        sv3PaywallToast(msg, true);
+        const refs = sv3Refs();
+        if (refs.stepnote) refs.stepnote.textContent = `${msg} Start your free trial from the pricing section.`;
+        return false;
+      }
       if (response.status === 429) {
         sv3PaywallToast(result.error || "Daily fair-use limit reached — resets at midnight.", true);
         const refs = sv3Refs();
         if (refs.stepnote) refs.stepnote.textContent = result.error || "Daily limit reached — resets at midnight.";
         return false;
       }
-      if (response.ok && result.left <= 2) {
+      if (response.ok && Number.isFinite(result.left) && result.left <= 2) {
         sv3PaywallToast(`Heads up: ${result.left} of ${result.limit} daily reports left.`);
       }
       return true;
@@ -6595,11 +6605,15 @@ function initSpotVestV3Controls() {
       if (refs.stepnote) refs.stepnote.textContent = "Enter a NYC ZIP code or a street address, then run the analysis.";
       return;
     }
-    // Fair-use metering is for SUBSCRIPTION sharing, so only meter pass
-    // holders. Free signed-in users get the same unmetered previews anonymous
-    // users get (the paywall + per-IP rate limit are their gate) — otherwise
-    // signing in made the free experience strictly worse.
-    if (storedAccount() && sv3PassActive() && !(await meterAnalysis())) return;
+    // Paid-only: the server is the source of truth (owner/subscriber pass), so
+    // run the gate for EVERYONE and let it wall free/anonymous users. In the
+    // open free tier, only meter pass-holders (fair-use for subscription
+    // sharing) and let free/anonymous previews through.
+    if (sv3PaidOnly) {
+      if (!(await meterAnalysis())) return;
+    } else if (storedAccount() && sv3PassActive() && !(await meterAnalysis())) {
+      return;
+    }
     if (/^\d{5}$/.test(addressValue)) {
       // They typed a ZIP into the address box — treat it as a ZIP search.
       if (refs.zip) refs.zip.value = addressValue;
@@ -9890,6 +9904,17 @@ function sv3VipCode() {
 function sv3VipActive() {
   return Boolean(sv3VipCode());
 }
+
+// Paid-only mode: when on, running an analysis requires a paying/entitled user.
+// Fetched from the server so it flips with the SPOTVEST_PAID_ONLY switch; the
+// server enforces regardless, this just drives the pre-run subscribe wall.
+let sv3PaidOnly = false;
+(async function initAppConfig() {
+  try {
+    const cfg = await (await fetch("/api/auth/config")).json();
+    sv3PaidOnly = Boolean(cfg?.paidOnly);
+  } catch { /* default open; the server still enforces the gate */ }
+})();
 
 (async function initVipAccess() {
   let params;
