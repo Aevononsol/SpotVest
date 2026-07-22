@@ -987,6 +987,14 @@ function vipCode() {
   return VIP_ACCESS_ENABLED ? (process.env.SPOTVEST_VIP_CODE || "") : "";
 }
 
+// Master switch: when ON, running an analysis requires a paying/entitled user
+// (active pass, VIP, credits, or the owner). Free & anonymous visitors get the
+// subscribe wall, and — critically — the server itself refuses to spend paid
+// BestTime credits for non-entitled callers, so bots can't burn them either.
+// Reversible: set SPOTVEST_PAID_ONLY=false to reopen the free preview tier.
+// Nothing is deleted.
+const PAID_ONLY = String(process.env.SPOTVEST_PAID_ONLY ?? "true").toLowerCase() !== "false";
+
 // Server-side entitlement for gated report data (owner-of-record name + ACRIS
 // deed links — the subscriber tease). Verified against the store/secret, never
 // trusting the client: true for a valid VIP code, a purchase code on an active
@@ -3606,7 +3614,7 @@ function resolveAreaFootTraffic(zip, location) {
   return null;
 }
 
-async function siteIntelligence(zip, location = null) {
+async function siteIntelligence(zip, location = null, opts = {}) {
   const liquorWhere = location?.lat && location?.lng
     ? `within_circle(georeference, ${location.lat}, ${location.lng}, ${location.radiusMeters || 805})`
     : `zipcode='${zip}'`;
@@ -3850,7 +3858,9 @@ async function siteIntelligence(zip, location = null) {
     // Real venue foot traffic (BestTime), snapshotted + cache-only so it stays
     // deterministic and adds no latency to the score. Lightly refines Demand &
     // Location on the client; null until the area is warmed.
-    footTraffic: resolveAreaFootTraffic(zip, location),
+    // Skip the BestTime-backed foot traffic (and its paid warm) for callers who
+    // aren't allowed to spend credits — the paywall gate passes allowFootTraffic.
+    footTraffic: opts.allowFootTraffic === false ? null : resolveAreaFootTraffic(zip, location),
     // Phase 7: active businesses within ~120 m of the exact point (null in ZIP
     // mode). Drives the "dead block" detection in address-mode Market Fit.
     blockBusinessCount,
@@ -4665,7 +4675,7 @@ createServer(async (request, response) => {
     }
 
     if (url.pathname === "/api/auth/config") {
-      sendJson(response, 200, { googleClientId: process.env.GOOGLE_CLIENT_ID || null });
+      sendJson(response, 200, { googleClientId: process.env.GOOGLE_CLIENT_ID || null, paidOnly: PAID_ONLY });
       return;
     }
 
@@ -5153,6 +5163,12 @@ createServer(async (request, response) => {
       const account = await authAccount(request);
       if (!account) {
         sendJson(response, 401, { error: "Sign in to run analyses." });
+        return;
+      }
+      // Paid-only: a signed-in but non-entitled (free) account can't run — the
+      // client shows the subscribe wall on this 402.
+      if (PAID_ONLY && !(await reportEntitled(request, url))) {
+        sendJson(response, 402, { error: "Start a subscription to run reports.", needSubscription: true });
         return;
       }
       // "Day" means a New York calendar day — the counter resets at midnight
@@ -6296,6 +6312,10 @@ createServer(async (request, response) => {
     }
 
     if (url.pathname === "/api/site-intelligence") {
+      if (rateLimited(`siteintel:${clientIp(request)}`, 20, 60_000)) {
+        sendJson(response, 429, { error: "Too many requests — try again in a minute." });
+        return;
+      }
       const zip = String(url.searchParams.get("zip") || "").trim();
       const hasLocation = url.searchParams.has("lat") && url.searchParams.has("lng");
       const lat = Number(url.searchParams.get("lat"));
@@ -6318,11 +6338,14 @@ createServer(async (request, response) => {
           }
         : null;
 
-      const siteResult = await siteIntelligence(zip, location);
+      // One entitlement check drives both the owner-data gate and whether we may
+      // spend BestTime credits for this caller.
+      const entitled = await reportEntitled(request, url);
+      const siteResult = await siteIntelligence(zip, location, { allowFootTraffic: entitled || !PAID_ONLY });
       // Owner-of-record name + ACRIS deed link are subscriber-only; strip them
       // server-side for unentitled callers (fresh object per request, so this
       // never affects another user). The client can only mask, not protect.
-      if (siteResult?.lot?.available && !(await reportEntitled(request, url))) {
+      if (siteResult?.lot?.available && !entitled) {
         siteResult.lot.ownerName = null;
         siteResult.lot.acrisUrl = null;
         siteResult.ownerGated = true;
@@ -6427,12 +6450,22 @@ createServer(async (request, response) => {
     }
 
     if (url.pathname === "/api/area-foot-traffic") {
+      if (rateLimited(`foottraffic:${clientIp(request)}`, 20, 60_000)) {
+        sendJson(response, 429, { error: "Too many requests — try again in a minute." });
+        return;
+      }
       const zip = String(url.searchParams.get("zip") || "").trim();
       const lat = Number(url.searchParams.get("lat"));
       const lng = Number(url.searchParams.get("lng"));
       const address = safeText(url.searchParams.get("address"), 120);
       if (!besttimeConfigured()) {
         sendJson(response, 200, { configured: false, available: false });
+        return;
+      }
+      // Never spend BestTime credits for a non-entitled caller when paid-only is
+      // on — this is what stops free users and bots from burning the budget.
+      if (PAID_ONLY && !(await reportEntitled(request, url))) {
+        sendJson(response, 200, { configured: true, available: false, locked: true });
         return;
       }
       const areaKey = /^\d{5}$/.test(zip) ? zip
@@ -6493,6 +6526,10 @@ createServer(async (request, response) => {
       if (!areaKey) { sendJson(response, 400, { error: "Provide a ZIP or lat/lng." }); return; }
       if (rateLimited(`arealive:${clientIp(request)}`, 10, 60_000)) {
         sendJson(response, 429, { error: "Too many live checks — try again in a minute." });
+        return;
+      }
+      if (PAID_ONLY && !(await reportEntitled(request, url))) {
+        sendJson(response, 200, { configured: true, available: false, locked: true });
         return;
       }
       const lhit = besttimeLiveCache.get(areaKey);
