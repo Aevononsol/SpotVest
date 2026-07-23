@@ -3748,7 +3748,10 @@ function businessCategory(business) {
     || (/\bbar\b/.test(b) && !/\b(juice|coffee|espresso|smoothie|salad|sushi|snack|oxygen|milk|health|cereal|tapas|noodle|ramen|taco|tea|matcha|boba|poke|acai|yogurt|candy)\b/.test(b));
   if (nightlife) return "bar";
   if (/\b(coffee|cafe|café|espresso|bubble tea|boba|matcha|juice|smoothie|tea house)\b/.test(b)) return "grabgo";
-  if (/\b(pizza|slice|deli|bodega|bagel|fast food|sandwich|hot ?dog|halal cart|food cart|taco stand)\b/.test(b)) return "quick";
+  // Quick-service (QSR): counter/grab-and-go formats. "qsr" or "counter service"
+  // in the concept always lands here, plus common QSR foods (chicken, cheesesteak,
+  // hoagie, wings, gyro…) that used to fall through to full-service "casual".
+  if (/\b(qsr|counter service|pizza|slice|deli|bodega|bagel|fast ?food|sandwich|sub|subs|hoagie|cheesesteak|grinder|chicken|fried chicken|wings|gyro|falafel|shawarma|hot ?dog|halal|food cart|taco stand)\b/.test(b)) return "quick";
   // "pet grooming"/"pet daycare" already match via grooming/daycare below; bare
   // "pet" was wrongly pulling "pet store/shop" (walk-in retail) in here.
   if (/\b(daycare|day care|childcare|preschool|grooming|tutor|tutoring|music school|martial arts|dance studio)\b/.test(b)) return "destination";
