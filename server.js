@@ -202,7 +202,10 @@ const restaurantTerms = {
   ethiopian: ["ETHIOPIAN"],
   american: ["AMERICAN", "DINER"],
   burger: ["BURGER", "HAMBURGER"],
-  chicken: ["CHICKEN", "WINGS"],
+  // QSR chicken concepts (tenders/sandwich/Korean fried) vs wings joints —
+  // different competitor sets, so they get different registry terms.
+  chicken: ["CHICKEN", "POLLO", "CANE", "TENDER", "BBQ CHICKEN", "HOT CHICKEN"],
+  wings: ["WINGS", "WING"],
   bbq: ["BBQ", "BARBECUE", "BARBEQUE"],
   seafood: ["SEAFOOD", "FISH", "LOBSTER", "CRAB"],
   steakhouse: ["STEAKHOUSE", "STEAK"],
@@ -236,7 +239,8 @@ const restaurantConceptModels = [
   { key: "caribbean", label: "Caribbean / Jamaican", search: "Caribbean Jamaican restaurant" },
   { key: "american", label: "American / diner", search: "American diner restaurant" },
   { key: "burger", label: "Burger", search: "burger restaurant" },
-  { key: "chicken", label: "Chicken / wings", search: "chicken wings restaurant" },
+  { key: "chicken", label: "Fried chicken (QSR)", search: "fried chicken restaurant" },
+  { key: "wings", label: "Wings", search: "chicken wings restaurant" },
   { key: "seafood", label: "Seafood", search: "seafood restaurant" },
   { key: "vegan", label: "Vegan / vegetarian", search: "vegan vegetarian restaurant" },
   { key: "juice", label: "Juice / smoothie", search: "juice smoothie" },
@@ -1552,6 +1556,9 @@ function normalizeBusiness(value) {
   if (normalized.includes("african") || normalized.includes("nigerian") || normalized.includes("ghanaian")) return "african";
   if (normalized.includes("latin") || normalized.includes("spanish food")) return "latin";
   if (normalized.includes("burger") || normalized.includes("hamburger")) return "burger";
+  // Wings only when it's actually a wings concept — "QSR chicken" / fried
+  // chicken / tenders belong to the chicken (QSR) concept, not wings.
+  if (normalized.includes("wing") && !/(fried|qsr|tender|sandwich|korean|nashville|hot chicken|rotisserie)/.test(normalized)) return "wings";
   if (normalized.includes("chicken") || normalized.includes("wings")) return "chicken";
   if (normalized.includes("bbq") || normalized.includes("barbecue") || normalized.includes("barbeque")) return "bbq";
   if (normalized.includes("seafood") || normalized.includes("lobster") || normalized.includes("crab")) return "seafood";
@@ -2246,6 +2253,13 @@ function googleSearchTerm(businessInput) {
   if (/\b(juice|smoothie|acai)\b/.test(b)) return "juice bar";
   if (/\b(cheesesteak|hoagie|grinder|sub|subs)\b/.test(b)) return "cheesesteak sandwich shop";
   if (/\b(steak ?house|steak)\b/.test(b)) return "steakhouse";
+  // QSR chicken (Raising Cane's, Pollo Campero, bb.q, 375°, Fluffies — tenders,
+  // sandwiches, Korean fried chicken) is a DIFFERENT concept from a wings joint
+  // (bar-adjacent, late-night). Only treat it as wings when wings is the concept
+  // and no fried/QSR chicken signal is present, so the competitor set is right.
+  if (/\bwings?\b/.test(b) && !/\b(fried|qsr|tender|sandwich|korean|nashville|hot chicken|rotisserie)\b/.test(b)) {
+    return "chicken wings restaurant";
+  }
   if (/\b(chicken|wings)\b/.test(b)) return "fried chicken restaurant";
   if (/\b(gyro|halal|shawarma|falafel)\b/.test(b)) return "halal food";
   if (/\b(deli|bodega)\b/.test(b)) return "deli";
