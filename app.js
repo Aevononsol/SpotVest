@@ -3001,6 +3001,10 @@ async function renderSiteIntelCheck() {
 
 // Centralized competitor evaluation: how many direct/adjacent operators are
 // visible nearby. Used to override "open lane" language everywhere.
+// Single source of truth for "how many comparable operators are nearby" — the
+// memo and the risk register were showing different numbers (36 vs 66) because
+// one took the max and the other summed registry+Google (double-counting the
+// same shop). MAX is the honest read.
 function competitiveSetSize(result) {
   const r = result || currentBusinessResult();
   if (!r) return 0;
@@ -3634,7 +3638,12 @@ function buildBusinessSuccessModel(profile, recommendations) {
       // exhaustive density tally. A full page of results means "competitive
       // area," but we cap the pressure at moderate-crowded so a capped count
       // can't fake an extreme-saturation crisis that crashes the score.
-      ? Math.min(60, saturationFromCount(googleVisible, profile))
+      // The 60 ceiling existed because Google's nearby search used to return at
+      // most ~20 results, so a full page only meant "competitive", not "extreme".
+      // We now page up to ~60, so a count well past 20 is a REAL density read and
+      // must be allowed to express full pressure — otherwise 36 direct rivals
+      // scored the same as 20 and Market Fit stayed high on a flooded block.
+      ? Math.min(googleVisible >= 25 ? 98 : 60, saturationFromCount(googleVisible, profile))
       : profile.competition;
   const googleReviews = Number(businessResult?.googlePlaces?.reviewCount || 0);
   const googleRating = Number(businessResult?.googlePlaces?.avgRating || 0);
@@ -3668,7 +3677,10 @@ function buildBusinessSuccessModel(profile, recommendations) {
   // measured. When the registry found nothing AND the category search was
   // unresolved/empty, competition is UNKNOWN — scoring it 94 ("no rivals!") is
   // the worst failure mode: a confidently wrong high score built on no data.
-  const measuredCompetitors = safeNumber(businessResult?.count, 0) + googleVisible;
+  // MAX, not sum: the same shop appears in BOTH the NYC registry and Google, so
+  // adding them double-counts (it reported 66 where the honest figure was 36,
+  // and disagreed with the memo's own number).
+  const measuredCompetitors = Math.max(safeNumber(businessResult?.count, 0), googleVisible);
   const competitionUnverified = Boolean(businessResult) &&
     measuredCompetitors === 0 &&
     businessResult.competitionResolved === false;
