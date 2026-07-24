@@ -8293,20 +8293,38 @@ elements.addressForm.addEventListener("submit", async (event) => {
       return;
     }
 
+    // Google's postal_code is occasionally wrong even when the location is
+    // correct: "550 8th Ave" geocodes to the right pin (Garment District) but
+    // Google labels it 10038 instead of the real 10018. The ZIP drives the
+    // demographics/area data, so a wrong label pulls the wrong neighborhood. If
+    // the user gave a valid NYC ZIP in the SAME borough (from the ZIP box or
+    // typed into the address), trust theirs over Google's label.
+    const refs = sv3Refs();
+    const userZip = ((refs?.zip?.value || "").match(/^1\d{4}$/) || [])[0]
+      || (address.match(/\b1\d{4}\b/) || [])[0] || "";
+    let resolvedZip = result.zip;
+    let resolvedAddress = result.address;
+    if (userZip && userZip !== result.zip && boroughForZip(userZip)
+        && boroughForZip(userZip) === boroughForZip(result.zip)) {
+      resolvedZip = userZip;
+      resolvedAddress = result.address.replace(result.zip, userZip);
+      sv3Debug(`ZIP corrected: Google said ${result.zip}, using your ${userZip} (same borough)`);
+    }
+
     state.location = {
-      address: result.address,
-      zip: result.zip,
+      address: resolvedAddress,
+      zip: resolvedZip,
       lat: String(result.lat),
       lng: String(result.lng),
       radiusMiles: elements.radiusInput.value
     };
-    elements.addressInput.value = result.address;
-    elements.addressMessage.textContent = `Using ${result.address} within ${state.location.radiusMiles} mile.`;
+    elements.addressInput.value = resolvedAddress;
+    elements.addressMessage.textContent = `Using ${resolvedAddress} within ${state.location.radiusMiles} mile.`;
     // Location resolved — NOW show the report (idempotent for the address flow,
     // which already switched; required for the ZIP flow, which waits here).
     try { sv3ShowMain("report"); } catch (e) { /* legacy UI */ }
-    sv3Debug(`render start: zip=${result.zip}`);
-    render(result.zip);
+    sv3Debug(`render start: zip=${resolvedZip}`);
+    render(resolvedZip);
     sv3Debug("render returned (loading state should be visible)");
   } catch (error) {
     sv3Debug(`FAILED: geocode threw — ${error?.message || error}`);
