@@ -2246,6 +2246,11 @@ async function cityMapRecords(zip, business, location = null) {
 // Google place types that are clearly NOT the same business as a food/retail
 // concept — used to drop bodegas/groceries/pharmacies that a keyword search
 // drags in.
+// Tags so broad they prove nothing about what a place actually IS — every
+// bodega, grocery and gas station carries "food"/"store". They can confirm a
+// category but must never rescue a place from the non-retail exclusion.
+const GOOGLE_GENERIC_TYPES = new Set(["food", "store", "point_of_interest", "establishment"]);
+
 const GOOGLE_NONRETAIL_TYPES = new Set([
   "grocery_or_supermarket", "supermarket", "convenience_store", "liquor_store",
   "gas_station", "pharmacy", "drugstore", "department_store", "home_goods_store",
@@ -2368,10 +2373,15 @@ async function googlePlaceSignals(zip, businessInput, location = null) {
   // competitors are coffee shops, not groceries. Unknown categories: no filter.
   const allowedTypes = googleAllowedTypes(businessInput);
   if (allowedTypes) {
+    // "food" and "store" are generic tags every corner bodega/grocery carries,
+    // so a convenience store was clearing the non-retail exclusion just by being
+    // tagged "food" — that's how a QSR sandwich search returned bodega delis.
+    // To survive the exclusion a place must match a REAL service type.
+    const strongAllowed = allowedTypes.filter((t) => !GOOGLE_GENERIC_TYPES.has(t));
     places = places.filter((p) => {
       const types = Array.isArray(p.types) ? p.types : [];
       if (!types.length) return true;
-      if (types.some((t) => GOOGLE_NONRETAIL_TYPES.has(t)) && !types.some((t) => allowedTypes.includes(t))) return false;
+      if (types.some((t) => GOOGLE_NONRETAIL_TYPES.has(t)) && !types.some((t) => strongAllowed.includes(t))) return false;
       return types.some((t) => allowedTypes.includes(t));
     });
   }
