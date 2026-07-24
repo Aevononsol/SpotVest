@@ -648,6 +648,9 @@ const restaurantCuisineTypes = Object.fromEntries([
   ["chicken", ["chicken", "fried chicken", "qsr chicken", "hot chicken", "korean fried chicken", "chicken tenders", "chicken sandwich", "rotisserie chicken"]],
   ["bbq", ["bbq", "barbecue", "barbeque"]],
   ["seafood", ["seafood", "fish", "lobster", "crab"]],
+  // Cheesesteak/hoagie counter first — it contains "steak" and was otherwise
+  // labeled and scored as a high-end steakhouse.
+  ["cheesesteak", ["cheesesteak", "cheese steak", "hoagie", "grinder", "philly"]],
   ["steakhouse", ["steakhouse", "steak house", "steak"]],
   ["vegan", ["vegan", "vegetarian", "plant based"]],
   ["juice", ["juice", "smoothie", "acai"]],
@@ -1582,6 +1585,7 @@ function businessDisplayName(input) {
     bbq: "BBQ restaurant",
     seafood: "Seafood restaurant",
     steakhouse: "Steakhouse",
+    cheesesteak: "Cheesesteak / hoagie (QSR)",
     vegan: "Vegan / vegetarian",
     juice: "Juice / smoothie",
     dessert: "Dessert / ice cream",
