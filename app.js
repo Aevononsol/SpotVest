@@ -3631,7 +3631,19 @@ function buildBusinessSuccessModel(profile, recommendations) {
   // removes the 39↔45 non-determinism on the same address.
   const demandScore = clampScore((profile.density * 0.18 + profile.transit * 0.14 + effectiveOffice(profile) * 0.09 + effectiveNightlife(profile) * 0.07 + effectiveTourist(profile) * 0.05 + profile.student * 0.05 + config.baseDemand * 0.18 + reviewMomentum * 0.14) / 0.9);
   const customerFitScore = clampScore(profile.income * 0.24 + profile.families * 0.14 + profile.student * 0.08 + effectiveOffice(profile) * 0.12 + profile.localPreference * 0.16 + profile.chainFit * 0.1 + categoryFit * 0.16);
-  const competitionScore = clampScore(100 - competitionPressure * 0.78 + (businessResult?.googlePlaces?.avgRating >= 4.5 ? 4 : 0));
+  // EVIDENCE GATE: an empty competitor count is only "wide open" if we actually
+  // measured. When the registry found nothing AND the category search was
+  // unresolved/empty, competition is UNKNOWN — scoring it 94 ("no rivals!") is
+  // the worst failure mode: a confidently wrong high score built on no data.
+  const measuredCompetitors = safeNumber(businessResult?.count, 0) + googleVisible;
+  const competitionUnverified = Boolean(businessResult) &&
+    measuredCompetitors === 0 &&
+    businessResult.competitionResolved === false;
+  let competitionScore = clampScore(100 - competitionPressure * 0.78 + (businessResult?.googlePlaces?.avgRating >= 4.5 ? 4 : 0));
+  if (competitionUnverified) {
+    // Neutral, not favorable: absent evidence can't earn an above-average score.
+    competitionScore = clampScore(Math.min(competitionScore, 55));
+  }
   const locationScore = clampScore(profile.transit * 0.34 + profile.density * 0.22 + effectiveOffice(profile) * 0.12 + (100 - effectiveRent) * 0.1 + propertyBoost + transitBoost + (state.location ? 6 : 0));
   const financialScore = clampScore(profile.income * 0.3 + (100 - effectiveRent) * 0.28 + (100 - config.rentSensitivity) * 0.1 + categoryFit * 0.14 + profile.chainFit * 0.1 + budgetSupport * 0.08);
   const growthScore = clampScore(45 + permitBoost + propertyBoost + effectiveOffice(profile) * 0.12 + profile.density * 0.1 + profile.transit * 0.08);
@@ -3657,6 +3669,10 @@ function buildBusinessSuccessModel(profile, recommendations) {
     business,
     config,
     competitionPressure,
+    competitionUnverified,
+    competitionSource,
+    googleVisible,
+    competitorCount: measuredCompetitors,
     sameBlockCount,
     rentQuote,
     effectiveRent,
@@ -3676,7 +3692,9 @@ function buildBusinessSuccessModel(profile, recommendations) {
     {
       name: "Competition",
       value: competitionScore,
-      why: `${competitionSource === "registry" ? `Verified NYC city-registry records (${businessResult.count} nearby)` : competitionSource === "google" ? `Live Google Places nearby count (${googleVisible} comparable operators)` : "Estimated area competition (no live count for this category)"}; market appears ${competitionCondition(competitionScore)}.`
+      why: competitionUnverified
+        ? "No competitor records could be matched for this concept, so competition is treated as UNKNOWN (scored neutral, not favorable). Verify rivals on the block before relying on this."
+        : `${competitionSource === "registry" ? `Verified NYC city-registry records (${businessResult.count} nearby)` : competitionSource === "google" ? `Live Google Places nearby count (${googleVisible} comparable operators)` : "Estimated area competition (no live count for this category)"}; market appears ${competitionCondition(competitionScore)}.`
     },
     {
       name: "Location quality",
@@ -4190,7 +4208,20 @@ function buildInstitutionalAnalysis(profile, recommendations) {
         : `Too risky as-is — ${problem}.`;
   const twoScore = isTwoScorePreview();
   const failureBase = Math.max(12, Math.min(82, Math.round(84 - opportunityScore * 0.55 + (100 - riskScore) * 0.28 + Math.max(0, 70 - confidenceScore) * 0.25)));
-  const revenueBase = {
+  // Revenue must reflect the concept's PRICE TIER. The old lookup keyed on a
+  // cuisine-style name, so "steakhouse" / "chicken" / "qsr" all missed it and
+  // collapsed to the same 85000 default — a steakhouse and a counter-service
+  // sandwich shop came out with near-identical revenue. computeFinancialViability
+  // already models ticket price x capture (BUSINESS_ECON) but its `rev` was
+  // computed and thrown away; use it, and fall back to the category's own
+  // baseline (not one flat number) when it's unavailable.
+  const revenueByCategory = {
+    grabgo: 78000, quick: 92000, fastcasual: 115000, casual: 150000,
+    upscale: 235000, bar: 130000, retail: 95000, service: 85000,
+    targeted: 105000, destination: 100000
+  };
+  const revCategory = businessCategory(state.business || successModel.business);
+  const namedBase = {
     restaurant: 165000,
     pizza: 105000,
     deli: 90000,
@@ -4199,7 +4230,11 @@ function buildInstitutionalAnalysis(profile, recommendations) {
     gym: 95000,
     daycare: 110000,
     "smoke shop": 65000
-  }[successModel.business] || 85000;
+  }[successModel.business];
+  // NOTE: fv.rev already bakes in a location factor and would be multiplied by
+  // demandMultiplier below (double-counting location), so the base stays a
+  // price-tier baseline and the location math below is left untouched.
+  const revenueBase = namedBase || revenueByCategory[revCategory] || 85000;
   // Location revenue factor (modeled): venue sales scale with local DEMAND,
   // FOOT TRAFFIC, and INCOME (spending power). Rent is intentionally NOT here —
   // it raises break-even, not sales (handled in maxRentShare / break-even). This
@@ -4231,7 +4266,13 @@ function buildInstitutionalAnalysis(profile, recommendations) {
     safeNumber(successModel.effectiveRent, profile.rent) >= 78 && (successModel.rentQuote
       ? `Quoted rent is heavy for projected sales here (≈${successModel.rentQuote.ratioPct}% vs healthy ${successModel.rentQuote.healthyPct})`
       : "High cost pressure can erase demand advantage"),
-    successModel.competitionPressure >= 78 && `Direct competition is ${successModel.condition}; saturation is elevated`,
+    // Source-aware saturation flag. Pressure is on different scales per source
+    // (the Google path is hard-capped at 60, so a >=78 pressure test could NEVER
+    // fire for it — 29 Google-visible rivals warned less than 19 registry ones).
+    // Trigger on the pressure OR on a genuinely high measured competitor count.
+    (successModel.competitionPressure >= 78 || safeNumber(successModel.competitorCount, 0) >= 15)
+      && `Direct competition is ${successModel.condition}; saturation is elevated (${formatInteger(safeNumber(successModel.competitorCount, 0))} comparable operators found)`,
+    successModel.competitionUnverified && "Competitor data could not be verified for this concept — competition is unknown, not low",
     !address && "ZIP-level view may hide weak side-street conditions",
     !google && "Competitive review/rating visibility is not confirmed",
     !demandSignal && "Consumer demand momentum needs more confirmation",
@@ -4319,8 +4360,15 @@ function buildInstitutionalAnalysis(profile, recommendations) {
       name: titleCase(successModel.business),
       score: opportunityScore
     },
+    // Only suggest concepts that actually BEAT the headline — the old list
+    // filtered out the chosen concept but never compared scores, so every
+    // report recommended strictly worse options (fitness 82 / med spa 80 under
+    // a 71 headline came from a different engine's scale). Compare on the same
+    // headline score used for the verdict.
     alternatives: recommendations
-      .filter((item) => item.business !== successModel.business)
+      .filter((item) => item.business !== successModel.business
+        && clampScore(item.score) > clampScore(twoScore ? headlineScore : opportunityScore))
+      .sort((a, b) => b.score - a.score)
       .slice(0, 5)
       .map((item) => `${item.name} (${formatScore(item.score)}): ${item.note}`),
     explainability,

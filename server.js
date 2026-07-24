@@ -2235,6 +2235,41 @@ const GOOGLE_NONRETAIL_TYPES = new Set([
 ]);
 // Allowed Google place types per searched category. Null = unknown category
 // (no filter). A place is kept only if its types intersect this set.
+// The Google query must be a CATEGORY term, never the user's raw string: a raw
+// "Qsr / Counter Service" text-matches a business NAMED "Counter Service"
+// (brand matching), which returns garbage or nothing. Map the concept to a
+// stable search phrase so competitors are comparable operators.
+function googleSearchTerm(businessInput) {
+  const b = String(businessInput || "").toLowerCase();
+  if (/\b(coffee|cafe|café|espresso|matcha|latte)\b/.test(b)) return "coffee shop";
+  if (/\b(bubble tea|boba|tea house)\b/.test(b)) return "bubble tea";
+  if (/\b(juice|smoothie|acai)\b/.test(b)) return "juice bar";
+  if (/\b(cheesesteak|hoagie|grinder|sub|subs)\b/.test(b)) return "cheesesteak sandwich shop";
+  if (/\b(steak ?house|steak)\b/.test(b)) return "steakhouse";
+  if (/\b(chicken|wings)\b/.test(b)) return "fried chicken restaurant";
+  if (/\b(gyro|halal|shawarma|falafel)\b/.test(b)) return "halal food";
+  if (/\b(deli|bodega)\b/.test(b)) return "deli";
+  if (/\b(sandwich|qsr|counter service|fast ?food)\b/.test(b)) return "sandwich shop";
+  if (/\b(pizza|slice)\b/.test(b)) return "pizza";
+  if (/\b(bagel)\b/.test(b)) return "bagel shop";
+  if (/\b(taco|burrito|mexican)\b/.test(b)) return "mexican restaurant";
+  if (/\b(burger)\b/.test(b)) return "burger restaurant";
+  if (/\b(sushi|japanese|ramen)\b/.test(b)) return "japanese restaurant";
+  if (/\b(bar|pub|lounge|night ?club|cocktail|tavern|brewery|speakeasy)\b/.test(b)) return "bar";
+  if (/\b(gym|fitness|crossfit|spin)\b/.test(b)) return "gym";
+  if (/\b(yoga|pilates)\b/.test(b)) return "yoga studio";
+  if (/\b(nail)\b/.test(b)) return "nail salon";
+  if (/\b(barber)\b/.test(b)) return "barber shop";
+  if (/\b(salon|hair)\b/.test(b)) return "hair salon";
+  if (/\b(spa|massage|wax|beauty)\b/.test(b)) return "spa";
+  if (/\b(pharmacy|drug ?store)\b/.test(b)) return "pharmacy";
+  if (/\b(daycare|childcare|preschool)\b/.test(b)) return "daycare";
+  if (/\b(laundr)\b/.test(b)) return "laundromat";
+  if (/\b(restaurant|dining|eatery|bistro|grill|kitchen|trattoria|italian|chinese|thai|indian|korean|greek|mediterranean)\b/.test(b)) return "restaurant";
+  if (/\b(retail|shop|store|boutique|clothing|apparel|bookstore|gift|jewelry)\b/.test(b)) return "store";
+  return "";
+}
+
 function googleAllowedTypes(businessInput) {
   const b = String(businessInput || "").toLowerCase();
   if (/\b(coffee|cafe|café|espresso|matcha|tea|bubble|boba|juice|smoothie)\b/.test(b)) return ["cafe", "bakery"];
@@ -2244,7 +2279,12 @@ function googleAllowedTypes(businessInput) {
   if (/\b(pharmacy|drug ?store)\b/.test(b)) return ["pharmacy", "drugstore"];
   if (/\b(daycare|childcare|preschool|tutor)\b/.test(b)) return ["school", "primary_school"];
   if (/\b(laundr|wash)\b/.test(b)) return ["laundry"];
-  if (/\b(pizza|deli|bagel|sandwich|taco|burger|restaurant|dining|eatery|ramen|sushi|grill|kitchen|bbq|bistro|fast food|cuisine|italian|chinese|mexican|thai|indian|korean|japanese|greek|mediterranean|halal)\b/.test(b))
+  // Food: keep this list broad — an UNLISTED food concept gets NO type filter at
+  // all, so raw brand-name matches survive (that's how a "steakhouse" search
+  // returned delis and a pizzeria). Added: steak/cheesesteak/hoagie/sub,
+  // chicken/wings, qsr/counter service, gyro/shawarma/falafel, seafood, wrap,
+  // salad, noodle, dumpling, vegan, dessert/ice cream.
+  if (/\b(pizza|slice|deli|bodega|bagel|sandwich|sub|subs|hoagie|grinder|cheesesteak|steak|steak ?house|chicken|wings|qsr|counter service|taco|burrito|burger|restaurant|dining|eatery|ramen|noodle|dumpling|sushi|grill|kitchen|bbq|bistro|fast ?food|cuisine|italian|chinese|mexican|thai|indian|korean|japanese|greek|mediterranean|halal|gyro|shawarma|falafel|seafood|fish|wrap|salad|poke|vegan|vegetarian|dessert|ice cream|donut|juice|smoothie)\b/.test(b))
     return ["restaurant", "meal_takeaway", "meal_delivery", "bakery", "cafe", "food"];
   if (/\b(retail|shop|store|boutique|clothing|apparel|bookstore|gift|jewelry)\b/.test(b))
     return ["clothing_store", "store", "shoe_store", "book_store", "jewelry_store", "shopping_mall"];
@@ -2255,14 +2295,20 @@ async function googlePlaceSignals(zip, businessInput, location = null) {
   if (!process.env.GOOGLE_PLACES_API_KEY) return null;
 
   const business = normalizeBusiness(businessInput);
+  // Search by CATEGORY term, not the raw typed string (brand-name matching).
+  // When the concept isn't recognized we fall back to the raw string but mark
+  // the result unresolved so the score won't trust a possibly-empty count.
+  const searchTerm = googleSearchTerm(businessInput);
+  const queryTerm = searchTerm || String(businessInput || "").trim();
+  const categoryResolved = Boolean(searchTerm);
   const url = new URL("https://maps.googleapis.com/maps/api/place/nearbysearch/json");
   if (location?.lat && location?.lng) {
     url.searchParams.set("location", `${location.lat},${location.lng}`);
     url.searchParams.set("radius", String(location.radiusMeters || 805));
-    url.searchParams.set("keyword", businessInput);
+    url.searchParams.set("keyword", queryTerm);
   } else {
     url.pathname = "/maps/api/place/textsearch/json";
-    url.searchParams.set("query", `${businessInput} in ${zip} New York NY`);
+    url.searchParams.set("query", `${queryTerm} in ${zip} New York NY`);
   }
   url.searchParams.set("key", process.env.GOOGLE_PLACES_API_KEY);
 
@@ -2346,6 +2392,10 @@ async function googlePlaceSignals(zip, businessInput, location = null) {
   return {
     business,
     count: places.length,
+    // Did we search a real category term, or fall back to the raw typed string?
+    // An unresolved search that returns 0 is "we don't know", NOT "no rivals".
+    categoryResolved,
+    searchTerm: queryTerm,
     chainCount,
     localCount: Math.max(0, places.length - chainCount),
     avgRating,
@@ -2489,6 +2539,10 @@ async function businessCount(zip, businessInput, location = null) {
     business,
     count: openDataTotal,
     googleVisibleCount,
+    // Competition EVIDENCE quality, so the score can tell "no rivals" apart from
+    // "we couldn't measure". Unresolved category + zero found = unknown.
+    competitionResolved: Boolean(googleSignal?.categoryResolved) || openDataTotal > 0,
+    competitionSearchTerm: googleSignal?.searchTerm || "",
     mode: hasAnySourceSignal ? "live" : "live-zero",
     openDataCount: openDataTotal,
     zipOpenDataCount: countedOpenDataTotal,
