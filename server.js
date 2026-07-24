@@ -2523,9 +2523,16 @@ async function businessCount(zip, businessInput, location = null) {
   // "Refresh data" (forceRefresh) re-resolves and re-locks the snapshot.
   let googleSignal = googlePlaces;
   if (googlePlaces) {
+    // The snapshot key MUST include the actual search term. Keying on the
+    // category alone meant that fixing a wrong search (e.g. chicken searching
+    // "chicken wings restaurant" instead of "fried chicken restaurant") kept
+    // serving the year-old snapshot from the wrong query — the fix looked like
+    // it did nothing until someone manually cleared the cache. Term changes now
+    // invalidate automatically.
+    const snapTerm = String(googlePlaces.searchTerm || business).toLowerCase().replace(/[^a-z0-9]+/g, "-");
     const snapKey = location?.lat && location?.lng
-      ? `compsnap:${business}:${location.lat.toFixed(4)}:${location.lng.toFixed(4)}`
-      : `compsnap:zip:${zip}:${business}`;
+      ? `compsnap:${business}:${snapTerm}:${location.lat.toFixed(4)}:${location.lng.toFixed(4)}`
+      : `compsnap:zip:${zip}:${business}:${snapTerm}`;
     const forceRefresh = requestContext.getStore()?.forceRefresh === true;
     const existing = forceRefresh ? null : readCache(snapKey);
     if (existing) {
