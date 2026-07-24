@@ -3508,6 +3508,33 @@ function competitionCondition(score) {
   return "oversupplied";
 }
 
+// ---- Agglomeration ("destination cluster") ----------------------------------
+// Some categories CLUSTER on purpose and the cluster itself is the draw:
+// Steinway St hookah lounges, the Diamond District, Restaurant Row, Koreatown,
+// Arthur Ave. People travel TO those blocks because everything is there, so a
+// dense same-category count is demand, not just saturation.
+//
+// It only works for businesses people TRAVEL for. Nobody crosses town for the
+// 5th laundromat or deli — for those, density is pure cannibalization.
+const CLUSTER_CATEGORIES = new Set(["bar", "casual", "upscale", "retail", "destination", "fastcasual"]);
+
+// Evidence-based, not a hardcoded list of streets: a real cluster shows MANY
+// operators that are ALSO well-rated and heavily reviewed (people seek them
+// out). The same density with weak ratings and thin reviews is genuine
+// oversupply. Returns 0..1 (how strongly this reads as a destination cluster).
+function clusterStrength(businessResult, business) {
+  if (!CLUSTER_CATEGORIES.has(businessCategory(business))) return 0;
+  const n = safeNumber(businessResult?.count, 0) + safeNumber(businessResult?.googleVisibleCount, 0);
+  if (n < 6) return 0; // too few to be a district
+  const rating = safeNumber(businessResult?.googlePlaces?.avgRating, 0);
+  const reviews = safeNumber(businessResult?.googlePlaces?.reviewCount, 0);
+  if (rating < 4.1 || reviews < 1500) return 0; // dense but not a draw = saturation
+  const density = Math.min(1, (n - 5) / 20);          // 6 -> ~0, 25+ -> 1
+  const quality = Math.min(1, (rating - 4.1) / 0.6);  // 4.1 -> 0, 4.7+ -> 1
+  const pull = Math.min(1, reviews / 15000);          // review volume = travel demand
+  return Math.max(0, Math.min(1, density * 0.4 + quality * 0.3 + pull * 0.3));
+}
+
 function updateBudgetFromInput() {
   state.budget = Math.max(0, Number(elements.budgetInput?.value || 0));
 }
@@ -3679,6 +3706,7 @@ function buildBusinessSuccessModel(profile, recommendations) {
     competitionSource,
     googleVisible,
     competitorCount: measuredCompetitors,
+    clusterStrength: clusterStrength(businessResult, state.business || business),
     sameBlockCount,
     rentQuote,
     effectiveRent,
@@ -4137,8 +4165,21 @@ function buildInstitutionalAnalysis(profile, recommendations) {
   // partly a foot-traffic POSITIVE, not a death sentence — so a busy competitive
   // avenue isn't wrongly read as high-risk for coffee/quick/retail. Lift the
   // saturation floor with foot; quieter blocks keep the full penalty.
+  const mfCompetitorN = safeNumber(successModel.competitorCount, 0);
   if (["grabgo", "quick", "retail", "fastcasual"].includes(businessCategory(mfBiz))) {
-    mfComp = clampScore(Math.max(mfComp, Math.min(65, 35 + (mfFoot - 50) * 0.4)));
+    // The busy-corridor lift must NOT rescue a genuinely flooded block: past
+    // ~20 direct rivals it fades out, so 36 chicken QSRs can't read as "open".
+    const floodFade = mfCompetitorN <= 20 ? 1 : Math.max(0, 1 - (mfCompetitorN - 20) / 20);
+    const lift = Math.min(65, 35 + (mfFoot - 50) * 0.4);
+    mfComp = clampScore(Math.max(mfComp, mfComp + (lift - mfComp) * floodFade));
+  }
+  // Destination cluster (agglomeration): where a dense, well-reviewed same-
+  // category district is the reason customers come (Steinway St hookah,
+  // Restaurant Row), give back part of the saturation penalty instead of
+  // scoring the cluster as a death sentence.
+  const mfCluster = clusterStrength(businessResult, mfBiz);
+  if (mfCluster > 0) {
+    mfComp = clampScore(mfComp + (100 - mfComp) * 0.45 * mfCluster);
   }
   const mfDemo = scoreValue("Customer fit");                     // demographics + spending fit
   const mfNight = clampScore(effectiveNightlife(profile));       // evening/bar activity
@@ -4276,8 +4317,14 @@ function buildInstitutionalAnalysis(profile, recommendations) {
     // (the Google path is hard-capped at 60, so a >=78 pressure test could NEVER
     // fire for it — 29 Google-visible rivals warned less than 19 registry ones).
     // Trigger on the pressure OR on a genuinely high measured competitor count.
+    // Word it from the COUNT (the thing being reported), not the lifted
+    // competition score — "competition is balanced; saturation is elevated" was
+    // self-contradictory. In a destination cluster, say so instead of crying
+    // oversupply.
     (successModel.competitionPressure >= 78 || safeNumber(successModel.competitorCount, 0) >= 15)
-      && `Direct competition is ${successModel.condition}; saturation is elevated (${formatInteger(safeNumber(successModel.competitorCount, 0))} comparable operators found)`,
+      && (safeNumber(successModel.clusterStrength, 0) >= 0.35
+        ? `${formatInteger(safeNumber(successModel.competitorCount, 0))} comparable operators nearby — this reads as a destination cluster for the category, so the density is partly a draw; you must still differentiate to win share`
+        : `Direct competition is heavy — ${formatInteger(safeNumber(successModel.competitorCount, 0))} comparable operators found; saturation is elevated`),
     successModel.competitionUnverified && "Competitor data could not be verified for this concept — competition is unknown, not low",
     !address && "ZIP-level view may hide weak side-street conditions",
     !google && "Competitive review/rating visibility is not confirmed",
