@@ -208,7 +208,8 @@ const restaurantTerms = {
   wings: ["WINGS", "WING"],
   bbq: ["BBQ", "BARBECUE", "BARBEQUE"],
   seafood: ["SEAFOOD", "FISH", "LOBSTER", "CRAB"],
-  steakhouse: ["STEAKHOUSE", "STEAK"],
+  steakhouse: ["STEAKHOUSE", "STEAK HOUSE"],
+  cheesesteak: ["CHEESESTEAK", "CHEESE STEAK", "HOAGIE", "PHILLY"],
   vegan: ["VEGAN", "VEGETARIAN"],
   juice: ["JUICE", "SMOOTHIE", "ACAI"],
   dessert: ["DESSERT", "ICE CREAM", "GELATO", "DONUT", "YOGURT", "ICES"],
@@ -1562,6 +1563,10 @@ function normalizeBusiness(value) {
   if (normalized.includes("chicken") || normalized.includes("wings")) return "chicken";
   if (normalized.includes("bbq") || normalized.includes("barbecue") || normalized.includes("barbeque")) return "bbq";
   if (normalized.includes("seafood") || normalized.includes("lobster") || normalized.includes("crab")) return "seafood";
+  // A cheesesteak/hoagie counter is NOT a steakhouse — check it first, since
+  // "qsr steak hoagie" contains the word "steak" and was being labeled (and
+  // benchmarked as) a high-end steakhouse.
+  if (/cheese ?steak|hoagie|grinder|philly/.test(normalized)) return "cheesesteak";
   if (normalized.includes("steak")) return "steakhouse";
   if (normalized.includes("vegan") || normalized.includes("vegetarian")) return "vegan";
   if (normalized.includes("juice") || normalized.includes("smoothie") || normalized.includes("acai")) return "juice";
