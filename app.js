@@ -6556,7 +6556,16 @@ function initSpotVestV3Controls() {
     if (!sv3RequireAccount()) return;
     const refs = sv3Refs();
     syncFields();
-    if (refs.address?.value?.trim() && elements.addressInput) elements.addressInput.value = refs.address.value.trim();
+    const typedAddress = refs.address?.value?.trim() || "";
+    const typedZip = (refs.zip?.value || "").trim();
+    // If the user also gave a ZIP and the address doesn't already carry one,
+    // append it as a geocoder hint. A bare street like "550 8th Ave" can
+    // otherwise resolve to the wrong ZIP (Google returned 10038 instead of the
+    // real 10018) — the typed ZIP disambiguates it to the right block.
+    const geocodeQuery = (typedAddress && /^\d{5}$/.test(typedZip) && !/\b1\d{4}\b/.test(typedAddress))
+      ? `${typedAddress}, ${typedZip}`
+      : typedAddress;
+    if (geocodeQuery && elements.addressInput) elements.addressInput.value = geocodeQuery;
     if (refs.radius?.value && elements.radiusInput) elements.radiusInput.value = refs.radius.value;
     sv3ShowMain("report");
     elements.addressForm?.requestSubmit();
