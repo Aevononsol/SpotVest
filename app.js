@@ -3451,53 +3451,7 @@ function clampScore(value) {
   return Math.max(0, Math.min(100, Math.round(number)));
 }
 
-function weightedBusinessScore(scoreValue) {
-  return scoreValue("Demand") * businessSuccessWeights.demand +
-    scoreValue("Customer fit") * businessSuccessWeights.customerFit +
-    scoreValue("Competition") * businessSuccessWeights.competition +
-    scoreValue("Financial viability") * businessSuccessWeights.financial +
-    scoreValue("Location quality") * businessSuccessWeights.location +
-    scoreValue("Area momentum") * businessSuccessWeights.growth +
-    scoreValue("Risk") * businessSuccessWeights.risk;
-}
 
-function calibratedDecisionScore({ weightedScore, scoreValue, confidenceScore, successModel }) {
-  const demand = scoreValue("Demand");
-  const customerFit = scoreValue("Customer fit");
-  const competition = scoreValue("Competition");
-  const financial = scoreValue("Financial viability");
-  const location = scoreValue("Location quality");
-  const growth = scoreValue("Area momentum");
-  const risk = scoreValue("Risk");
-  const weakSignals = [demand, customerFit, competition, financial, location, growth, risk].filter((value) => value < 45).length;
-  const strongSignals = [demand, customerFit, competition, financial, location, growth, risk].filter((value) => value >= 72).length;
-
-  let adjustment = 0;
-  // Competition must be counted ONCE. It already sits in the weighted score
-  // (0.15) and inside Risk (0.32 of riskRaw), so the old stack — a -12 cliff
-  // here PLUS a separate -6 pressure penalty PLUS the risk cliff it dragged
-  // down — charged a saturated block ~30 points for one fact. In dense NYC,
-  // high competition usually accompanies high demand; that skew put ~80% of
-  // analyses below the 55 "DO NOT OPEN" line, contradicting the app's own
-  // strongest-fit recommendation. Cliffs softened, pressure penalty removed.
-  if (competition < 28) adjustment -= 8;
-  else if (competition < 42) adjustment -= 4;
-  if (financial < 35) adjustment -= 10;
-  else if (financial < 48) adjustment -= 5;
-  if (risk < 30) adjustment -= 8;
-  else if (risk < 45) adjustment -= 3;
-  if (demand < 42) adjustment -= 8;
-  if (customerFit < 42) adjustment -= 6;
-  if (weakSignals >= 3) adjustment -= 5;
-
-  if (demand >= 70 && location >= 70) adjustment += 4;
-  if (competition >= 64 && financial >= 62) adjustment += 5;
-  if (risk >= 68 && strongSignals >= 3) adjustment += 4;
-  if (confidenceScore < 55) adjustment -= 4;
-
-  const expanded = 50 + (safeNumber(weightedScore, 50) - 50) * 1.42;
-  return clampScore(expanded + adjustment);
-}
 
 function categoryFitForBusiness(business, profile) {
   const direct = categoryModels.find((item) => item.business === business);
@@ -3700,16 +3654,6 @@ function buildBusinessSuccessModel(profile, recommendations) {
   const rentPenalty = rentBurdenPenalty(rentQuote);
   const financialScoreAdj = clampScore(financialScore - rentPenalty);
   const riskScoreAdj = clampScore(riskScore - Math.round(rentPenalty * 0.6));
-  const successProbability = clampScore(weightedBusinessScore((name) => ({
-    Demand: demandScore,
-    "Customer fit": customerFitScore,
-    Competition: competitionScore,
-    "Financial viability": financialScoreAdj,
-    "Location quality": locationScore,
-    "Area momentum": growthScore,
-    Risk: riskScoreAdj
-  }[name] ?? 50)));
-
   return {
     business,
     config,
@@ -3723,7 +3667,6 @@ function buildBusinessSuccessModel(profile, recommendations) {
     rentQuote,
     effectiveRent,
     condition: competitionCondition(competitionScore),
-    successProbability,
     scores: [
     {
       name: "Demand",
@@ -4062,17 +4005,6 @@ function computeFinancialViability(profile, business) {
   return { viability: clampScore(v), rev, rent, rentPct, rentCap: econ.rentCap, r, rentProvided };
 }
 
-// The two-score model is now LIVE for everyone (launched). It stays on by
-// default; ?preview=0 (or ?preview=off) opts a browser back to the old
-// single-score report for comparison/rollback, and ?preview=2 re-enables it.
-function isTwoScorePreview() {
-  try {
-    const p = new URLSearchParams(location.search).get("preview");
-    if (p === "0" || p === "off") { localStorage.setItem("sv_preview", "0"); return false; }
-    if (p === "2") { localStorage.removeItem("sv_preview"); return true; }
-    return localStorage.getItem("sv_preview") !== "0";
-  } catch { return true; }
-}
 
 function buildInstitutionalAnalysis(profile, recommendations) {
   const businessResult = currentBusinessResult();
@@ -4140,29 +4072,12 @@ function buildInstitutionalAnalysis(profile, recommendations) {
     location.why = `${location.why} Verified Signals: the area has meaningful commercial capacity.`;
   }
   const scoreValue = (name) => safeNumber(scores.find((item) => item.name === name)?.value, 50);
-  const weightedScore = weightedBusinessScore(scoreValue);
-  // The headline/decision score is opportunityScore. A quoted rent far above the
-  // healthy share is a deal-level economic problem that no amount of demand can
-  // offset, so cap the score directly here — not just via one factor's weight.
-  // calibratedDecisionScore already reacts to the penalized financial/risk
-  // scores; add a partial direct rent penalty on top so an unaffordable rent
-  // firmly caps the headline without flattening every case to zero.
-  const opportunityScore = clampScore(
-    calibratedDecisionScore({ weightedScore, scoreValue, confidenceScore, successModel })
-    - Math.round(rentBurdenPenalty(successModel.rentQuote) * 0.4)
-  );
+  // The legacy single-score engine (opportunityScore / calibratedDecisionScore /
+  // severeRisk / the 4-way `decision`) was removed here — the two-score model
+  // below is the only scoring engine. Full formulas, inputs and rebuild notes:
+  // docs/LEGACY_SINGLE_SCORE_ENGINE.md
   const riskScore = scoreValue("Risk");
   const financialScore = scoreValue("Financial viability");
-  const severeRisk =
-    riskScore < 25 ||
-    (riskScore < 35 && financialScore < 45 && opportunityScore < 62);
-  const decision = confidenceScore < 45
-    ? "NEEDS MORE DATA"
-    : opportunityScore < 55 || severeRisk
-    ? "DO NOT OPEN"
-    : opportunityScore >= 75 && confidenceScore >= 70
-      ? "OPEN"
-      : "CONDITIONAL";
   // ===== Two-score model (hidden preview, gated by isTwoScorePreview) =====
   // Market Fit = "will customers come". Phase 2: the lead signal varies BY
   // BUSINESS TYPE (coffee leans on foot traffic, upscale on demographics, bars
@@ -4265,8 +4180,9 @@ function buildInstitutionalAnalysis(profile, recommendations) {
       : headlineScore >= 50
         ? `Workable, but with conditions — ${problem}.`
         : `Too risky as-is — ${problem}.`;
-  const twoScore = isTwoScorePreview();
-  const failureBase = Math.max(12, Math.min(82, Math.round(84 - opportunityScore * 0.55 + (100 - riskScore) * 0.28 + Math.max(0, 70 - confidenceScore) * 0.25)));
+  const twoScore = true; // legacy single-score engine removed; always two-score
+  // Repointed off the deleted legacy opportunityScore onto the live headline.
+  const failureBase = Math.max(12, Math.min(82, Math.round(84 - headlineScore * 0.55 + (100 - riskScore) * 0.28 + Math.max(0, 70 - confidenceScore) * 0.25)));
   // Revenue must reflect the concept's PRICE TIER. The old lookup keyed on a
   // cuisine-style name, so "steakhouse" / "chicken" / "qsr" all missed it and
   // collapsed to the same 85000 default — a steakhouse and a counter-service
@@ -4406,24 +4322,21 @@ function buildInstitutionalAnalysis(profile, recommendations) {
       conflicts
     },
     scores,
-    opportunityScore,
     // Two-score model (only overrides the headline when the hidden preview is on).
     twoScore,
     marketFit,
     financialViability,
     verdict,
     verdictReason,
-    successProbability: twoScore ? headlineScore : opportunityScore,
+    successProbability: headlineScore,
     confidenceScore,
     rentQuote: successModel.rentQuote || null,
-    decision: twoScore ? verdict : decision,
-    decisionCopy: twoScore ? verdictReason : decisionCopyFor(decision, opportunityScore, confidenceScore, riskScore),
-    summary: twoScore
-      ? `${titleCase(successModel.business)} — Market Fit ${marketFit}/100, Financial Viability ${financialViability}/100. ${verdictReason}`
-      : `${titleCase(successModel.business)} has a ${formatScore(opportunityScore)} viability screen in this area. ${decisionCopyFor(decision, opportunityScore, confidenceScore, riskScore)}`,
+    decision: verdict,
+    decisionCopy: verdictReason,
+    summary: `${titleCase(successModel.business)} — Market Fit ${marketFit}/100, Financial Viability ${financialViability}/100. ${verdictReason}`,
     topRecommendation: {
       name: titleCase(successModel.business),
-      score: opportunityScore
+      score: headlineScore
     },
     // Only suggest concepts that actually BEAT the headline — the old list
     // filtered out the chosen concept but never compared scores, so every
@@ -4432,7 +4345,7 @@ function buildInstitutionalAnalysis(profile, recommendations) {
     // headline score used for the verdict.
     alternatives: recommendations
       .filter((item) => item.business !== successModel.business
-        && clampScore(item.score) > clampScore(twoScore ? headlineScore : opportunityScore))
+        && clampScore(item.score) > clampScore(headlineScore))
       .sort((a, b) => b.score - a.score)
       .slice(0, 5)
       .map((item) => `${item.name} (${formatScore(item.score)}): ${item.note}`),
@@ -4726,44 +4639,6 @@ function sv3IsZipCenterSearch() {
   return Boolean(state.location) && /^new york\b/i.test(String(state.location.address || "").trim());
 }
 
-// Cost side vs market side: names what's capping the score so "why didn't a
-// cheaper rent move it?" is answered on the report itself. Display only.
-function sv3CostMarketSplit(ctx) {
-  const val = (n) => safeNumber((ctx.scores || []).find((s) => s.name === n)?.value, 50);
-  const cost = Math.round((val("Financial viability") + val("Risk")) / 2);
-  const marketParts = [["Demand", val("Demand")], ["Customer fit", val("Customer fit")], ["Competition", val("Competition")]];
-  const market = Math.round(marketParts.reduce((s, [, v]) => s + v, 0) / marketParts.length);
-  const weakest = marketParts.slice().sort((a, b) => a[1] - b[1])[0];
-  const tier = (v) => v >= 65 ? { word: "STRONG", cls: "good" } : v >= 45 ? { word: "OK", cls: "mid" } : { word: "WEAK", cls: "bad" };
-  const q = ctx.rentQuote;
-  const lowQuote = q && q.monthly < 2000;
-  // How far the quoted rent runs over the healthy ceiling (1.0 = exactly at it).
-  const rentOver = q && q.healthyHigh > 0 ? q.ratio / q.healthyHigh : 0;
-  const costTier = lowQuote && cost >= 65
-    ? { word: "MAXED", cls: "good" }
-    : (rentOver > 1.5 ? { word: "WEAK", cls: "bad" } : tier(cost));
-  const costText = q
-    ? (lowQuote
-      ? `At $${formatInteger(q.monthly)}/mo cost pressure is eliminated — a lower rent can't add more points. Rent this far below NYC market usually has a catch: verify lease term, legal use, and condition.`
-      : rentOver > 1.5
-        ? `Your $${formatInteger(q.monthly)}/mo rent ≈ ${q.ratioPct}% of projected sales — far above the healthy ${q.healthyPct}. Rent alone eats too much of revenue to profit here; renegotiate hard or walk.`
-        : `Your $${formatInteger(q.monthly)}/mo rent ≈ ${q.ratioPct}% of projected sales (healthy: ${q.healthyPct})${cost >= 65 ? " — a real advantage here." : cost >= 45 ? " — workable for this area." : " — heavy for what this spot can sell."}`)
-    : (cost >= 65 ? "Area economics (rent vs income) support opening here." : cost >= 45 ? "Area cost pressure is manageable but real." : "Area cost pressure (rent vs local income) is dragging this score.");
-  const marketText = market >= 65
-    ? "Demand, customer fit, and competition support this business here."
-    : `${weakest[0]} is what's capping this score${weakest[0] === "Competition" ? " — direct rivals are thick on this block" : ""}.`;
-  const capLine = cost >= 65 && market < 65
-    ? "Cheap costs remove a reason to fail — demand and competition decide the upside."
-    : market >= 65 && cost < 65
-      ? "The market wants this here — the economics are what need negotiating."
-      : null;
-  return `
-    <div class="hero-split">
-      <div class="hs-row"><span class="hs-k ${costTier.cls}"><i class="hs-dot"></i>Cost side: ${costTier.word}</span><span class="hs-t">${escapeText(costText)}</span></div>
-      <div class="hs-row"><span class="hs-k ${tier(market).cls}"><i class="hs-dot"></i>Market side: ${tier(market).word}</span><span class="hs-t">${escapeText(marketText)}</span></div>
-      ${capLine ? `<div class="hs-cap">${escapeText(capLine)}</div>` : ""}
-    </div>`;
-}
 
 function sv3SpaceItselfCard(ctx) {
   const sqft = (v) => Number.isFinite(v) && v > 0 ? `${formatInteger(v)}<span class="u"> sq ft</span>` : null;
@@ -5231,7 +5106,6 @@ function sv3OverviewHTML(ctx) {
                 <div class="hero-sub">Success probability · ${escapeText(ctx.business)}</div>`}
            <div class="hero-ev"><span class="k">Evidence</span><span class="bar"><i style="width:${sv3Pct(ctx.confidence)}%"></i></span><span class="v">${ctx.confidence}/100 · ${escapeText(ctx.confidenceLabel)}</span></div>
            <div class="vsub">${escapeText(ctx.twoScore ? (ctx.verdictReason || ctx.decisionCopy) : ctx.decisionCopy)}</div>
-           ${ctx.twoScore ? "" : sv3CostMarketSplit(ctx)}
            ${sv3IsZipCenterSearch() ? `<div class="vsub" style="margin-top:7px">Area-level result for the whole ZIP. An exact address can score differently — a busy area can contain quiet blocks (and the other way around). Run a street address for a block-level verdict.</div>` : ""}`
         : ctx.scoreUnavailable
           ? `<div class="hero-status"><span class="hdot"></span>Data unavailable</div>
