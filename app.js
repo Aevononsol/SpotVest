@@ -641,7 +641,11 @@ const restaurantCuisineTypes = Object.fromEntries([
   ["ethiopian", ["ethiopian"]],
   ["american", ["american", "new american", "diner"]],
   ["burger", ["burger", "hamburger", "hamburgers"]],
-  ["chicken", ["chicken", "wings", "fried chicken"]],
+  // QSR chicken (tenders/sandwich/Korean/hot chicken) vs a wings joint — kept
+  // separate so each is benchmarked against its own operators. "wings" is
+  // listed FIRST so a bare wings concept doesn't get swallowed by chicken.
+  ["wings", ["wings", "buffalo wings", "chicken wings", "wing bar"]],
+  ["chicken", ["chicken", "fried chicken", "qsr chicken", "hot chicken", "korean fried chicken", "chicken tenders", "chicken sandwich", "rotisserie chicken"]],
   ["bbq", ["bbq", "barbecue", "barbeque"]],
   ["seafood", ["seafood", "fish", "lobster", "crab"]],
   ["steakhouse", ["steakhouse", "steak house", "steak"]],
@@ -1573,7 +1577,8 @@ function businessDisplayName(input) {
     ethiopian: "Ethiopian restaurant",
     american: "American / diner",
     burger: "Burger restaurant",
-    chicken: "Chicken / wings",
+    chicken: "Fried chicken (QSR)",
+    wings: "Wings",
     bbq: "BBQ restaurant",
     seafood: "Seafood restaurant",
     steakhouse: "Steakhouse",
@@ -1619,7 +1624,8 @@ const businessSuggestionOptions = [
   "Ethiopian restaurant",
   "American / diner",
   "Burgers",
-  "Chicken / wings",
+  "Fried chicken (QSR)",
+  "Wings",
   "BBQ restaurant",
   "Seafood restaurant",
   "Steakhouse",
