@@ -210,6 +210,7 @@ const restaurantTerms = {
   seafood: ["SEAFOOD", "FISH", "LOBSTER", "CRAB"],
   steakhouse: ["STEAKHOUSE", "STEAK HOUSE"],
   cheesesteak: ["CHEESESTEAK", "CHEESE STEAK", "HOAGIE", "PHILLY"],
+  sandwich: ["SANDWICH", "SUB ", "HERO", "PANINI"],
   vegan: ["VEGAN", "VEGETARIAN"],
   juice: ["JUICE", "SMOOTHIE", "ACAI"],
   dessert: ["DESSERT", "ICE CREAM", "GELATO", "DONUT", "YOGURT", "ICES"],
@@ -242,6 +243,8 @@ const restaurantConceptModels = [
   { key: "burger", label: "Burger", search: "burger restaurant" },
   { key: "chicken", label: "Fried chicken (QSR)", search: "fried chicken restaurant" },
   { key: "wings", label: "Wings", search: "chicken wings restaurant" },
+  { key: "sandwich", label: "Sandwich shop (QSR)", search: "sandwich shop" },
+  { key: "cheesesteak", label: "Cheesesteak / hoagie (QSR)", search: "cheesesteak sandwich shop" },
   { key: "seafood", label: "Seafood", search: "seafood restaurant" },
   { key: "vegan", label: "Vegan / vegetarian", search: "vegan vegetarian restaurant" },
   { key: "juice", label: "Juice / smoothie", search: "juice smoothie" },
@@ -1568,6 +1571,9 @@ function normalizeBusiness(value) {
   // benchmarked as) a high-end steakhouse.
   if (/cheese ?steak|hoagie|grinder|philly/.test(normalized)) return "cheesesteak";
   if (normalized.includes("steak")) return "steakhouse";
+  // Counter-service sandwich shop. Checked AFTER chicken/cheesesteak so
+  // "chicken sandwich" and "steak hoagie" keep their own concepts.
+  if (/sandwich|sub shop|hero shop|panini|qsr|counter service/.test(normalized)) return "sandwich";
   if (normalized.includes("vegan") || normalized.includes("vegetarian")) return "vegan";
   if (normalized.includes("juice") || normalized.includes("smoothie") || normalized.includes("acai")) return "juice";
   if (normalized.includes("dessert") || normalized.includes("ice cream") || normalized.includes("gelato") || normalized.includes("donut")) return "dessert";
