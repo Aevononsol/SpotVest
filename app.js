@@ -7626,6 +7626,9 @@ function renderExecSummary() {
   const revenue = elements.revenueProjection?.textContent?.trim() || "Projected on request";
   const breakeven = elements.revenueBreakeven?.textContent?.trim() || "—";
   const rentPct = elements.revenueRentPercent?.textContent?.trim() || "—";
+  // Quoted rent: it already drives the score, but the document never showed it,
+  // so a report built on the user's real deal read as if it used an area average.
+  const rq = analysis.rentQuote || null;
 
   elements.execSummary.innerHTML = `
     <article class="report-doc">
@@ -7640,6 +7643,7 @@ function renderExecSummary() {
         <h2>Executive Summary</h2>
         ${para(analysis.summary)}
         ${para(`On the evidence reviewed, SpotVest screens this opportunity as ${analysis.decision} with a viability score of ${score}/100 and evidence confidence of ${conf}/100. The sections below set out the recommendation, the conditions and risks that drive it, and the market and financial context.`)}
+        ${rq ? para(`This report is scored against the <b>quoted rent of $${formatInteger(rq.monthly)}/month</b> (≈${rq.ratioPct}% of projected sales; healthy for this category is ${rq.healthyPct}) rather than the area average.`) : ""}
       </section>
 
       <section class="rd-section">
@@ -7674,7 +7678,10 @@ function renderExecSummary() {
 
       <section class="rd-section">
         <h2>Financial Considerations</h2>
-        ${para(`SpotVest estimates (not live financials): projected monthly revenue ${revenue}, break-even ${breakeven}, with rent at approximately ${rentPct} of sales. These are derived from category economics, area income and estimated local rent — verify against real operator P&Ls before committing.`)}
+        ${para(`SpotVest estimates (not live financials): projected monthly revenue ${revenue}, break-even ${breakeven}, with rent at approximately ${rentPct} of sales. These are derived from category economics, area income and ${rq ? "the quoted rent you provided" : "estimated local rent"} — verify against real operator P&Ls before committing.`)}
+        ${rq ? para(`<b>Your quoted rent:</b> $${formatInteger(rq.monthly)}/month — approximately <b>${rq.ratioPct}%</b> of projected sales at this location (a healthy share for this category is ${rq.healthyPct}). ${rq.ratio > rq.healthyHigh
+            ? "This is above the workable range, so it caps the financial score: at this ratio the unit economics do not close regardless of demand. Negotiating the rent down is the highest-leverage change available on this deal."
+            : "This sits within the workable range, so the deal economics support the concept."} This score reflects your actual deal, not the area average.`) : ""}
       </section>
 
       <section class="rd-section">
