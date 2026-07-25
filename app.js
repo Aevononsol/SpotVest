@@ -7709,16 +7709,19 @@ function renderExecSummary() {
           <tr><th>Scenario</th><th>Monthly revenue</th><th>Break-even</th><th>Failure risk</th></tr>
           ${(analysis.scenarios || []).map((sc) => `<tr>
             <th>${escapeText(sc.name)}</th>
-            <td>${escapeText(sc.revenue)}</td>
-            <td>${escapeText(sc.breakeven)}</td>
-            <td>${escapeText(sc.failure)}</td>
+            <td>${escapeText(String(sc.revenue || "").replace(/\s*estimated factor/i, ""))}</td>
+            <td>${escapeText(String(sc.breakeven || "").replace(/\s*estimated factor/i, ""))}</td>
+            <td>${escapeText(String(sc.failure || "").replace(/\s*estimated factor/i, ""))}</td>
           </tr>`).join("")}
         </table>
       </section>
 
       ${(analysis.explainability && analysis.explainability.length) ? `<section class="rd-section">
-        <h2>Why This May Succeed</h2>
-        <ul class="rd-list">${li(analysis.explainability, "")}</ul>
+        <h2>Evidence Behind This Score</h2>
+        ${analysis.explainability.map((group) => `
+          <h3 class="rd-sub">${escapeText(group.type || "Signals")}</h3>
+          <ul class="rd-list">${li(Array.isArray(group.items) ? group.items : [], "No detail available.")}</ul>
+        `).join("")}
       </section>` : ""}
 
       <section class="rd-section">
@@ -7787,9 +7790,9 @@ function exportExecPdf() {
       .report-doc .rd-list li{font-size:13px;color:#334155;margin-bottom:6px;line-height:1.5}
       .report-doc .rd-list li b{color:#0b1422}
       .report-doc .rd-sub{font-size:12px;font-weight:700;color:#0e2a40;margin:14px 0 6px;letter-spacing:.4px}
-      .report-doc .rd-table{width:100%;border-collapse:collapse;margin:4px 0 8px;font-size:12.5px}
+      .report-doc .rd-table{width:100%;table-layout:fixed;border-collapse:collapse;margin:4px 0 8px;font-size:12px;word-break:break-word}
       .report-doc .rd-table th{text-align:left;font-weight:600;color:#0b1422;padding:6px 8px;border-bottom:1px solid #e2e8f0;vertical-align:top}
-      .report-doc .rd-table td{text-align:right;color:#334155;padding:6px 8px;border-bottom:1px solid #e2e8f0;white-space:nowrap}
+      .report-doc .rd-table td{text-align:right;color:#334155;padding:6px 8px;border-bottom:1px solid #e2e8f0}
       .report-doc .rd-table tr:first-child th{color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:.6px}
       .report-doc .rd-verdict{font-weight:800;font-size:18px;margin:0 0 6px}
       .report-doc .rd-conditional,.report-doc .rd-needs-more-data{color:#b45309}
