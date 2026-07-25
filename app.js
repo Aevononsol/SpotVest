@@ -7604,6 +7604,9 @@ function renderExecSummary() {
 
   const li = (arr, fallback) => (arr && arr.length ? arr : [fallback]).map((t) => `<li>${escapeText(t)}</li>`).join("");
   const para = (t) => `<p>${escapeText(t)}</p>`;
+  // para() escapes, which is right for model/user text. Use paraRich only for
+  // strings WE build where the markup is ours (values are escaped inline).
+  const paraRich = (html) => `<p>${html}</p>`;
 
   // Market prose from census (profile.audience holds the live ACS lines).
   const marketLines = (profile.audience || []).map((row) => `<li><b>${escapeText(row[0])}:</b> ${escapeText(row[1])}</li>`).join("")
@@ -7643,7 +7646,7 @@ function renderExecSummary() {
         <h2>Executive Summary</h2>
         ${para(analysis.summary)}
         ${para(`On the evidence reviewed, SpotVest screens this opportunity as ${analysis.decision} with a viability score of ${score}/100 and evidence confidence of ${conf}/100. The sections below set out the recommendation, the conditions and risks that drive it, and the market and financial context.`)}
-        ${rq ? para(`This report is scored against the <b>quoted rent of $${formatInteger(rq.monthly)}/month</b> (≈${rq.ratioPct}% of projected sales; healthy for this category is ${rq.healthyPct}) rather than the area average.`) : ""}
+        ${rq ? paraRich(`This report is scored against the <b>quoted rent of $${formatInteger(rq.monthly)}/month</b> (≈${rq.ratioPct}% of projected sales; healthy for this category is ${rq.healthyPct}) rather than the area average.`) : ""}
       </section>
 
       <section class="rd-section">
@@ -7679,10 +7682,44 @@ function renderExecSummary() {
       <section class="rd-section">
         <h2>Financial Considerations</h2>
         ${para(`SpotVest estimates (not live financials): projected monthly revenue ${revenue}, break-even ${breakeven}, with rent at approximately ${rentPct} of sales. These are derived from category economics, area income and ${rq ? "the quoted rent you provided" : "estimated local rent"} — verify against real operator P&Ls before committing.`)}
-        ${rq ? para(`<b>Your quoted rent:</b> $${formatInteger(rq.monthly)}/month — approximately <b>${rq.ratioPct}%</b> of projected sales at this location (a healthy share for this category is ${rq.healthyPct}). ${rq.ratio > rq.healthyHigh
+        ${rq ? paraRich(`<b>Your quoted rent:</b> $${formatInteger(rq.monthly)}/month — approximately <b>${rq.ratioPct}%</b> of projected sales at this location (a healthy share for this category is ${rq.healthyPct}). ${rq.ratio > rq.healthyHigh
             ? "This is above the workable range, so it caps the financial score: at this ratio the unit economics do not close regardless of demand. Negotiating the rent down is the highest-leverage change available on this deal."
             : "This sits within the workable range, so the deal economics support the concept."} This score reflects your actual deal, not the area average.`) : ""}
       </section>
+
+      <section class="rd-section">
+        <h2>How the Score Was Built</h2>
+        ${paraRich(`The headline follows the <b>lower</b> of the two scores below — a location has to clear both: customers have to come, and the economics have to work.`)}
+        <table class="rd-table">
+          <tr><th>Market Fit — will customers come?</th><td><b>${clampScore(analysis.marketFit)}/100</b></td></tr>
+          <tr><th>Financial Viability — can it make money here?</th><td><b>${clampScore(analysis.financialViability)}/100</b></td></tr>
+          <tr><th>Headline (lower of the two)</th><td><b>${score}/100</b></td></tr>
+        </table>
+        <h3 class="rd-sub">Signal breakdown</h3>
+        <table class="rd-table">
+          ${(analysis.scores || []).map((s) => `<tr><th>${escapeText(s.name)}</th><td>${clampScore(s.value)}/100</td></tr>`).join("")}
+        </table>
+        ${paraRich(`Scores are 0–100 where higher is better — including <b>Competition</b> (a high score means less saturation) and <b>Risk</b> (a high score means safer).`)}
+      </section>
+
+      <section class="rd-section">
+        <h2>Scenarios</h2>
+        ${paraRich(`Modeled outcomes, not forecasts. Revenue is derived from category economics, local demand and area income; the failure rate is a screening estimate, not an actuarial figure.`)}
+        <table class="rd-table">
+          <tr><th>Scenario</th><th>Monthly revenue</th><th>Break-even</th><th>Failure risk</th></tr>
+          ${(analysis.scenarios || []).map((sc) => `<tr>
+            <th>${escapeText(sc.name)}</th>
+            <td>${escapeText(sc.revenue)}</td>
+            <td>${escapeText(sc.breakeven)}</td>
+            <td>${escapeText(sc.failure)}</td>
+          </tr>`).join("")}
+        </table>
+      </section>
+
+      ${(analysis.explainability && analysis.explainability.length) ? `<section class="rd-section">
+        <h2>Why This May Succeed</h2>
+        <ul class="rd-list">${li(analysis.explainability, "")}</ul>
+      </section>` : ""}
 
       <section class="rd-section">
         <h2>Alternative Concepts</h2>
@@ -7749,6 +7786,11 @@ function exportExecPdf() {
       .report-doc .rd-list{margin:0 0 6px 18px;padding:0}
       .report-doc .rd-list li{font-size:13px;color:#334155;margin-bottom:6px;line-height:1.5}
       .report-doc .rd-list li b{color:#0b1422}
+      .report-doc .rd-sub{font-size:12px;font-weight:700;color:#0e2a40;margin:14px 0 6px;letter-spacing:.4px}
+      .report-doc .rd-table{width:100%;border-collapse:collapse;margin:4px 0 8px;font-size:12.5px}
+      .report-doc .rd-table th{text-align:left;font-weight:600;color:#0b1422;padding:6px 8px;border-bottom:1px solid #e2e8f0;vertical-align:top}
+      .report-doc .rd-table td{text-align:right;color:#334155;padding:6px 8px;border-bottom:1px solid #e2e8f0;white-space:nowrap}
+      .report-doc .rd-table tr:first-child th{color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:.6px}
       .report-doc .rd-verdict{font-weight:800;font-size:18px;margin:0 0 6px}
       .report-doc .rd-conditional,.report-doc .rd-needs-more-data{color:#b45309}
       .report-doc .rd-open{color:#15803d}
