@@ -449,6 +449,7 @@ const besttimeEls = {
   form: document.querySelector("#admin-besttime-form"),
   q: document.querySelector("#besttime-q"),
   status: document.querySelector("#besttime-status"),
+  force: document.querySelector("#besttime-force"),
   result: document.querySelector("#besttime-result")
 };
 besttimeEls.form?.addEventListener("submit", async (event) => {
@@ -460,7 +461,11 @@ besttimeEls.form?.addEventListener("submit", async (event) => {
   }
   const params = new URLSearchParams();
   if (besttimeEls.q.value.trim()) params.set("q", besttimeEls.q.value.trim());
-  besttimeEls.status.textContent = "Calling BestTime (uses ~5 credits)…";
+  const forceFresh = Boolean(besttimeEls.force?.checked);
+  if (forceFresh) params.set("force", "1");
+  besttimeEls.status.textContent = forceFresh
+    ? "Calling BestTime live (uses ~5 credits)…"
+    : "Checking BestTime (cached runs are free)…";
   besttimeEls.status.className = "launch-status";
   besttimeEls.result.style.display = "none";
   try {
@@ -472,7 +477,12 @@ besttimeEls.form?.addEventListener("submit", async (event) => {
       besttimeEls.status.textContent = `No usable data returned${r.error ? ` — ${r.error}` : ""}. (Returned ${r.venuesReturned || 0} venues.)`;
       besttimeEls.status.className = "launch-status launch-status-error";
     } else {
-      besttimeEls.status.textContent = `✓ Works — ${r.venuesWithData}/${r.venuesReturned} venues had busyness. Busiest around ${r.peakLabel} (peak ${r.peakBusyness}%).`;
+      // Always say whether this proved the LIVE API or just replayed cache —
+      // a cached pass tells you nothing about BestTime being up right now.
+      const src = r.cached
+        ? `${r.cacheStatus || "cached"} — this did NOT test the live API`
+        : (r.cacheStatus || "live — fetched just now");
+      besttimeEls.status.textContent = `✓ Works — ${r.venuesWithData}/${r.venuesReturned} venues had busyness. Busiest around ${r.peakLabel} (peak ${r.peakBusyness}%). ${src}`;
       besttimeEls.status.className = "launch-status launch-status-ok";
     }
     besttimeEls.result.textContent = JSON.stringify(r, null, 2).slice(0, 4000);
