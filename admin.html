@@ -128,12 +128,17 @@
         <p class="section-label">Integrations</p>
         <div class="launch-section-header">
           <h3>BestTime foot-traffic test</h3>
-          <p>After adding <b>BESTTIME_API_KEY</b> in Render, run this to confirm the key works and see real venue busyness. Type what to search <b>with a location</b> — e.g. <i>"restaurants in East Village New York"</i> or <i>"coffee in SoHo New York"</i>. Blank = "restaurants in New York City". Each run uses ~5 BestTime credits.</p>
+          <p>After adding <b>BESTTIME_API_KEY</b> in Render, run this to confirm the key works and see real venue busyness. Type what to search <b>with a location</b> — e.g. <i>"restaurants in East Village New York"</i> or <i>"coffee in SoHo New York"</i>. Blank = "restaurants in New York City".</p>
+          <p><b>Cached by default — a repeat run costs nothing.</b> Tick <i>Force fresh</i> to re-hit the paid API (~5 credits) when you actually need to prove BestTime is up: a cached PASS says nothing about the live API's health. The result always shows whether it came from cache (and how old) or live.</p>
         </div>
         <form id="admin-besttime-form" class="admin-token-row">
           <input id="besttime-q" placeholder='e.g. restaurants in East Village New York' autocomplete="off" />
           <button type="submit">Run BestTime test</button>
         </form>
+        <label style="display:flex;align-items:center;gap:8px;margin-top:8px;font-size:12.5px;color:var(--txt-2);cursor:pointer">
+          <input type="checkbox" id="besttime-force" style="width:16px;height:16px;accent-color:#39C2D6;cursor:pointer">
+          Force fresh — bypass the cache and spend ~5 credits
+        </label>
         <p id="besttime-status" class="launch-status" role="status"></p>
         <pre id="besttime-result" style="white-space:pre-wrap;word-break:break-word;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--txt-2);background:var(--surface-2);border:1px solid var(--border);border-radius:12px;padding:12px;margin-top:10px;display:none"></pre>
       </section>
@@ -275,6 +280,6 @@
         </div>
       </section>
     </main>
-    <script type="module" src="/admin.js?v=20260722-usage"></script>
+    <script type="module" src="/admin.js?v=20260726-btforce"></script>
   </body>
 </html>
