@@ -152,6 +152,21 @@ function loadResponseCacheFromDisk() {
     if (loaded) console.log(`Loaded ${loaded} cached signals from disk (durable score cache)`);
   } catch (e) { /* corrupt/missing cache file is non-fatal */ }
 }
+// Write the durable cache to disk NOW rather than on the 4s debounce. Used for
+// data we paid money for (BestTime forecasts): a deploy inside the debounce
+// window would otherwise discard it and the next report would re-buy it.
+async function flushSignalCacheNow() {
+  try {
+    const now = Date.now();
+    const obj = {};
+    for (const [key, entry] of responseCache) {
+      if (entry && entry.expiresAt > now) obj[key] = entry;
+    }
+    await mkdir(dataRoot, { recursive: true });
+    await writeFile(SIGNAL_CACHE_FILE, JSON.stringify(obj));
+  } catch (e) { /* disk may be read-only in some envs; non-fatal */ }
+}
+
 function scheduleSignalCacheSave() {
   if (signalCacheSaveTimer) return;
   signalCacheSaveTimer = setTimeout(async () => {
@@ -3390,6 +3405,57 @@ const BESTTIME_AREA_TTL = 7 * 24 * 60 * 60 * 1000;
 const besttimeLiveCache = new Map();
 const BESTTIME_LIVE_TTL = 12 * 60 * 1000;
 
+// ---- BestTime cost control ---------------------------------------------------
+// BestTime is metered. Their support: forecast / venue-filter data can be stored
+// for WEEKS; live data for a clock hour. The in-memory Maps above are wiped by
+// every deploy, so a restart used to re-buy the same area — the forecast cache
+// below is the DURABLE (disk-backed) one that survives restarts.
+//
+// TTL knob: start conservative at 7 days and raise toward the 21-day ceiling
+// once re-fetched scores are confirmed not to shift meaningfully.
+const BESTTIME_FORECAST_TTL_MS = 7 * 24 * 60 * 60 * 1000; // ceiling: 21 days
+
+// Live data is valid for the current clock hour, so expire exactly at the top of
+// the next hour rather than on a rolling timer.
+function msToEndOfClockHour() {
+  const now = new Date();
+  return Math.max(60_000, (60 - now.getMinutes()) * 60_000 - now.getSeconds() * 1000);
+}
+
+function besttimeForecastKey({ q, lat, lng, radius, num }) {
+  const loc = Number.isFinite(lat) && Number.isFinite(lng)
+    ? `${Number(lat).toFixed(3)},${Number(lng).toFixed(3)}:${radius || ""}`
+    : "noloc";
+  return `bt:fc:${String(q || "").toLowerCase().trim()}:${loc}:${num || ""}`;
+}
+
+// Single entry point for forecast/venue-filter data. Every caller goes through
+// this, so a cache hit costs NOTHING — no API call, no credits — and all callers
+// (report endpoint, score warm, admin test) share one cached area.
+async function besttimeForecastCached(args, { forceFresh = false } = {}) {
+  const key = besttimeForecastKey(args);
+  if (!forceFresh) {
+    const hit = readCache(key);
+    if (hit) {
+      return { ...hit, cached: true, cacheAgeMs: Date.now() - (hit.fetchedAt || Date.now()) };
+    }
+  }
+  // Cheap read first (already-collected venues, no new forecast credits); only
+  // build (fast:false, paid) when the sample is too thin to use.
+  let result = await besttimeAreaForecast({ ...args, fast: true });
+  if (!result.available || (result.venuesWithData || 0) < 8) {
+    const built = await besttimeAreaForecast({ ...args, fast: false });
+    if (built.available && (built.venuesWithData || 0) >= (result.venuesWithData || 0)) result = built;
+  }
+  if (result.available) {
+    writeCache(key, { ...result, fetchedAt: Date.now() }, BESTTIME_FORECAST_TTL_MS);
+    // Paid data: persist immediately instead of waiting on the debounce, so a
+    // deploy seconds later can't discard it and force a re-purchase.
+    await flushSignalCacheNow();
+  }
+  return { ...result, cached: false, cacheAgeMs: 0 };
+}
+
 // Pull real venue busyness near a point from BestTime (built on Google Popular
 // Times — aggregated, anonymized phone-location data). Defensive parser: the
 // venue object shape can vary, so we scan each venue for any 24-length hourly
@@ -3657,11 +3723,9 @@ async function warmAreaFootTraffic(areaKey, location) {
     // Stable per-ZIP query (no per-address lat/lng), so the collection is reused
     // and cached instead of rebuilt fresh for every address.
     const args = { q: areaBusynessQuery(areaKey), num: 20 };
-    let result = await besttimeAreaForecast({ ...args, fast: true });
-    if (!result.available || (result.venuesWithData || 0) < 8) {
-      const built = await besttimeAreaForecast({ ...args, fast: false });
-      if (built.available && (built.venuesWithData || 0) >= (result.venuesWithData || 0)) result = built;
-    }
+    // Shared durable cache with /api/area-foot-traffic — whichever path runs
+    // first pays; the other gets it free.
+    const result = await besttimeForecastCached(args);
     if (result.available) {
       besttimeAreaCache.set(areaKey, { at: Date.now(), data: result });
       const intensity = areaFootTrafficIntensity(result);
@@ -5797,8 +5861,20 @@ createServer(async (request, response) => {
         return;
       }
       const q = safeText(url.searchParams.get("q"), 120) || "restaurants in New York City";
-      const result = await besttimeAreaForecast({ q });
-      sendJson(response, 200, result);
+      // Cached by default so repeat diagnostics are free. force=1 re-hits the
+      // paid API. cacheStatus is surfaced so a stale PASS can never disguise a
+      // BestTime outage — a "cached" result says nothing about the API's health.
+      const forceFresh = /^(1|true|yes)$/i.test(String(url.searchParams.get("force") || ""));
+      const result = await besttimeForecastCached({ q, num: 20 }, { forceFresh });
+      const ageDays = result.cacheAgeMs ? Math.floor(result.cacheAgeMs / 86400000) : 0;
+      const ageHours = result.cacheAgeMs ? Math.floor(result.cacheAgeMs / 3600000) % 24 : 0;
+      sendJson(response, 200, {
+        ...result,
+        cacheStatus: result.cached
+          ? `cached (age: ${ageDays > 0 ? `${ageDays}d ` : ""}${ageHours}h) — no API call, no credits`
+          : "live — fetched from BestTime just now",
+        forecastTtlDays: Math.round(BESTTIME_FORECAST_TTL_MS / 86400000)
+      });
       return;
     }
 
@@ -6622,26 +6698,18 @@ createServer(async (request, response) => {
         cached: Boolean(r.cached),
         source: r.source || "BestTime venue busyness (Google Popular Times)"
       });
-      const hit = besttimeAreaCache.get(areaKey);
-      if (hit && Date.now() - hit.at < BESTTIME_AREA_TTL) {
-        sendJson(response, 200, clean({ ...hit.data, cached: true }));
-        return;
-      }
       // Stable per-ZIP query (ignore the exact address / lat-lng) so every
       // address in a ZIP shares one collection — the same query the score path
       // warms, so a build by either side serves both. A per-address query made
       // every report a fresh, never-reused build that returned nothing.
       const args = { q: areaBusynessQuery(areaKey), num: 20 };
-      const TARGET = 8;          // fast read of ~15+ venues is plenty; only build if thin
       try {
-        // Cheap read first (cached venues, no new credits). If the area is new or
-        // the sample is thin, forecast it once (spends credits, slower) to widen
-        // it, then cache so later reports are instant and free.
-        let result = await besttimeAreaForecast({ ...args, fast: true });
-        if (!result.available || (result.venuesWithData || 0) < TARGET) {
-          const built = await besttimeAreaForecast({ ...args, fast: false });
-          if (built.available && (built.venuesWithData || 0) >= (result.venuesWithData || 0)) result = built;
-        }
+        // Durable, disk-backed and shared with the score path: a hit costs no
+        // API call and survives deploys (the old in-memory Map did not, so every
+        // restart re-bought the same area).
+        const result = await besttimeForecastCached(args);
+        // Keep the in-memory map warm too so venueRefs are available to
+        // /api/area-live without another forecast call.
         if (result.available) besttimeAreaCache.set(areaKey, { at: Date.now(), data: result });
         sendJson(response, 200, clean(result));
       } catch (error) {
@@ -6667,23 +6735,25 @@ createServer(async (request, response) => {
         sendJson(response, 200, { configured: true, available: false, locked: true });
         return;
       }
-      const lhit = besttimeLiveCache.get(areaKey);
-      if (lhit && Date.now() - lhit.at < BESTTIME_LIVE_TTL) {
-        sendJson(response, 200, { ...lhit.data, cached: true });
+      // Live is valid for the CLOCK HOUR (BestTime's own guidance), and the
+      // cache is durable so a mid-hour deploy doesn't re-buy it.
+      const liveKey = `bt:live:${areaKey}`;
+      const lhit = readCache(liveKey);
+      if (lhit) {
+        sendJson(response, 200, { ...lhit, cached: true });
         return;
       }
       try {
-        // Reuse the area's venue IDs; build the forecast first only if we have none.
+        // Venue IDs come from the SHARED forecast cache — this used to fire an
+        // extra forecast call just to get them.
         let refs = besttimeAreaCache.get(areaKey)?.data?.venueRefs;
         if (!Array.isArray(refs) || !refs.length) {
-          const hasLoc = Number.isFinite(lat) && Number.isFinite(lng);
-          const q = address ? `restaurants near ${address}` : `restaurants in ${zip} New York`;
-          const fc = await besttimeAreaForecast({ q, lat: hasLoc ? lat : undefined, lng: hasLoc ? lng : undefined, radius: 1200, num: 50, fast: true });
+          const fc = await besttimeForecastCached({ q: areaBusynessQuery(areaKey), num: 20 });
           if (fc.available) besttimeAreaCache.set(areaKey, { at: Date.now(), data: fc });
           refs = fc.venueRefs;
         }
         const live = await besttimeLive(refs);
-        besttimeLiveCache.set(areaKey, { at: Date.now(), data: live });
+        writeCache(liveKey, live, msToEndOfClockHour());
         sendJson(response, 200, live);
       } catch (error) {
         sendJson(response, 200, { configured: true, available: false });
