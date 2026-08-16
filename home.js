@@ -349,7 +349,7 @@
   function renderResult(r) {
     const v = r.verdict;
     document.getElementById("resultPanel").innerHTML = `
-      <div class="rev scopepill"><i class="ti ${r.isArea ? "ti-map-2" : "ti-map-pin"}"></i>${r.scope}</div>
+      <div class="rev scopepill"><i class="ti ${r.isArea ? "ti-map-2" : "ti-map-pin"}"></i>${esc(r.scope)}</div>
       <div class="rev scorebadge" style="background:${v.color}14;border:1px solid ${v.color}55">
         <span style="width:8px;height:8px;border-radius:50%;background:${v.color}"></span>
         <span style="font-size:12px;font-weight:600;color:${v.color}">${v.label}</span>
@@ -358,9 +358,9 @@
         <span style="font-size:10px;color:#334155;margin-left:auto">${r.confidence}</span>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:9px">
-        <div class="rev icard" style="border-top:2px solid #10B981;animation-delay:.1s"><h4 style="color:#10B981">Why it works</h4><p>${r.why}</p></div>
-        <div class="rev icard" style="border-top:2px solid #F59E0B;animation-delay:.18s"><h4 style="color:#F59E0B">Risk factors</h4><p>${r.risk}</p></div>
-        <div class="rev icard" style="border-top:2px solid #06B6D4;animation-delay:.26s"><h4 style="color:#06B6D4">Next action</h4><p>${r.action}</p></div>
+        <div class="rev icard" style="border-top:2px solid #10B981;animation-delay:.1s"><h4 style="color:#10B981">Why it works</h4><p>${esc(r.why)}</p></div>
+        <div class="rev icard" style="border-top:2px solid #F59E0B;animation-delay:.18s"><h4 style="color:#F59E0B">Risk factors</h4><p>${esc(r.risk)}</p></div>
+        <div class="rev icard" style="border-top:2px solid #06B6D4;animation-delay:.26s"><h4 style="color:#06B6D4">Next action</h4><p>${esc(r.action)}</p></div>
       </div>
       <div class="rev" style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px;animation-delay:.34s">
         <p style="font-family:'IBM Plex Mono',monospace;font-size:9px;color:#1E3A5F;margin:0">Powered by the live SpotVest decision engine</p>
@@ -540,13 +540,25 @@
           <article class="review-card reveal in">
             <div class="review-head">
               ${review.picture
-                ? `<img class="review-avatar review-avatar-img" src="${esc(review.picture)}" alt="" referrerpolicy="no-referrer" loading="lazy" onerror="this.outerHTML='<div class=&quot;review-avatar&quot;>${esc(initials(review.name))}</div>'" />`
+                ? `<img class="review-avatar review-avatar-img" src="${esc(review.picture)}" alt="" referrerpolicy="no-referrer" loading="lazy" data-fallback="${esc(initials(review.name))}" />`
                 : `<div class="review-avatar">${esc(initials(review.name))}</div>`}
               <div><strong>${esc(review.name)}</strong>${review.role ? `<small>${esc(review.role)}</small>` : ""}</div>
             </div>
             <div class="review-stars">${stars(review.rating)}<span class="rv-badge">✓ Verified customer</span></div>
             <p>${esc(review.text)}</p>
           </article>`).join("");
+        // Broken avatar -> initials. Attached as a listener rather than an
+        // inline onerror: that handler put HTML-escaped text into a JS string
+        // inside an attribute, and the parser decodes entities before the JS
+        // runs, so HTML escaping was the wrong escaper for that context.
+        grid.querySelectorAll("img.review-avatar-img[data-fallback]").forEach((img) => {
+          img.addEventListener("error", () => {
+            const div = document.createElement("div");
+            div.className = "review-avatar";
+            div.textContent = img.getAttribute("data-fallback") || "";
+            img.replaceWith(div);
+          }, { once: true });
+        });
         const subh = document.getElementById("reviews-subh");
         if (subh && data.average) subh.textContent = `${data.average}/5 from ${data.count} verified SpotVest account${data.count === 1 ? "" : "s"}.`;
       }

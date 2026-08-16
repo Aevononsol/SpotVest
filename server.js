@@ -30,7 +30,10 @@ const contentTypes = {
   ".jpeg": "image/jpeg",
   ".svg": "image/svg+xml",
   ".webp": "image/webp",
-  ".ico": "image/x-icon"
+  ".ico": "image/x-icon",
+  ".woff2": "font/woff2",
+  ".woff": "font/woff",
+  ".ttf": "font/ttf"
 };
 
 // Static serving is allowlisted: only root-level files with a known asset
@@ -422,9 +425,12 @@ const CSP_DIRECTIVES = [
   "object-src 'none'",
   "frame-ancestors 'none'",
   "form-action 'self'",
-  "script-src 'self' https://cdnjs.cloudflare.com https://unpkg.com https://accounts.google.com",
-  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://unpkg.com",
-  "font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net",
+  // unpkg/cdnjs serve ANY published package, so allowlisting them meant any
+  // injected <script src> could load attacker code from an approved origin.
+  // Leaflet and MapLibre are vendored under /vendor now, so 'self' covers them.
+  "script-src 'self' https://accounts.google.com",
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "font-src 'self' https://fonts.gstatic.com",
   "img-src 'self' data: blob: https:",
   "connect-src 'self' https://tiles.openfreemap.org https://*.openfreemap.org https://accounts.google.com",
   "frame-src https://accounts.google.com",
@@ -1028,17 +1034,34 @@ async function reportEntitled(request, url) {
   if (vipConfigured && constantTimeEqual(vip, vipConfigured)) return true;
 
   const purchases = await readJsonStore("purchases", []);
+  const account = await authAccount(request);
+  if (account && isOwnerAccount(account)) return true;
+
+  // A purchase is entitled if it has an ACTIVE PASS, or if it still has report
+  // credits / an unlocked report. Credit buyers (single-report, report-pack-5)
+  // have no passExpiresAt, so a pass-only test treated paying customers as
+  // unentitled and locked them out of the data they had just bought.
+  const purchaseEntitled = (p) => {
+    if (!p) return false;
+    if (passActive(p)) return true;
+    const creditsLeft = (Number(p.credits) || 0) - (Number(p.creditsUsed) || 0);
+    if (creditsLeft > 0) return true;
+    return Array.isArray(p.unlockedReports) && p.unlockedReports.length > 0;
+  };
+
   const code = normalizePurchaseCode(url.searchParams.get("code") || "");
   if (code) {
     const purchase = purchases.find((candidate) => candidate.code === code);
-    if (purchase && passActive(purchase)) return true;
+    // A code bought while signed in belongs to that account — don't let a
+    // different signed-in user ride on it (the code travels in a URL, so a
+    // shared/leaked one would otherwise bypass the per-account device cap).
+    // Codes with no accountId were bought anonymously and stay usable as the
+    // buyer's only credential.
+    const boundToSomeoneElse = purchase?.accountId && account && purchase.accountId !== account.id;
+    if (purchaseEntitled(purchase) && !boundToSomeoneElse) return true;
   }
 
-  const account = await authAccount(request);
-  if (account) {
-    if (normalizeEmail(account.email) === normalizeEmail(ownerAccountEmail())) return true;
-    if (purchases.some((p) => p.accountId === account.id && passActive(p))) return true;
-  }
+  if (account && purchases.some((p) => p.accountId === account.id && purchaseEntitled(p))) return true;
   return false;
 }
 
@@ -3422,6 +3445,19 @@ function msToEndOfClockHour() {
   return Math.max(60_000, (60 - now.getMinutes()) * 60_000 - now.getSeconds() * 1000);
 }
 
+// BestTime area keys must come from a BOUNDED set. lat/lng at 3 decimals gives
+// effectively unlimited distinct keys, and every miss can trigger a PAID build —
+// so an entitled caller could walk coordinates and bill us without limit. Snap
+// to ~0.01 deg (~1km) and reject anything outside NYC.
+const NYC_BOUNDS = { minLat: 40.47, maxLat: 40.93, minLng: -74.29, maxLng: -73.68 };
+function boundedAreaKey(zip, lat, lng) {
+  if (/^\d{5}$/.test(String(zip || ""))) return String(zip);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return "";
+  if (lat < NYC_BOUNDS.minLat || lat > NYC_BOUNDS.maxLat) return "";
+  if (lng < NYC_BOUNDS.minLng || lng > NYC_BOUNDS.maxLng) return "";
+  return `${lat.toFixed(2)},${lng.toFixed(2)}`;
+}
+
 function besttimeForecastKey({ q, lat, lng, radius, num }) {
   const loc = Number.isFinite(lat) && Number.isFinite(lng)
     ? `${Number(lat).toFixed(3)},${Number(lng).toFixed(3)}:${radius || ""}`
@@ -4360,15 +4396,17 @@ async function sendFile(response, pathname, request) {
   const normalized = normalize(requested);
   const extension = extname(normalized);
 
-  // Allowlist: only root-level files (no subdirectories — API routes are handled
-  // before this, and every real asset sits at the root) with a known static
-  // extension, excluding source/config. This blocks traversal, dotfiles
-  // (.env, .git/*), server source (services/*), and app source/config
-  // (server.js, package.json) that would otherwise be served in full.
+  // Allowlist: root-level files, plus the vendored third-party libs under
+  // vendor/ (self-hosted so the CSP no longer has to allow whole public CDNs).
+  // Everything else with a slash stays blocked, which is what keeps .git/*,
+  // services/* and any traversal out. Dotfiles and non-asset extensions are
+  // refused regardless, as are source/config files that share an extension.
+  const inVendorDir = /^vendor\/(images\/|fonts\/)?[A-Za-z0-9._-]+$/.test(normalized);
   const servable =
     !normalized.startsWith("..") &&
     !normalized.startsWith(".") &&
-    !normalized.includes("/") &&
+    !normalized.split("/").some((part) => part.startsWith(".")) &&
+    (!normalized.includes("/") || inVendorDir) &&
     Object.prototype.hasOwnProperty.call(contentTypes, extension) &&
     !STATIC_DENY.has(normalized);
   if (!servable) {
@@ -6679,8 +6717,7 @@ createServer(async (request, response) => {
         sendJson(response, 200, { configured: true, available: false, locked: true });
         return;
       }
-      const areaKey = /^\d{5}$/.test(zip) ? zip
-        : (Number.isFinite(lat) && Number.isFinite(lng) ? `${lat.toFixed(3)},${lng.toFixed(3)}` : "");
+      const areaKey = boundedAreaKey(zip, lat, lng);
       if (!areaKey) {
         sendJson(response, 400, { error: "Provide a ZIP or lat/lng." });
         return;
@@ -6724,8 +6761,7 @@ createServer(async (request, response) => {
       const lng = Number(url.searchParams.get("lng"));
       const address = safeText(url.searchParams.get("address"), 120);
       if (!besttimeConfigured()) { sendJson(response, 200, { configured: false, available: false }); return; }
-      const areaKey = /^\d{5}$/.test(zip) ? zip
-        : (Number.isFinite(lat) && Number.isFinite(lng) ? `${lat.toFixed(3)},${lng.toFixed(3)}` : "");
+      const areaKey = boundedAreaKey(zip, lat, lng);
       if (!areaKey) { sendJson(response, 400, { error: "Provide a ZIP or lat/lng." }); return; }
       if (rateLimited(`arealive:${clientIp(request)}`, 10, 60_000)) {
         sendJson(response, 429, { error: "Too many live checks — try again in a minute." });

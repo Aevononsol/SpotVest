@@ -4469,7 +4469,7 @@ function renderInstitutionalAnalysis(profile, recommendations) {
     .map((score) => `
       <div class="score-row">
         <div>
-          <strong>${score.name}</strong>
+          <strong>${escapeText(score.name)}</strong>
           <small>${scoreSignalCopy(score)}</small>
         </div>
         <span>${formatBadgeScore(score.value)}</span>
@@ -4498,8 +4498,8 @@ function renderInstitutionalAnalysis(profile, recommendations) {
   renderSourceMap(analysis);
   elements.explainabilityList.innerHTML = analysis.explainability
     .map((group) => `
-      <article class="explainability-card explainability-${group.type.toLowerCase().replace(/[^a-z0-9]+/g, "-")}">
-        <strong>${group.type}</strong>
+      <article class="explainability-card explainability-${escapeText(group.type.toLowerCase().replace(/[^a-z0-9]+/g, "-"))}">
+        <strong>${escapeText(group.type)}</strong>
         <ul>${group.items.map((item) => `<li>${escapeText(item)}</li>`).join("")}</ul>
       </article>
     `)
