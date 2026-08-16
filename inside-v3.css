@@ -66,8 +66,12 @@
 .sv3-app .card h3{font-family:'Sora';font-size:18px;font-weight:700;letter-spacing:-.3px;line-height:1.2}
 .sv3-app .card .sub{font-size:11px;letter-spacing:1.5px;font-weight:700;text-transform:uppercase;color:var(--txt-3);margin-bottom:6px}
 
-.sv3-app .src{display:inline-flex;align-items:center;gap:5px;font-size:9.5px;font-family:'JetBrains Mono';font-weight:500;letter-spacing:.3px;color:var(--txt-faint);margin-top:8px;text-transform:uppercase}
-.sv3-app .src::before{content:"◉";color:var(--teal);font-size:8px}
+/* Was inline-flex: every text/<b>/<i> segment became a flex item in one
+   non-wrapping row, so each squeezed to min-content and stacked its words
+   vertically, running off the card on long captions. Block with a hanging
+   bullet flows as normal text and wraps. */
+.sv3-app .src{display:block;position:relative;padding-left:13px;font-size:9.5px;font-family:'JetBrains Mono';font-weight:500;letter-spacing:.3px;line-height:1.55;color:var(--txt-faint);margin-top:8px;text-transform:uppercase;overflow-wrap:anywhere}
+.sv3-app .src::before{content:"◉";position:absolute;left:0;top:.28em;color:var(--teal);font-size:8px}
 
 .sv3-app .statline{display:flex;align-items:center;justify-content:space-between;padding:11px 0;border-bottom:1px solid var(--line)}
 .sv3-app .statline:last-child{border-bottom:none}
