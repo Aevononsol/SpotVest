@@ -1442,6 +1442,16 @@ function authEmailBaseUrl(request) {
 // - ownerEmail: WHERE alerts and notifications are DELIVERED. Point
 //   SPOTVEST_NOTIFY_EMAIL at the professional inbox without touching the
 //   login identity.
+// Owner identity must require a VERIFIED email. /api/signup issues a session
+// cookie before verification, so an unverified signup on the owner address
+// would otherwise inherit full owner entitlement (unlimited runs, a 10-year
+// pass, all gated data) in any window where that account row doesn't exist.
+function isOwnerAccount(account) {
+  if (!account || !account.emailVerifiedAt) return false;
+  const owner = normalizeEmail(ownerAccountEmail());
+  return Boolean(owner) && normalizeEmail(account.email) === owner;
+}
+
 function ownerAccountEmail() {
   return process.env.SPOTVEST_OWNER_EMAIL || "maherjadoa9@gmail.com";
 }
@@ -3247,8 +3257,11 @@ async function vacantStorefronts(zip, entitled = false) {
   }
   // Owner-of-record name + ACRIS deed link are subscriber-only. Withhold them
   // from unentitled callers server-side (the client can only mask, not protect).
+  // bbl MUST go too: acrisUrl is a pure function of it (borough/block/lot are
+  // recoverable from bbl = borough*1e9 + block*1e4 + lot), so leaving bbl in
+  // let anyone rebuild the deed link the strip exists to protect.
   if (!entitled) {
-    top.forEach((v) => { v.ownerName = null; v.acrisUrl = null; });
+    top.forEach((v) => { v.ownerName = null; v.acrisUrl = null; v.bbl = null; });
   }
   return {
     available: true,
@@ -4690,7 +4703,14 @@ startMtaWindowScheduler();
 createServer(async (request, response) => {
   const url = new URL(request.url || "/", `http://${request.headers.host}`);
   applySecurityHeaders(response);
-  const forceRefresh = url.searchParams.get("refresh") === "1";
+  // "refresh=1" bypasses the caches and re-hits PAID upstreams (Google Places,
+  // Geocoding, BestTime). Anyone could previously set it on any request and
+  // loop it to run up the API bill, so it is now an entitled-caller affordance
+  // only; everyone else silently gets the cached value.
+  const refreshRequested = url.searchParams.get("refresh") === "1";
+  const forceRefresh = refreshRequested
+    ? await reportEntitled(request, url).catch(() => false)
+    : false;
 
   await requestContext.run({ forceRefresh }, async () => {
   try {
@@ -5372,7 +5392,7 @@ createServer(async (request, response) => {
       // "Day" means a New York calendar day — the counter resets at midnight
       // ET, matching what an NYC customer expects (UTC reset landed at 8 PM).
       const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
-      const isOwner = normalizeEmail(account.email) === normalizeEmail(ownerAccountEmail());
+      const isOwner = isOwnerAccount(account);
       // Serialized so two concurrent runs can't both read the same count and
       // both pass the limit (bypass) or clobber each other's increment (loss).
       const meter = await withStoreLock("usage", async () => {
@@ -5448,7 +5468,7 @@ createServer(async (request, response) => {
         return;
       }
       const purchaseLedger = account ? await readJsonStore("purchases", []) : [];
-      const isOwner = Boolean(account) && normalizeEmail(account.email) === normalizeEmail(ownerAccountEmail());
+      const isOwner = isOwnerAccount(account);
       const isCustomer = Boolean(account) && purchaseLedger.some((purchase) => purchase.accountId === account.id);
       const rating = Math.max(1, Math.min(5, Math.round(Number(body.rating) || 0)));
       const text = safeText(body.text, 600);
@@ -5630,7 +5650,7 @@ createServer(async (request, response) => {
       }
       // The owner's account carries a permanent built-in Pro Pass — no fake
       // purchase records, no Stripe involvement.
-      if (account && normalizeEmail(account.email) === normalizeEmail(ownerAccountEmail())) {
+      if (isOwnerAccount(account)) {
         matches.unshift({
           code: "OWNER-PASS",
           product: "owner",
@@ -6422,6 +6442,29 @@ createServer(async (request, response) => {
       await saveEnvKeys(body);
       sendJson(response, 200, { ok: true, keyStatus: keyStatus() });
       return;
+    }
+
+    // ---- Paywall at the DATA layer -------------------------------------------
+    // /api/analysis-run is only a meter; gating it left every endpoint that
+    // actually returns report content open to anonymous curl. These are the
+    // paid deliverable (demographics, competitor counts, PLUTO/site facts,
+    // concept fit, civic signals, the AI memo, listing finder), so they enforce
+    // entitlement themselves. They also carry a per-IP limit because several
+    // reach paid upstreams (Google, OpenAI).
+    const PAID_DATA_ROUTES = new Set([
+      "/api/area-report", "/api/business-count", "/api/point",
+      "/api/restaurant-concepts", "/api/civic-signals",
+      "/api/client-memo", "/api/listing-finder"
+    ]);
+    if (PAID_DATA_ROUTES.has(url.pathname)) {
+      if (rateLimited(`paiddata:${clientIp(request)}`, 40, 60_000)) {
+        sendJson(response, 429, { error: "Too many requests — try again in a minute." });
+        return;
+      }
+      if (PAID_ONLY && !(await reportEntitled(request, url))) {
+        sendJson(response, 402, { error: "Start a subscription to run reports.", needSubscription: true });
+        return;
+      }
     }
 
     if (url.pathname === "/api/area-report") {

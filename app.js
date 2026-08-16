@@ -1298,7 +1298,7 @@ function _finishRenderMap() {
   map.setView(center, state.location ? 15 : 13);
 
   if (state.location) {
-    addMapMarker(state.location.lat, state.location.lng, "address-marker selected-location", `<strong>${state.location.address}</strong><br>Search center`);
+    addMapMarker(state.location.lat, state.location.lng, "address-marker selected-location", `<strong>${escapeText(state.location.address)}</strong><br>Search center`);
     const radius = Number(state.location.radiusMiles || 0.5) * 1609.344;
     const circle = L.circle(center, {
       radius,
@@ -1325,14 +1325,14 @@ function _finishRenderMap() {
       fillOpacity: 0.045,
       weight: 2,
       dashArray: "6 6"
-    }).bindPopup(`<strong>${titleCase(business)} saturation</strong><br>${saturation} market pressure<br><small>Projected competition density layer</small>`);
+    }).bindPopup(`<strong>${escapeText(titleCase(business))} saturation</strong><br>${saturation} market pressure<br><small>Projected competition density layer</small>`);
     aggregateCircle.addTo(map);
     mapLayers.push(aggregateCircle);
   }
 
   const records = businessResult?.mapRecords || [];
   records.forEach((record) => {
-    const popup = `<strong>${record.name}</strong><br>${record.category || "Local activity"}<br>${record.address || ""}<br><small>Local market activity · ${saturation} category saturation</small>`;
+    const popup = `<strong>${escapeText(record.name)}</strong><br>${escapeText(record.category || "Local activity")}<br>${escapeText(record.address || "")}<br><small>Local market activity · ${saturation} category saturation</small>`;
     addDensityCircle(record.lat, record.lng, categorySaturation, popup);
     addMapMarker(
       record.lat,
@@ -1348,7 +1348,7 @@ function _finishRenderMap() {
     const reviews = safeNumber(place.reviews, 0);
     const placePressure = clampScore(categorySaturation + Math.min(18, Math.log10(reviews + 1) * 6) + (rating >= 4.5 ? 4 : 0));
     const popup = `
-      <strong>${place.name}</strong><br>
+      <strong>${escapeText(place.name)}</strong><br>
       ${rating === null ? "No rating" : `${rating} rating`} · ${formatInteger(reviews, "0")} reviews<br>
       <small>${saturationLabel(placePressure)} competitor density · ${saturation} category saturation</small>
     `;
@@ -1368,7 +1368,7 @@ function _finishRenderMap() {
         lease.lat,
         lease.lng,
         "lease-marker",
-        `<strong>${lease.address}</strong><br>${safeNumber(lease.sf) === null ? "SF: Needs Validation" : `${formatInteger(lease.sf)} SF`} · ${safeNumber(lease.rent) === null ? "Cost: Needs Validation" : `${formatCurrency(lease.rent)}/mo`}`
+        `<strong>${escapeText(lease.address)}</strong><br>${safeNumber(lease.sf) === null ? "SF: Needs Validation" : `${formatInteger(lease.sf)} SF`} · ${safeNumber(lease.rent) === null ? "Cost: Needs Validation" : `${formatCurrency(lease.rent)}/mo`}`
       );
     });
 
@@ -1908,15 +1908,15 @@ function renderTopPlaces(result) {
   elements.placesList.innerHTML = places
     .map((place) => {
       const photo = place.photoRef
-        ? `<img src="/api/place-photo?ref=${encodeURIComponent(place.photoRef)}" alt="${place.name}" loading="lazy" />`
+        ? `<img src="/api/place-photo?ref=${encodeURIComponent(place.photoRef)}" alt="${escapeText(place.name)}" loading="lazy" />`
         : `<div class="place-photo-fallback">NYC</div>`;
       const tenure = result.tenure?.text || "Business age needs confirmation";
       return `
         <article class="place-card">
           ${photo}
           <div>
-            <h4>${place.name}</h4>
-            <p>${place.address || "Address unavailable"}</p>
+            <h4>${escapeText(place.name)}</h4>
+            <p>${escapeText(place.address || "Address unavailable")}</p>
             <div class="place-meta">
               <span>${safeNumber(place.rating) === null ? "No rating" : `${safeNumber(place.rating)} rating`}</span>
               <span>${formatInteger(place.reviews, "0")} reviews</span>
