@@ -5884,8 +5884,17 @@ function renderSpotVestV3(profile, recommendations, analysis) {
   let seed = 2166136261; const seedStr = `${state.zip}|${state.business}`;
   for (let i = 0; i < seedStr.length; i++) { seed ^= seedStr.charCodeAt(i); seed = Math.imul(seed, 16777619); }
   seed = seed >>> 0;
-  const ftScoreNum = Number((String(elements.footTrafficScore?.textContent || "").match(/\d+/) || [60])[0]);
-  const weekdayPct = Number((String(elements.footTrafficWeekSplit?.textContent || "").match(/(\d+)\s*%/) || [0, 64])[1]) || 64;
+  // Compute these from the MODEL, not by scraping the text this page already
+  // rendered. The old DOM reads fell back to invented constants (60, 64) when
+  // the element hadn't been painted yet — so if the report rendered before
+  // renderFootTraffic ran, it printed a fabricated score and split as fact.
+  const ftModelScore = clampScore(footTrafficScoreFor(profile));
+  const ftModelWalk = clampScore(
+    safeNumber(profile.density, 50) * 0.46 + safeNumber(profile.transit, 50) * 0.42 + safeNumber(profile.localPreference, 50) * 0.12
+  );
+  const ftModelSplitText = weekdayWeekendSplit(profile);
+  const ftScoreNum = ftModelScore;
+  const weekdayPct = Number((String(ftModelSplitText).match(/(\d+)\s*%/) || [0, 50])[1]) || 50;
   const beMonthMatch = String(revenueBreakeven).match(/(\d+)/);
   const beMonth = beMonthMatch ? Number(beMonthMatch[1]) : 14;
 
@@ -5970,7 +5979,7 @@ function renderSpotVestV3(profile, recommendations, analysis) {
     conceptCards, competitorCards, cuisineRows, alternativeCards, breakdownCards, coverageCards,
     methodVerified: verifiedGroup ? verifiedGroup.items : [], methodModel: modelGroup ? modelGroup.items : [],
     ftReal: !!footReal,
-    ftScore: footReal ? String(footReal.footPct) : (String(elements.footTrafficScore?.textContent || "").match(/\d+/) || ["60"])[0],
+    ftScore: footReal ? String(footReal.footPct) : String(ftModelScore),
     ftActivity: footReal ? (footReal.footPct >= 74 ? "High" : footReal.footPct >= 48 ? "Medium" : "Low") : (elements.footTrafficActivity?.textContent || "Moderate").replace(/^Estimated Activity:\s*/i, "").replace(/\..*$/, ""),
     ftBacking: footReal ? "live MTA ridership near this location" : "estimate",
     // Rounded to avoid false precision. Real MTA ridership is a verified proxy;
@@ -5982,12 +5991,12 @@ function renderSpotVestV3(profile, recommendations, analysis) {
     // a count of block visitors. Label it as riders, never "visitors".
     ftVisitorsLabel: footReal ? "Transit riders nearby" : "Est. daily foot traffic",
     ftVisitorsTag: footReal ? "MTA ridership (verified) · proxy for foot traffic" : "ESTIMATED RANGE",
-    ftWalk: (String(elements.footTrafficWalkability?.textContent || "").match(/\d+/) || ["60"])[0],
-    ftPeak: elements.footTrafficPeaks?.textContent || "Morning / lunch / evening",
-    ftSplit: (elements.footTrafficWeekSplit?.textContent || "").replace(/Weekday\s*/i, "").replace(/\s*\/\s*weekend\s*/i, " / ").replace(/\s*estimated split\.?$/i, "") || "64% / 36%",
+    ftWalk: String(ftModelWalk),
+    ftPeak: peakHoursFor(profile),
+    ftSplit: String(ftModelSplitText).replace(/Weekday\s*/i, "").replace(/\s*\/\s*weekend\s*/i, " / ").replace(/\s*estimated split\.?$/i, ""),
     freshness: formatBadgeScore(analysis.validation.freshness), sourceQuality: formatBadgeScore(analysis.validation.sourceQuality),
     revenueProjection, revenueBreakeven, revenueRentPercent, revenueNote, revenueLowK, costK, costPct, breakevenShort,
-    pulseFoot: sv3Level((String(elements.footTrafficScore?.textContent || "").match(/\d+/) || [String(safeNumber(profile.transit, 50))])[0]), pulseSpend: sv3Level(profile.income),
+    pulseFoot: sv3Level(ftModelScore), pulseSpend: sv3Level(profile.income),
     pulseCost: safeNumber(profile.rent, 50) >= 70 ? "Elevated" : "Manageable",
     chainFitPct: sv3Pct(safeNumber(profile.chainFit, 50)),
     footHourSVG: sv3FootHourSVG(state.business, ftScoreNum, seed, unifiedHourly),
